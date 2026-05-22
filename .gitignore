@@ -1,0 +1,21 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+artifacts/
+
+# Visual Studio and IDE state
+.vs/
+.idea/
+.vscode/
+.cursor/
+*.user
+*.suo
+
+# Logs and transient files
+*.log
+*.tmp
+*.bak
+
+# OS files
+.DS_Store
+Thumbs.db
