@@ -9,6 +9,7 @@ internal static class Program
         var tests = new (string Name, Action Run)[]
         {
             ("ParseBmsFromText_ParsesBasicNotesAndLengths", ParseBmsFromText_ParsesBasicNotesAndLengths),
+            ("ParseBmsFromText_UsesThreeCharacterNoteValuesForExtendedWavKeys", ParseBmsFromText_UsesThreeCharacterNoteValuesForExtendedWavKeys),
             ("ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd", ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd),
             ("ParseBmsFileWithStatistics_UsesCacheForSamePath", ParseBmsFileWithStatistics_UsesCacheForSamePath),
         };
@@ -62,6 +63,31 @@ internal static class Program
         Assert.NotNull(normal, "Normal 노트가 없습니다.");
         Assert.NotNull(longStart, "Long 시작 노트가 없습니다.");
         Assert.True(longStart!.Length > 0f, "Long 노트 길이가 계산되지 않았습니다.");
+    }
+
+    private static void ParseBmsFromText_UsesThreeCharacterNoteValuesForExtendedWavKeys()
+    {
+        string bms = """
+#BPM 150
+#WAV001 normal.wav
+#WAV00A scratch.wav
+#WAV010 accent.wav
+#00111:001002
+#00211:000003
+""";
+
+        var result = BmsParser.ParseBmsFromText(bms, "inline extended wav");
+        Assert.NotNull(result, "결과가 null입니다.");
+        Assert.True(result!.Notes.Count == 2, $"예상 노트 수 2, 실제 {result.Notes.Count}");
+
+        var normal = result.Notes.SingleOrDefault(n => n.NoteType == BmsParser.NoteType.Normal);
+        var longStart = result.Notes.SingleOrDefault(n => n.NoteType == BmsParser.NoteType.Long);
+
+        Assert.NotNull(normal, "3글자 Normal 노트가 없습니다.");
+        Assert.NotNull(longStart, "3글자 Long 시작 노트가 없습니다.");
+        Assert.True(normal!.OriginalNoteValue == "001", $"Normal 원본 값 예상 001, 실제 {normal.OriginalNoteValue}");
+        Assert.True(longStart!.OriginalNoteValue == "002", $"Long 원본 값 예상 002, 실제 {longStart.OriginalNoteValue}");
+        Assert.True(longStart.Length > 0f, "3글자 Long 노트 길이가 계산되지 않았습니다.");
     }
 
     private static void ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd()

@@ -81,6 +81,8 @@ namespace sxtg2.Loaders
         private static readonly object s_parseStatsFileCacheLock = new object();
         private static readonly Dictionary<string, (long LastWriteUtcTicks, ParseResult Result)> s_parseStatsFileCache =
             new Dictionary<string, (long, ParseResult)>(StringComparer.OrdinalIgnoreCase);
+        private const int DefaultNoteValueWidth = 2;
+        private const int ExtendedNoteValueWidth = 3;
 
         public static List<ParsedNote> ParseBmsFile(string filePath)
         {
@@ -115,59 +117,58 @@ namespace sxtg2.Loaders
 
             try
             {
-                using (var streamReader = new StreamReader(filePath))
+                var lines = File.ReadAllLines(filePath);
+                int noteValueWidth = DetectNoteValueWidth(lines);
+
+                foreach (var rawLine in lines)
                 {
-                    string line;
-                    while ((line = streamReader.ReadLine()) != null)
+                    var line = rawLine.Trim();
+                    if (string.IsNullOrEmpty(line) || !line.StartsWith("#"))
+                        continue;
+
+                    // 헤더 라인 파싱 (공백 포함)
+                    if (line.Contains(' '))
                     {
-                        line = line.Trim();
-                        if (string.IsNullOrEmpty(line) || !line.StartsWith("#"))
-                            continue;
-
-                        // 헤더 라인 파싱 (공백 포함)
-                        if (line.Contains(' '))
+                        var split = line.Substring(1).Split(new[] { ' ' }, 2);
+                        if (split.Length >= 2)
                         {
-                            var split = line.Substring(1).Split(new[] { ' ' }, 2);
-                            if (split.Length >= 2)
-                            {
-                                var key = split[0];
-                                var value = split[1];
+                            var key = split[0];
+                            var value = split[1];
 
-                                if (key.Contains("BPM"))
+                            if (key.Contains("BPM"))
+                            {
+                                if (key == "BPM")
                                 {
-                                    if (key == "BPM")
+                                    // 기본 BPM
+                                    if (float.TryParse(value, out float bpm))
                                     {
-                                        // 기본 BPM
-                                        if (float.TryParse(value, out float bpm))
-                                        {
-                                            bpmDict["00"] = bpm;
-                                            var freq = 60f / bpm;
-                                            dataList.Add(new BpmData { Tick = 0f, Freq = freq });
-                                        }
+                                        bpmDict["00"] = bpm;
+                                        var freq = 60f / bpm;
+                                        dataList.Add(new BpmData { Tick = 0f, Freq = freq });
                                     }
-                                    else if (key.Length > 3)
+                                }
+                                else if (key.Length > 3)
+                                {
+                                    // #BPMXX 형식
+                                    var bpmIndex = key.Substring(3);
+                                    if (float.TryParse(value, out float bpm))
                                     {
-                                        // #BPMXX 형식
-                                        var bpmIndex = key.Substring(3);
-                                        if (float.TryParse(value, out float bpm))
-                                        {
-                                            bpmDict[bpmIndex] = bpm;
-                                        }
+                                        bpmDict[bpmIndex] = bpm;
                                     }
                                 }
                             }
                         }
-                        // 노트 데이터 라인 파싱 (콜론 포함)
-                        else if (line.Contains(':'))
-                        {
-                            var colonIndex = line.IndexOf(':');
-                            if (colonIndex < 1) continue;
+                    }
+                    // 노트 데이터 라인 파싱 (콜론 포함)
+                    else if (line.Contains(':'))
+                    {
+                        var colonIndex = line.IndexOf(':');
+                        if (colonIndex < 1) continue;
 
-                            var channel = line.Substring(1, colonIndex - 1);
-                            var data = line.Substring(colonIndex + 1);
+                        var channel = line.Substring(1, colonIndex - 1);
+                        var data = line.Substring(colonIndex + 1);
 
-                            ParseNoteData(channel, data, notes, dataList);
-                        }
+                        ParseNoteData(channel, data, notes, dataList, noteValueWidth);
                     }
                 }
 
@@ -222,9 +223,25 @@ namespace sxtg2.Loaders
             return parseResult;
         }
 
+        private static int DetectNoteValueWidth(IEnumerable<string> lines)
+        {
+            foreach (var rawLine in lines)
+            {
+                var line = rawLine?.Trim();
+                if (string.IsNullOrEmpty(line) || !line.StartsWith("#WAV", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var keyEnd = line.IndexOfAny(new[] { ' ', '\t' });
+                var key = keyEnd >= 0 ? line.Substring(1, keyEnd - 1) : line.Substring(1);
+                if (key.Length == 6)
+                    return ExtendedNoteValueWidth;
+            }
+
+            return DefaultNoteValueWidth;
+        }
+
     }
 }
-
 
 
 

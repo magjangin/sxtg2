@@ -7,7 +7,7 @@ namespace sxtg2.Loaders
 {
     public static partial class BmsParser
     {
-        private static void ParseNoteData(string channel, string data, List<ParsedNote> notes, List<BpmData> dataList)
+        private static void ParseNoteData(string channel, string data, List<ParsedNote> notes, List<BpmData> dataList, int noteValueWidth)
         {
             try
             {
@@ -16,11 +16,11 @@ namespace sxtg2.Loaders
                 if (!LaneMapping.ContainsKey(channelNum) && channelNum != "04" && channelNum != "05")
                     return;
 
-                var objLength = data.Length / 2;
+                var objLength = data.Length / noteValueWidth;
                 if (objLength == 0)
                     return;
 
-                AppendParsedNotesFromChannelData(data, measure, channelNum, objLength, notes, dataList);
+                AppendParsedNotesFromChannelData(data, measure, channelNum, objLength, notes, dataList, noteValueWidth);
             }
             catch (Exception ex)
             {
@@ -47,24 +47,26 @@ namespace sxtg2.Loaders
             }
         }
 
-        private static void AppendParsedNotesFromChannelData(string data, int measure, string channelNum, int objLength, List<ParsedNote> notes, List<BpmData> dataList)
+        private static void AppendParsedNotesFromChannelData(string data, int measure, string channelNum, int objLength, List<ParsedNote> notes, List<BpmData> dataList, int noteValueWidth)
         {
-            for (int i = 0; i < data.Length; i += 2)
+            for (int i = 0; i < data.Length; i += noteValueWidth)
             {
-                if (i + 1 >= data.Length)
+                if (i + noteValueWidth > data.Length)
                     break;
 
-                var noteValue = data.Substring(i, 2);
-                if (noteValue == "00")
-                    continue;
-                if (!NoteTypeMapping.ContainsKey(noteValue))
+                var noteValue = data.Substring(i, noteValueWidth);
+                if (IsEmptyNoteValue(noteValue))
                     continue;
 
-                var noteType = NoteTypeMapping[noteValue];
+                var noteTypeKey = NormalizeNoteTypeKey(noteValue);
+                if (!NoteTypeMapping.ContainsKey(noteTypeKey))
+                    continue;
+
+                var noteType = NoteTypeMapping[noteTypeKey];
                 if (!TryResolveNoteLane(noteType, channelNum, out int lane))
                     continue;
 
-                var tick = (float)measure + ((float)(i / 2) / objLength);
+                var tick = (float)measure + ((float)(i / noteValueWidth) / objLength);
                 var time = CalculateTime(tick, dataList);
 
                 notes.Add(new ParsedNote
@@ -75,6 +77,25 @@ namespace sxtg2.Loaders
                     OriginalNoteValue = noteValue
                 });
             }
+        }
+
+        private static bool IsEmptyNoteValue(string noteValue)
+        {
+            for (int i = 0; i < noteValue.Length; i++)
+            {
+                if (noteValue[i] != '0')
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static string NormalizeNoteTypeKey(string noteValue)
+        {
+            if (noteValue.Length == ExtendedNoteValueWidth && noteValue[0] == '0')
+                return noteValue.Substring(1);
+
+            return noteValue;
         }
 
         private static bool TryResolveNoteLane(NoteType noteType, string channelNum, out int lane)
@@ -259,12 +280,11 @@ namespace sxtg2.Loaders
 
             try
             {
-                using (var stringReader = new StringReader(bmsText))
-                {
-                    string line;
-                    while ((line = stringReader.ReadLine()) != null)
-                        ProcessBmsTextInputLine(line, notes, dataList, bpmDict);
-                }
+                var lines = ReadLinesFromText(bmsText);
+                int noteValueWidth = DetectNoteValueWidth(lines);
+
+                foreach (var line in lines)
+                    ProcessBmsTextInputLine(line, notes, dataList, bpmDict, noteValueWidth);
 
                 dataList.Sort((a, b) => a.Tick.CompareTo(b.Tick));
 
@@ -288,7 +308,20 @@ namespace sxtg2.Loaders
             }
         }
 
-        private static void ProcessBmsTextInputLine(string line, List<ParsedNote> notes, List<BpmData> dataList, Dictionary<string, float> bpmDict)
+        private static List<string> ReadLinesFromText(string bmsText)
+        {
+            var lines = new List<string>();
+            using (var stringReader = new StringReader(bmsText))
+            {
+                string line;
+                while ((line = stringReader.ReadLine()) != null)
+                    lines.Add(line);
+            }
+
+            return lines;
+        }
+
+        private static void ProcessBmsTextInputLine(string line, List<ParsedNote> notes, List<BpmData> dataList, Dictionary<string, float> bpmDict, int noteValueWidth)
         {
             line = line.Trim();
             if (string.IsNullOrEmpty(line) || !line.StartsWith("#"))
@@ -343,7 +376,7 @@ namespace sxtg2.Loaders
             if (channel == 3 || (channel >= 11 && channel <= 19))
             {
                 var channelKey = $"{measure:D3}{channel:D2}";
-                ParseNoteData(channelKey, valuePart, notes, dataList);
+                ParseNoteData(channelKey, valuePart, notes, dataList, noteValueWidth);
             }
         }
     }
