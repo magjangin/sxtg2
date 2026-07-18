@@ -263,40 +263,15 @@ private static void StopAndMuteAllAudioSources()
 
 ---
 
-## 사운드 교체 (클리어 사운드)
+## 클리어 사운드
 
-```csharp
-public class HighscoreMeterHook
-{
-    [HarmonyPrefix]
-    [HarmonyPatch(typeof(SoundObject), "Play")]
-    private static bool PlayPrefix(SoundObject __instance)
-    {
-        var clipName = __instance.clip?.name;
-        
-        if (clipName != null && clipName.StartsWith("clear", StringComparison.OrdinalIgnoreCase))
-        {
-            // clear* 사운드를 KeyBlue_Tam으로 교체
-            var newClip = FindAudioClip("KeyBlue_Tam");
-            if (newClip != null)
-            {
-                __instance.clip = newClip;
-                MelonLogger.Msg($"사운드 교체: {clipName} → KeyBlue_Tam");
-            }
-        }
-        
-        return true;
-    }
-    
-    private static AudioClip FindAudioClip(string clipName)
-    {
-        var allClips = Resources.FindObjectsOfTypeAll<AudioClip>();
-        return allClips.FirstOrDefault(c => c.name == clipName);
-    }
-}
-```
+클리어 사운드는 더 이상 모드가 후킹하거나 다른 클립으로 교체하지 않습니다.
+게임 원본의 `Clear_FullCombo`/`Clear_Normal` 재생 로직을 그대로 사용하며, 커스텀 차트의
+곡 종료 시점은 `SXGTData.totalNoteWithTicks` 재계산으로 보정합니다.
 
-`SoundObject`의 clip 접근은 `SoundObjectClipAccessor.cs`로 분리되어 있고, 커스텀 차트 스코어 제한 해제 적용은 `HighscoreMeterHook.Score.cs`가 담당합니다.
+커스텀 차트 스코어 관련 처리는 `HighscoreMeterHook.Score.cs`와
+`Hooks/SXGT/SXGTDataHook.Score.cs`에 남아 있지만, `SoundObject.Play`/
+`PlayAndDestroy` 후킹은 삭제되었습니다.
 
 ---
 

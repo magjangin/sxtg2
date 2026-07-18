@@ -38,11 +38,6 @@ namespace sxtg2
                 // BGMPlayerHook 초기화
                 BGMPlayerHook.Initialize();
 
-                // HighscoreMeterHook 초기화
-                MelonLogger.Msg("[Main] HighscoreMeterHook 초기화 시작...");
-                HighscoreMeterHook.Initialize();
-                MelonLogger.Msg("[Main] HighscoreMeterHook 초기화 완료");
-
                 // ManagerMusicSelectHook 초기화
                 MelonLogger.Msg("[Main] ManagerMusicSelectHook 초기화 시작...");
                 ManagerMusicSelectHook.Initialize();

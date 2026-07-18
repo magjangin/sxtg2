@@ -15,19 +15,20 @@
 ## 2026-07-18 수정: 커스텀 차트 스코어/클리어 사운드 타이밍 버그
 
 - **증상**: 커스텀 차트 플레이 중 곡이 다 끝나기도 전에(또는 이상한 시점에) `Clear_FullCombo`/
-  `Clear_Normal`(→ `KeyBlue_Tam`) 사운드가 재생됨.
+  `Clear_Normal` 사운드가 재생됨.
 - **근본 원인**: `SXGTData.totalNotes`/`totalNoteWithTicks`가 도너(복제 원본) 트랙의 노트 개수로 남아있었고,
   `CustomChartInjector`는 `laneData`(노트 리스트)만 갈아끼울 뿐 이 개수 필드는 갱신하지 않았음. 게임의
   스코어 계산(`JudgeScore`)과 곡 종료 판정(`elapsedNote >= totalNoteWithTicks`)이 전부 이 값을 기준으로
   동작하기 때문에, 실제 커스텀 차트와 도너 트랙의 노트 수가 다르면 판정이 어긋남.
 - **기존에 있던(효과 없던) 시도**: `maxScore`/`MaxScore` 필드를 -1로 바꾸는 보정이 있었지만, 애초에
-  스코어 계산식이 그 필드를 참조하지 않아 무의미했고, 클리어 사운드는 증상만 `KeyBlue_Tam`으로 가려왔음.
+  스코어 계산식이 그 필드를 참조하지 않아 무의미했고, 클리어 사운드를 `KeyBlue_Tam`으로 바꾸는 임시 후킹도
+  증상만 가리고 있었음.
 - **수정**: `CustomChartInjector`가 노트를 레인에 실제로 주입하면서 성공한 노트 수를 직접 세어(레인 9/10
   제외, 홀드 노트는 `tickLength`만큼 가산) 주입 완료 직후 `SXGTData.totalNotes`/`totalNoteWithTicks`를
   덮어쓰도록 함. 실게임 테스트로 확인 완료.
 - **후속**: 근본 원인이 고쳐지면서 `Clear_FullCombo`/`Clear_Normal`을 `KeyBlue_Tam`으로 가리던 임시방편이
-  불필요해짐을 실게임에서 확인. `Resources.LoadAll<AudioClip>("")`로 Resources 폴더 전체를 스캔하던
-  `Hooks/Audio/AudioSourceHook.cs`를 삭제함 (부트 초반 불필요한 트랙 음원 강제 로드 비용도 함께 제거됨).
+  불필요해짐을 실게임에서 확인. `SoundObject.Play`/`PlayAndDestroy`를 후킹하던 클리어 사운드 교체 코드를
+  삭제하고, 부트 초반 Resources 전체 스캔도 제거함.
 - 자세한 내용: `02-systems/SCORE_SYSTEM.md`, `01-user-guide/TROUBLESHOOTING.md` (5번 항목)
 
 ## 최근 정리 내역

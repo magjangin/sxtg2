@@ -4,11 +4,10 @@
 
 ## 현재 역할
 
-커스텀 차트 플레이 중 게임의 기본 스코어 제한과 일부 사운드 처리를 보정합니다.
+커스텀 차트 플레이 중 게임의 노트 수 기반 스코어·곡 종료 판정을 보정합니다.
 
 ## 현재 코드 경로
 
-- `Hooks/Audio/HighscoreMeterHook.cs`
 - `Hooks/Audio/HighscoreMeterHook.Score.cs`
 - `Hooks/Audio/HighscoreMeterHook.SXGTReader.cs`
 - `Hooks/Audio/HighscoreMeterHook.SoundObject.cs`
@@ -35,7 +34,7 @@ SXGTDataHook.ProcessPendingNoteRemovalAndInjection
 - `SXGTReader.MaxScore`
 - `SXGTData.maxScore`
 - `SXGTData.totalNotes` / `SXGTData.totalNoteWithTicks` (2026-07-18 추가)
-- `SoundObject` clear 계열 사운드
+- 원본 `Clear_FullCombo`/`Clear_Normal` 사운드 재생(모드 교체 없음)
 
 ## 알려진 근본 원인과 수정 (2026-07-18)
 
@@ -48,7 +47,7 @@ SXGTDataHook.ProcessPendingNoteRemovalAndInjection
 
 이 두 값이 실제 재생 중인 커스텀 차트가 아니라 도너 트랙의 노트 개수를 기준으로 계산되면서,
 커스텀 차트의 노트 수가 도너보다 많거나 적을 때 스코어가 실제 실력과 무관하게 튀거나
-곡이 중간에 끝난 것처럼 처리되어 `Clear_FullCombo`/`Clear_Normal`(→`KeyBlue_Tam`)이
+곡이 중간에 끝난 것처럼 처리되어 `Clear_FullCombo`/`Clear_Normal`이
 부적절한 시점에 재생되는 증상으로 나타났습니다.
 
 `maxScore`/`MaxScore` 보정(`FixMaxScoreField`, `FixSXGTReaderMaxScore`)은 애초에 저 스코어 계산식이
@@ -60,12 +59,9 @@ SXGTDataHook.ProcessPendingNoteRemovalAndInjection
 `SXGTData.totalNotes`/`totalNoteWithTicks`를 이 값으로 덮어씁니다.
 
 **후속 확인 (2026-07-18)**: 위 수정 이후 `Clear_FullCombo`/`Clear_Normal`이 실제 곡 종료 시점에
-정상적으로 재생되는 것을 실게임에서 확인했습니다. 즉 `KeyBlue_Tam`으로 바꿔치기하던 임시방편이
-더 이상 필요 없어졌습니다. 그래서 `Resources.LoadAll<AudioClip>("")`로 Resources 폴더 전체를
-스캔하던 `Hooks/Audio/AudioSourceHook.cs`를 완전히 제거했습니다. `HighscoreMeterHook`의
-`SoundObject.Play`/`PlayAndDestroy` 후킹 자체는 아직 남아있지만, `GetCachedKeyBlueTamClip()`은
-이제 `Resources.Load<AudioClip>("KeyBlue_Tam")` 단발 조회만 시도하고(대개 실패해서 null), 클립을
-못 찾으면 `ReplaceClearSound`가 조용히 원본 클리어 사운드를 그대로 재생하게 둡니다.
+정상적으로 재생되는 것을 실게임에서 확인했습니다. 따라서 `KeyBlue_Tam`으로 바꿔치기하던
+임시방편과 `SoundObject.Play`/`PlayAndDestroy` 후킹 코드를 삭제했습니다. 원본 클리어 사운드는
+이제 교체 없이 그대로 재생됩니다.
 
 ## 제거된 보정
 

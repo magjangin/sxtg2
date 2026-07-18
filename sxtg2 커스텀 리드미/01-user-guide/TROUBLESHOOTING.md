@@ -45,8 +45,7 @@
 ## 5) Score/클리어 사운드가 이상함
 
 - 스코어 제한 해제는 `MaxScore/targetBestScore/SXGTData` 보정이 결합되어 동작합니다.
-- 클리어 사운드는 `clear*`를 감지해 `KeyBlue_Tam`으로 교체합니다.
-- 만약 다른 사운드까지 바뀌면 clipName 탐지 로직이 “clear”를 과하게 잡는지 로그로 확인하세요.
+- 클리어 사운드는 모드가 교체하지 않고 게임 원본을 그대로 재생합니다.
 - **(2026-07-18 수정됨) 곡 중간에 클리어 사운드가 튀어나오던 문제**: 원인은 `totalNotes`/`totalNoteWithTicks`가
   커스텀 차트가 아니라 도너 트랙의 노트 개수로 남아있던 것이었습니다. `CustomChartInjector`가 노트 주입 직후
   이 값을 실제 주입된 노트 수로 재계산하도록 고쳤습니다. 자세한 내용은 `02-systems/SCORE_SYSTEM.md`를 참고하세요.
@@ -54,12 +53,9 @@
     찍히는지, 그 값이 도너 트랙이 아니라 실제 커스텀 BMS 파일의 노트 개수와 비슷한지 확인하세요.
   - `totalNotes/totalNoteWithTicks 필드를 찾지 못해...` 경고가 뜨면 게임 빌드가 바뀌어 필드 이름이
     달라졌을 가능성이 있습니다 (`ReflectionMemberNames.SXGTDataMembers`).
-- **(2026-07-18) `KeyBlue_Tam` 교체는 이제 안 씀**: 위 근본 원인 수정 후 실게임에서 `Clear_FullCombo`/
-  `Clear_Normal`이 정상 타이밍에 재생되는 걸 확인해서, `Resources.LoadAll<AudioClip>("")`로 Resources
-  폴더 전체(트랙 음원 포함)를 스캔하던 `Hooks/Audio/AudioSourceHook.cs`를 완전히 제거했습니다.
-  이제 원본 클리어 사운드가 교체 없이 그대로 재생됩니다. 만약 다시 특정 사운드를 다른 클립으로
-  바꾸고 싶다면 `HighscoreMeterHook.GetCachedKeyBlueTamClip()`에 원하는 클립을 반환하도록 채워 넣으면 됩니다.
-
+- **(2026-07-18) 클리어 사운드 교체 코드 제거**: 위 근본 원인 수정 후 실게임에서
+  `Clear_FullCombo`/`Clear_Normal`이 정상 타이밍에 재생되는 것을 확인했습니다. 이에 따라
+  `KeyBlue_Tam` 교체와 `SoundObject.Play`/`PlayAndDestroy` 후킹을 삭제했습니다.
 
 
 

@@ -85,8 +85,6 @@ TextHook.Initialize
 SteamManifestLock.Unlock
 BGAPlayerHook.Initialize
 BGMPlayerHook.Initialize
-AudioSourceHook.Initialize
-HighscoreMeterHook.Initialize
 ManagerMusicSelectHook.Initialize
 ManagerPlayHook.Initialize
 SXGTDataHook.Initialize
@@ -123,7 +121,6 @@ Features/
 
 ```text
 Hooks/Audio/
-├── AudioSourceHook.cs
 ├── BGABGMSyncHook.cs
 ├── BGAPlayerHook.cs
 ├── BgaFileResolver.cs
@@ -132,8 +129,8 @@ Hooks/Audio/
 ├── BGMPlayerHook.Playback.cs
 ├── BgmAudioSourceFinder.cs
 ├── BgmFileResolver.cs
-├── HighscoreMeterHook*.cs
-└── SoundObjectClipAccessor.cs
+├── HighscoreMeterHook.Score.cs
+└── HighscoreMeterHook.SXGTReader.cs
 ```
 
 초기 전체 미디어 스캔은 없습니다. 실제 교체 시점에 앨범 폴더에서 파일을 선택합니다.

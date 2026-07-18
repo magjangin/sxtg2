@@ -20,8 +20,6 @@ Main.OnInitializeMelon
   -> SteamManifestLock.Unlock
   -> BGAPlayerHook.Initialize
   -> BGMPlayerHook.Initialize
-  -> AudioSourceHook.Initialize
-  -> HighscoreMeterHook.Initialize
   -> ManagerMusicSelectHook.Initialize
   -> ManagerPlayHook.Initialize
   -> SXGTDataHook.Initialize
@@ -34,6 +32,7 @@ Main.OnInitializeMelon
 - `SXGTReaderHook.Initialize`
 - `NumberInterpolatorHook.Initialize`
 - 초기 미디어 전체 스캔
+- `HighscoreMeterHook.Initialize` 및 클리어 사운드 교체 후킹
 
 ## BMS 선택과 파싱
 

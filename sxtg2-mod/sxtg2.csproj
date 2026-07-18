@@ -103,7 +103,6 @@
     <Compile Include="Hooks\Audio\BGMPlayerHook.cs" />
     <Compile Include="Hooks\Audio\BGMPlayerHook.Playback.cs" />
     <Compile Include="Hooks\Audio\HighscoreMeterHook.AudioClip.cs" />
-    <Compile Include="Hooks\Audio\HighscoreMeterHook.cs" />
     <Compile Include="Hooks\Audio\HighscoreMeterHook.Score.cs" />
     <Compile Include="Hooks\Audio\HighscoreMeterHook.SoundObject.cs" />
     <Compile Include="Hooks\Audio\HighscoreMeterHook.SXGTReader.cs" />
