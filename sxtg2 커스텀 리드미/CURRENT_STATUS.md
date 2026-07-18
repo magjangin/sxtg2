@@ -25,6 +25,9 @@
 - **수정**: `CustomChartInjector`가 노트를 레인에 실제로 주입하면서 성공한 노트 수를 직접 세어(레인 9/10
   제외, 홀드 노트는 `tickLength`만큼 가산) 주입 완료 직후 `SXGTData.totalNotes`/`totalNoteWithTicks`를
   덮어쓰도록 함. 실게임 테스트로 확인 완료.
+- **후속**: 근본 원인이 고쳐지면서 `Clear_FullCombo`/`Clear_Normal`을 `KeyBlue_Tam`으로 가리던 임시방편이
+  불필요해짐을 실게임에서 확인. `Resources.LoadAll<AudioClip>("")`로 Resources 폴더 전체를 스캔하던
+  `Hooks/Audio/AudioSourceHook.cs`를 삭제함 (부트 초반 불필요한 트랙 음원 강제 로드 비용도 함께 제거됨).
 - 자세한 내용: `02-systems/SCORE_SYSTEM.md`, `01-user-guide/TROUBLESHOOTING.md` (5번 항목)
 
 ## 최근 정리 내역

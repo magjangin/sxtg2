@@ -94,7 +94,6 @@
     <Compile Include="Helpers\Track\ThumbnailLoader.cs" />
     <Compile Include="Helpers\Track\TrackDataCloner.cs" />
     <Compile Include="Helpers\Reflection\TypeFinderHelper.cs" />
-    <Compile Include="Hooks\Audio\AudioSourceHook.cs" />
     <Compile Include="Hooks\Audio\BGABGMSyncHook.cs" />
     <Compile Include="Hooks\Audio\BgaFileResolver.cs" />
     <Compile Include="Hooks\Audio\BGAPlayerHook.cs" />

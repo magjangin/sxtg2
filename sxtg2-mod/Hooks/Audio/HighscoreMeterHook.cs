@@ -205,14 +205,10 @@ namespace sxtg2.Hooks.Audio
         {
             try
             {
-                // AudioSourceHook에서 캐시된 KeyBlue_Tam 가져오기
-                var clip = AudioSourceHook.GetCachedKeyBlueTamClip();
-                if (clip != null)
-                    return clip;
-                
-                // 캐시가 없으면 Resources에서 직접 로드
-                clip = Resources.Load<AudioClip>("KeyBlue_Tam");
-                return clip;
+                // totalNotes/totalNoteWithTicks 재계산으로 클리어 사운드가 정상 타이밍에 재생되므로
+                // 더 이상 KeyBlue_Tam으로 바꿔치기할 필요가 없다. Resources 폴더 전체를 훑는
+                // AudioSourceHook 스캔은 제거했고, 값싼 경로 조회만 남겨둔다.
+                return Resources.Load<AudioClip>("KeyBlue_Tam");
             }
             catch (Exception ex)
             {

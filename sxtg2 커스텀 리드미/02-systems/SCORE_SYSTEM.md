@@ -59,6 +59,14 @@ SXGTDataHook.ProcessPendingNoteRemovalAndInjection
 (원본 게임과 동일하게 레인 9/10 제외, 홀드 노트는 `tickLength`만큼 추가) 주입이 끝난 직후
 `SXGTData.totalNotes`/`totalNoteWithTicks`를 이 값으로 덮어씁니다.
 
+**후속 확인 (2026-07-18)**: 위 수정 이후 `Clear_FullCombo`/`Clear_Normal`이 실제 곡 종료 시점에
+정상적으로 재생되는 것을 실게임에서 확인했습니다. 즉 `KeyBlue_Tam`으로 바꿔치기하던 임시방편이
+더 이상 필요 없어졌습니다. 그래서 `Resources.LoadAll<AudioClip>("")`로 Resources 폴더 전체를
+스캔하던 `Hooks/Audio/AudioSourceHook.cs`를 완전히 제거했습니다. `HighscoreMeterHook`의
+`SoundObject.Play`/`PlayAndDestroy` 후킹 자체는 아직 남아있지만, `GetCachedKeyBlueTamClip()`은
+이제 `Resources.Load<AudioClip>("KeyBlue_Tam")` 단발 조회만 시도하고(대개 실패해서 null), 클립을
+못 찾으면 `ReplaceClearSound`가 조용히 원본 클리어 사운드를 그대로 재생하게 둡니다.
+
 ## 제거된 보정
 
 `ManagerPlay.targetBestScore` 보정은 제거되었습니다.
@@ -75,6 +83,7 @@ Object of type 'System.Single' cannot be converted to type 'System.Int32'.
 
 - `NumberInterpolatorHook`
 - `SXGTReaderHook`의 진단성 후킹
+- `Hooks/Audio/AudioSourceHook.cs` (2026-07-18, `KeyBlue_Tam` 전수 스캔용, 근본 원인 수정 후 불필요해짐)
 
 ## 주의
 

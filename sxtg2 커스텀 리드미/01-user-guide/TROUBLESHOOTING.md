@@ -54,6 +54,11 @@
     찍히는지, 그 값이 도너 트랙이 아니라 실제 커스텀 BMS 파일의 노트 개수와 비슷한지 확인하세요.
   - `totalNotes/totalNoteWithTicks 필드를 찾지 못해...` 경고가 뜨면 게임 빌드가 바뀌어 필드 이름이
     달라졌을 가능성이 있습니다 (`ReflectionMemberNames.SXGTDataMembers`).
+- **(2026-07-18) `KeyBlue_Tam` 교체는 이제 안 씀**: 위 근본 원인 수정 후 실게임에서 `Clear_FullCombo`/
+  `Clear_Normal`이 정상 타이밍에 재생되는 걸 확인해서, `Resources.LoadAll<AudioClip>("")`로 Resources
+  폴더 전체(트랙 음원 포함)를 스캔하던 `Hooks/Audio/AudioSourceHook.cs`를 완전히 제거했습니다.
+  이제 원본 클리어 사운드가 교체 없이 그대로 재생됩니다. 만약 다시 특정 사운드를 다른 클립으로
+  바꾸고 싶다면 `HighscoreMeterHook.GetCachedKeyBlueTamClip()`에 원하는 클립을 반환하도록 채워 넣으면 됩니다.
 
 
 
