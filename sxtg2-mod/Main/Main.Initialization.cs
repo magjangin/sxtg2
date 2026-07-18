@@ -4,6 +4,7 @@ using sxtg2.Features;
 using sxtg2.Helpers;
 using sxtg2.Hooks.Audio;
 using sxtg2.Hooks.Manager;
+using sxtg2.Hooks.Note;
 using sxtg2.Hooks.SXGT;
 using sxtg2.Hooks.Text;
 
@@ -52,6 +53,16 @@ namespace sxtg2
                 MelonLogger.Msg("[Main] SXGTDataHook 초기화 시작...");
                 SXGTDataHook.Initialize();
                 MelonLogger.Msg("[Main] SXGTDataHook 초기화 완료");
+
+                // NoteSpriteHook 초기화 (커스텀 노트 스킨)
+                MelonLogger.Msg("[Main] NoteSpriteHook 초기화 시작...");
+                NoteSpriteHook.Initialize();
+                MelonLogger.Msg("[Main] NoteSpriteHook 초기화 완료");
+
+                // 커스텀 키 설정 저장 폴더 생성
+                MelonLogger.Msg("[Main] SaveCustomKey 폴더 생성 시도...");
+                SaveCustomKeyFolderHelper.EnsureFolderExists();
+                MelonLogger.Msg("[Main] SaveCustomKey 폴더 처리 완료");
 
                 // BMS 파일 스캔 및 파싱
                 MelonLogger.Msg("[Main] BMS 파일 스캔 및 파싱 시작...");

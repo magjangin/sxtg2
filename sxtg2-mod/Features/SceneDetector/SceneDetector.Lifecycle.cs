@@ -33,25 +33,6 @@ namespace sxtg2.Features
             }
         }
 
-        public void Cleanup()
-        {
-            if (!_isInitialized)
-                return;
-
-            try
-            {
-                SceneManager.sceneLoaded -= OnSceneLoaded;
-                SceneManager.sceneUnloaded -= OnSceneUnloaded;
-
-                _isInitialized = false;
-                MelonLogger.Msg("씬 감지 모드 정리 완료");
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"씬 감지 모드 정리 중 오류 발생: {ex.Message}");
-            }
-        }
-
         public string GetCurrentSceneName()
         {
             return _currentSceneName;

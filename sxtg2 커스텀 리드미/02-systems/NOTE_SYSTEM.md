@@ -360,3 +360,40 @@ public static void LogNoteDetails(object note)
         }
     }
 }
+```
+
+---
+
+## 노트 스킨(커스텀 스프라이트)
+
+위의 내용이 BMS 데이터를 게임 노트 객체로 변환/주입하는 흐름이라면, 이 절은 이미 생성된 노트의
+**시각적 스킨**을 교체하는 별도 기능입니다(원래 `InventoryPopup` 모드에서 이식됨, `H:\source\repos\InventoryPopup`).
+
+### 후킹 지점
+
+`RhythmGame.NoteGenerator.Generate(LaneIndex, Note)`의 Postfix에서 반환된 `RG_NoteObject`를 받아
+처리합니다. `Assembly-CSharp`를 프로젝트에서 직접 참조하지 않으므로 `object`로 받고 리플렉션으로
+`RectTransform` 필드에 접근합니다.
+
+```csharp
+// RhythmGame.RG_NoteObject의 실제 필드 (디컴파일 기준)
+[SerializeField] private RectTransform shortNote;    // 메인 노트 본체
+[SerializeField] private RectTransform holdTexture;   // 홀드 몸통
+[SerializeField] private RectTransform tailNote;      // 홀드 끝부분
+```
+
+### 처리 순서 (`Hooks/Note/NoteSpriteHook.cs`)
+
+1. `Generate` 반환값(`RG_NoteObject`)에서 `gameObject` 이름(예: `Default_Blue(Clone)`)을 읽어
+   노트 타입(`Blue`/`Red`/`Gate`)을 추출한다 (`CustomNoteSpriteLoader.ExtractNoteType`).
+2. `shortNote`/`tailNote`/`holdTexture` 필드를 리플렉션으로 가져와 `Image.sprite`를 교체한다.
+   - `shortNote`: 폴백 없음(Gate만 Blue로 폴백)
+   - `tailNote`/`holdTexture`: `[Type][Suffix]` → `[Suffix][Type]` → `[Suffix]` → 공용 이름 순으로 탐색, 없으면 적용하지 않음
+3. `NoteRendererRecovery.RecoverNoteRenderer`로 `Image.SetNativeSize()` + `SetAllDirty()`를 호출해
+   스프라이트 교체 직후 UI가 갱신되지 않는 문제를 해소한다.
+
+### 스프라이트 소스
+
+`CustomNoteSpriteLoader`가 `{게임 설치 폴더}\CustomNotes\*.png`를 읽어 `Sprite.Create`로 변환하고
+파일명(첫 글자만 대문자로 표준화) 기준으로 캐싱한다. 폴더 규칙은 `01-user-guide/INSTALL_AND_LAYOUT.md`
+5절 참고.

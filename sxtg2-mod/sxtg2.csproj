@@ -93,6 +93,8 @@
     <Compile Include="Helpers\Track\ThumbnailLoader.cs" />
     <Compile Include="Helpers\Track\TrackDataCloner.cs" />
     <Compile Include="Helpers\Reflection\TypeFinderHelper.cs" />
+    <Compile Include="Helpers\SaveCustomKeyFolderHelper.cs" />
+    <Compile Include="Helpers\UI\NoteRendererRecovery.cs" />
     <Compile Include="Hooks\Audio\BGABGMSyncHook.cs" />
     <Compile Include="Hooks\Audio\BgaFileResolver.cs" />
     <Compile Include="Hooks\Audio\BGAPlayerHook.cs" />
@@ -115,6 +117,7 @@
     <Compile Include="Hooks\Manager\ManagerPlayHook\ManagerPlayHook.Initialize.cs" />
     <Compile Include="Hooks\Manager\ManagerPlayHook\ManagerPlayHook.Pause.cs" />
     <Compile Include="Hooks\Manager\ManagerPlayHook\ManagerPlayHook.PlayStart.cs" />
+    <Compile Include="Hooks\Note\NoteSpriteHook.cs" />
     <Compile Include="Hooks\SXGT\SXGTDataHook.cs" />
     <Compile Include="Hooks\SXGT\SXGTDataHook.NoteOps.Constructors.cs" />
     <Compile Include="Hooks\SXGT\SXGTDataHook.NoteOps.cs" />
@@ -127,6 +130,7 @@
     <Compile Include="Hooks\Text\TextHook.TrackFinder.cs" />
     <Compile Include="Loaders\BmsParser.cs" />
     <Compile Include="Loaders\BmsParser.Processing.cs" />
+    <Compile Include="Loaders\CustomNoteSpriteLoader.cs" />
     <Compile Include="Loaders\TrackInfoParser.cs" />
     <Compile Include="Main\Main.cs" />
     <Compile Include="Main\Main.BmsBootstrap.cs" />

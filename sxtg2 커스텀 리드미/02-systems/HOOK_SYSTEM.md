@@ -154,6 +154,32 @@ public class BGMPlayerHook
 
 BGA도 같은 방향으로 분리되어 있습니다. `BgaFileResolver`가 mp4를 선택하고, `BgaVideoPlayerFinder`가 대상 `VideoPlayer`를 찾으며, `BGAPlayerHook`은 실제 URL 교체와 상태 관리에 집중합니다.
 
+### NoteSpriteHook
+
+`InventoryPopup` 모드(`H:\source\repos\InventoryPopup`)에서 이식한, 노트의 **시각적 스킨**만 교체하는 후킹입니다. 노트 데이터 자체를 다루는 `SXGTDataHook`/`CustomChartInjector`와는 별개입니다.
+
+```csharp
+public class NoteSpriteHook
+{
+    public static void Initialize()
+    {
+        var noteGeneratorType = TypeFinderHelper.FindType("RhythmGame.NoteGenerator");
+        var generateMethod = noteGeneratorType.GetMethod("Generate", BindingFlags.Public | BindingFlags.Instance);
+        harmony.Patch(generateMethod, postfix: new HarmonyMethod(...GeneratePostfix...));
+    }
+
+    // __result: RhythmGame.NoteGenerator.Generate가 반환한 RG_NoteObject
+    private static void GeneratePostfix(object __result)
+    {
+        var noteObject = ReflectionHelper.GetFirstMemberValueSafe(__result, "gameObject") as GameObject;
+        // shortNote/tailNote/holdTexture 필드에 CustomNotes 폴더의 스프라이트 적용
+        // 이후 NoteRendererRecovery로 UI 강제 갱신
+    }
+}
+```
+
+자세한 내용은 `02-systems/NOTE_SYSTEM.md`의 "노트 스킨(커스텀 스프라이트)" 절 참고.
+
 ---
 
 ## Hook 초기화
@@ -169,6 +195,7 @@ public class Main : MelonMod
         BGMPlayerHook.Initialize();
         BGAPlayerHook.Initialize();
         TextHook.Initialize();
+        NoteSpriteHook.Initialize();
     }
 }
 ```

@@ -67,6 +67,28 @@
 - 트랙 제목/아티스트/난이도 같은 메타데이터를 앨범 폴더 단위로 제공할 수 있습니다.
 - 관련 구현은 `sxtg2-mod/Loaders/TrackInfoParser.cs`, `sxtg2-mod/Features/TrackDataAnalyzer.cs`를 참고하세요.
 
+## 5) CustomNotes 폴더(선택, 커스텀 노트 스킨)
+
+- 경로: `{게임 설치 폴더}\CustomNotes\`
+- 폴더가 없으면 모드 초기화 시 자동 생성됩니다(`Loaders/CustomNoteSpriteLoader.cs`).
+- 파일명 규칙(대소문자 무시, PNG만):
+  - `Blue.png`, `Red.png` — 메인 노트. 없으면 게임 기본 스프라이트 유지(폴백 없음)
+  - `Gate.png` — 게이트 노트. 없으면 `Blue.png`로 폴백
+  - 끝노트(홀드 끝부분): `RedTail`/`TailRed`, `BlueTail`/`TailBlue`, `GateTail`/`TailGate` 우선,
+    없으면 공용 `Tail`/`TailNote` 순서로 탐색. 전부 없으면 적용하지 않음(폴백 없음)
+  - 홀드 몸통: `RedHold`/`HoldRed`, `BlueHold`/`HoldBlue`, `GateHold`/`HoldGate` 우선,
+    없으면 공용 `Hold`/`HoldTexture` 순서로 탐색. 전부 없으면 적용하지 않음(폴백 없음)
+- 관련 구현: `Loaders/CustomNoteSpriteLoader.cs`, `Hooks/Note/NoteSpriteHook.cs`, `Helpers/UI/NoteRendererRecovery.cs`
+- 자세한 흐름은 `02-systems/NOTE_SYSTEM.md`의 "노트 스킨(커스텀 스프라이트)" 절 참고.
+
+## 6) SaveCustomKey 폴더(폴더만 생성, 아직 저장 로직 없음)
+
+- 경로: `{게임 설치 폴더}\SaveCustomKey\`
+- 모드 초기화 시 `Helpers/SaveCustomKeyFolderHelper.cs`가 폴더 존재를 보장(없으면 생성)합니다.
+- 게임 자체의 커스텀 키 설정은 `UserAccountModule.Instance.userData.customKeySetting`(세이브 데이터 내부,
+  `GameSetting/KeyPresetSetting.cs`)로 관리되며, 아직 이 폴더에 실제로 읽고 쓰는 기능은 없습니다 —
+  향후 커스텀 키 프리셋을 파일로 내보내기/가져오기 하는 기능을 위한 준비 단계입니다.
+
 ---
 
 ## 기술 스택 및 DLL 참조

@@ -25,7 +25,7 @@ namespace sxtg2
 
         public override void OnApplicationQuit()
         {
-            _sceneDetector?.Cleanup();
+            MelonLogger.Msg("[Main] sxtg2 모드 종료됨");
         }
     }
 }
