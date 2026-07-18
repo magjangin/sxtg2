@@ -16,6 +16,11 @@ namespace sxtg2.Helpers
         private static MethodInfo _cachedShowMethod;
         private static MethodInfo _cachedStartMethod;
 
+        public static void ApplyCustomPauseJacket()
+        {
+            SetPauseJacketImage();
+        }
+
         public static void CallPauseMenu()
         {
             try

@@ -65,6 +65,46 @@ namespace sxtg2.Helpers
             return prop?.GetValue(instance);
         }
 
+        private static void SetPauseJacketImage()
+        {
+            try
+            {
+                var managerPlayType = TypeFinderHelper.FindType("ManagerPlay");
+                var pauseType = TypeFinderHelper.FindType("RG_PS_Pause");
+                if (managerPlayType == null || pauseType == null)
+                    return;
+
+                var managerPlayInstance = UnityEngine.Object.FindObjectOfType(managerPlayType);
+                var pauseInstance = UnityEngine.Object.FindObjectOfType(pauseType);
+                if (managerPlayInstance == null || pauseInstance == null)
+                    return;
+
+                if (!TryResolveTrackDataForEyecatch(managerPlayInstance, out object trackData))
+                    return;
+
+                var trackId = GetFieldOrPropertyValue(trackData, "ID") as string;
+                var displayName = GetFieldOrPropertyValue(trackData, "DisplayName") as string;
+                if (string.IsNullOrEmpty(trackId))
+                    return;
+
+                var sprite = TryLoadEyecatchThumbnailSprite(trackId, displayName);
+                if (sprite == null)
+                    return;
+
+                var jacketField = pauseType.GetField("jacketImage", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var jacketImage = jacketField?.GetValue(pauseInstance) as UnityEngine.UI.Image;
+                if (jacketImage == null)
+                    return;
+
+                jacketImage.sprite = sprite;
+                MelonLogger.Msg($"{LogPrefix} 일시정지 자켓 교체 완료: {sprite.name}");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"{LogPrefix} 일시정지 자켓 교체 중 오류: {ex.Message}");
+            }
+        }
+
         /// <summary>
         /// Eyecatch Image를 설정합니다. playTrack -> trackData -> bms 순서로 찾습니다.
         /// </summary>

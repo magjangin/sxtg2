@@ -55,6 +55,15 @@ namespace sxtg2.Hooks.Manager
                         MelonLogger.Msg("[ManagerPlayHook] GetPatternFromDir 메서드 후킹 완료");
                     }
 
+                    // 디컴파일 원본의 실제 일시정지 진입점 후킹
+                    var pauseGameMethod = managerPlayType.GetMethod("PauseGame", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (pauseGameMethod != null)
+                    {
+                        var postfix = new HarmonyMethod(typeof(ManagerPlayHook).GetMethod(nameof(PauseGamePostfix), BindingFlags.NonPublic | BindingFlags.Static));
+                        harmony.Patch(pauseGameMethod, postfix: postfix);
+                        MelonLogger.Msg("[ManagerPlayHook] PauseGame 메서드 후킹 완료 (일시정지 자켓 교체)");
+                    }
+
                     // 일시정지 관련 메서드 찾기 및 후킹
                     var pauseMethods = new[] { "Pause", "OnPause", "SetPause", "TogglePause", "ShowPauseMenu", "OpenPauseMenu" };
                     foreach (var methodName in pauseMethods)
@@ -67,15 +76,6 @@ namespace sxtg2.Hooks.Manager
                             MelonLogger.Msg($"[ManagerPlayHook] {methodName} 메서드 후킹 완료");
                             break;
                         }
-                    }
-
-                    // Update 메서드 후킹 (ESC 키 체크용)
-                    var updateMethod = managerPlayType.GetMethod("Update", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (updateMethod != null)
-                    {
-                        var prefix = new HarmonyMethod(typeof(ManagerPlayHook).GetMethod(nameof(UpdatePrefix), BindingFlags.NonPublic | BindingFlags.Static));
-                        harmony.Patch(updateMethod, prefix: prefix);
-                        MelonLogger.Msg("[ManagerPlayHook] Update 메서드 후킹 완료 (ESC 키 감지)");
                     }
 
                     MelonLogger.Msg("[ManagerPlayHook] 초기화 완료");
