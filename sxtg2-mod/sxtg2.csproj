@@ -82,7 +82,6 @@
     <Compile Include="Helpers\ManagerMusicSelectBridge.cs" />
     <Compile Include="Helpers\ModLog.cs" />
     <Compile Include="Helpers\Pause\PauseMethodHelper.cs" />
-    <Compile Include="Helpers\Pause\PauseMethodHelper.Finder.cs" />
     <Compile Include="Helpers\Pause\PauseMethodHelper.UI.cs" />
     <Compile Include="Helpers\Reflection\ReflectionHelper.cs" />
     <Compile Include="Helpers\Reflection\ReflectionMemberNames.cs" />
@@ -102,11 +101,6 @@
     <Compile Include="Hooks\Audio\BgmFileResolver.cs" />
     <Compile Include="Hooks\Audio\BGMPlayerHook.cs" />
     <Compile Include="Hooks\Audio\BGMPlayerHook.Playback.cs" />
-    <Compile Include="Hooks\Audio\HighscoreMeterHook.AudioClip.cs" />
-    <Compile Include="Hooks\Audio\HighscoreMeterHook.Score.cs" />
-    <Compile Include="Hooks\Audio\HighscoreMeterHook.SoundObject.cs" />
-    <Compile Include="Hooks\Audio\HighscoreMeterHook.SXGTReader.cs" />
-    <Compile Include="Hooks\Audio\SoundObjectClipAccessor.cs" />
     <Compile Include="Hooks\Manager\ManagerMusicSelectHook.AlbumFinder.cs" />
     <Compile Include="Hooks\Manager\ManagerMusicSelectHook.cs" />
     <Compile Include="Hooks\Manager\ManagerMusicSelectHook.Demo.AudioSource.cs" />
@@ -126,7 +120,6 @@
     <Compile Include="Hooks\SXGT\SXGTDataHook.NoteOps.cs" />
     <Compile Include="Hooks\SXGT\SXGTDataHook.NoteTypeExtraction.cs" />
     <Compile Include="Hooks\SXGT\SXGTDataHook.Pending.cs" />
-    <Compile Include="Hooks\SXGT\SXGTDataHook.Score.cs" />
     <Compile Include="Hooks\Text\TextHook.BmsLoader.cs" />
     <Compile Include="Hooks\Text\TextHook.BmsLoader.Search.cs" />
     <Compile Include="Hooks\Text\TextHook.cs" />

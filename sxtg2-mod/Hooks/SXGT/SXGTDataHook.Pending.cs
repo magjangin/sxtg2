@@ -174,7 +174,6 @@ namespace sxtg2.Hooks.SXGT
                     MelonLogger.Warning("[SXGTDataHook] NoteData 타입을 찾을 수 없어 커스텀 차트 주입을 건너뜁니다.");
                 }
 
-                FixMaxScoreField(sxgtDataInstance, sxgtDataType);
             }
             catch (Exception ex)
             {

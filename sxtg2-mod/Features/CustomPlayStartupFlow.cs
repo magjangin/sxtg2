@@ -43,7 +43,6 @@ namespace sxtg2.Features
             CaptureManagerPlayBgm(managerPlayInstance);
             ReplaceMedia(customContext.AlbumFolder);
 
-            HighscoreMeterHook.ApplyForCustomChart();
             SXGTDataHook.ProcessPendingNoteRemovalAndInjection();
         }
 

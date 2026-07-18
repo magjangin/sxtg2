@@ -64,20 +64,6 @@ namespace sxtg2.Hooks.Manager
                         MelonLogger.Msg("[ManagerPlayHook] PauseGame 메서드 후킹 완료 (일시정지 자켓 교체)");
                     }
 
-                    // 일시정지 관련 메서드 찾기 및 후킹
-                    var pauseMethods = new[] { "Pause", "OnPause", "SetPause", "TogglePause", "ShowPauseMenu", "OpenPauseMenu" };
-                    foreach (var methodName in pauseMethods)
-                    {
-                        var pauseMethod = managerPlayType.GetMethod(methodName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
-                        if (pauseMethod != null)
-                        {
-                            var postfix = new HarmonyMethod(typeof(ManagerPlayHook).GetMethod(nameof(PauseMethodPostfix), BindingFlags.NonPublic | BindingFlags.Static));
-                            harmony.Patch(pauseMethod, postfix: postfix);
-                            MelonLogger.Msg($"[ManagerPlayHook] {methodName} 메서드 후킹 완료");
-                            break;
-                        }
-                    }
-
                     MelonLogger.Msg("[ManagerPlayHook] 초기화 완료");
                 }
                 else
