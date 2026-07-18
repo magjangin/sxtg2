@@ -44,6 +44,13 @@ namespace sxtg2.Helpers
         {
             internal const string LaneData = "laneData";
             internal const string ItemIndexer = "Item";
+            internal const string TotalNotes = "totalNotes";
+            internal const string TotalNoteWithTicks = "totalNoteWithTicks";
+        }
+
+        internal static class HoldNoteMembers
+        {
+            internal const string TickLength = "tickLength";
         }
 
         internal static class TrackData

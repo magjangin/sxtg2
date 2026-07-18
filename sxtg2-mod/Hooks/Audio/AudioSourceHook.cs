@@ -8,6 +8,10 @@ namespace sxtg2.Hooks.Audio
 {
     public static class AudioSourceHook
     {
+        // Resources.LoadAll<AudioClip>("")는 Resources 폴더 전체(트랙 음원 포함)를 강제 로드해서
+        // 부트 초반(Warning 씬)에 비용이 크다. 디버깅 중 잠시 꺼보고 싶을 때를 위한 스위치.
+        private static readonly bool EnableKeyBlueTamResourceScan = true;
+
         private static bool _isInitialized = false;
         private static AudioClip _keyBlueTamClipCache = null;
 
@@ -69,6 +73,16 @@ namespace sxtg2.Hooks.Audio
         {
             try
             {
+                if (!EnableKeyBlueTamResourceScan)
+                {
+                    if (ModLog.IsVerbose)
+                    {
+                        MelonLogger.Msg("[AudioSourceHook] KeyBlue_Tam 리소스 스캔이 비활성화되어 있어 건너뜁니다.");
+                    }
+
+                    return;
+                }
+
                 if (_keyBlueTamClipCache != null)
                     return;
 

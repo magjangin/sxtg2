@@ -17,6 +17,12 @@ namespace sxtg2.Processors
         private const float FIRST_TICK_OFFSET = 0.188f; // 첫 틱 시작 오프셋 (timing + 0.188초)
         private static readonly Dictionary<Type, (MethodInfo clear, MethodInfo add, Type elementType)> _noteListMethodCache = new Dictionary<Type, (MethodInfo clear, MethodInfo add, Type elementType)>();
 
+        // 주입된 노트 기준으로 다시 센 개수. SXGTReader가 도너 트랙 기준으로 채워둔
+        // totalNotes/totalNoteWithTicks는 laneData만 갈아끼워서는 갱신되지 않으므로,
+        // 주입 직후 이 값으로 SXGTData 필드를 덮어써야 클리어 판정(스코어/곡 종료)이 실제 커스텀 차트와 맞는다.
+        private static int _lastInjectedTotalNotes;
+        private static int _lastInjectedTotalNoteWithTicks;
+
         public static void SetParsedBmsNotes(List<BmsParser.ParsedNote> notes)
         {
             _parsedBmsNotes = notes;
@@ -91,6 +97,9 @@ namespace sxtg2.Processors
                     notesByLane[note.Lane].Add(note);
                 }
 
+                _lastInjectedTotalNotes = 0;
+                _lastInjectedTotalNoteWithTicks = 0;
+
                 // 각 레인에 노트 주입
                 foreach (var laneGroup in notesByLane)
                 {
@@ -107,6 +116,8 @@ namespace sxtg2.Processors
                         InjectNotesIntoLane(noteList, notes, noteDataType, lane);
                     }
                 }
+
+                ApplyNoteCountsToSxgtData(sxgtDataInstance, sxgtDataType);
 
                 MelonLoader.MelonLogger.Msg($"[CustomChartInjector] {_parsedBmsNotes.Count}개의 노트 주입 완료");
                 }
@@ -155,6 +166,7 @@ namespace sxtg2.Processors
                 try
                 {
                     list.Add(gameNote);
+                    AccumulateNoteCounts(lane, parsedNote, gameNote);
                 }
                 catch (Exception ex)
                 {
@@ -186,6 +198,7 @@ namespace sxtg2.Processors
                 try
                 {
                     listMeta.add.Invoke(noteList, new object[] { gameNote });
+                    AccumulateNoteCounts(lane, parsedNote, gameNote);
                 }
                 catch (Exception ex)
                 {
@@ -243,6 +256,78 @@ namespace sxtg2.Processors
             var meta = (clear: clearMethod, add: addMethod, elementType: elementType);
             _noteListMethodCache[noteListType] = meta;
             return meta;
+        }
+
+        /// <summary>
+        /// 실제로 주입에 성공한 노트를 기준으로 totalNotes/totalNoteWithTicks 카운터를 누적합니다.
+        /// 게임 원본(SXGTReader.ReadBMSFile)은 laneData의 9,10번 레인(액션/오픈 게이트)을 집계에서 제외하고,
+        /// 홀드 노트는 tickLength만큼을 추가로 더합니다 - 여기서도 동일한 규칙을 따릅니다.
+        /// </summary>
+        private static void AccumulateNoteCounts(int lane, BmsParser.ParsedNote parsedNote, object gameNote)
+        {
+            if (lane == 9 || lane == 10)
+            {
+                return;
+            }
+
+            _lastInjectedTotalNotes++;
+            _lastInjectedTotalNoteWithTicks++;
+
+            // 원본 게임은 홀드 노트(BLUE/RED 색상)에 한해 tickLength를 추가로 더한다.
+            // BmsParser에서는 Open 타입만 게이트(레인 9) 색상으로 빠지므로, Long 타입만 여기 해당한다.
+            if (parsedNote.NoteType != BmsParser.NoteType.Long || gameNote == null)
+            {
+                return;
+            }
+
+            var tickLengthField = gameNote.GetType().GetField(
+                ReflectionMemberNames.HoldNoteMembers.TickLength,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+            if (tickLengthField?.GetValue(gameNote) is int tickLength && tickLength > 0)
+            {
+                _lastInjectedTotalNoteWithTicks += tickLength;
+            }
+        }
+
+        /// <summary>
+        /// 주입 완료 후 다시 센 노트 개수를 SXGTData 인스턴스에 반영합니다.
+        /// 이 값을 갱신하지 않으면 곡 종료/클리어 판정이 도너 트랙의 노트 개수를 기준으로 동작합니다.
+        /// </summary>
+        private static void ApplyNoteCountsToSxgtData(object sxgtDataInstance, Type sxgtDataType)
+        {
+            try
+            {
+                bool setNotes = SetIntField(sxgtDataInstance, sxgtDataType,
+                    ReflectionMemberNames.SXGTDataMembers.TotalNotes, _lastInjectedTotalNotes);
+                bool setTicks = SetIntField(sxgtDataInstance, sxgtDataType,
+                    ReflectionMemberNames.SXGTDataMembers.TotalNoteWithTicks, _lastInjectedTotalNoteWithTicks);
+
+                if (setNotes && setTicks)
+                {
+                    MelonLogger.Msg($"[CustomChartInjector] 노트 개수 재계산 완료: totalNotes={_lastInjectedTotalNotes}, totalNoteWithTicks={_lastInjectedTotalNoteWithTicks}");
+                }
+                else
+                {
+                    MelonLogger.Warning("[CustomChartInjector] totalNotes/totalNoteWithTicks 필드를 찾지 못해 재계산 값을 반영하지 못했습니다.");
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[CustomChartInjector] 노트 개수 재계산 반영 실패: {ex.Message}");
+            }
+        }
+
+        private static bool SetIntField(object instance, Type type, string fieldName, int value)
+        {
+            var field = type.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            if (field == null)
+            {
+                return false;
+            }
+
+            field.SetValue(instance, value);
+            return true;
         }
     }
 }

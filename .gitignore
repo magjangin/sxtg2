@@ -3,6 +3,9 @@
 [Oo]bj/
 artifacts/
 
+# Decompiled game assembly (generated via ilspycmd, not our source)
+/sxtg2/
+
 # Visual Studio and IDE state
 .vs/
 .idea/

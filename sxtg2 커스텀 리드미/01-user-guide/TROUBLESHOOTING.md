@@ -47,6 +47,13 @@
 - 스코어 제한 해제는 `MaxScore/targetBestScore/SXGTData` 보정이 결합되어 동작합니다.
 - 클리어 사운드는 `clear*`를 감지해 `KeyBlue_Tam`으로 교체합니다.
 - 만약 다른 사운드까지 바뀌면 clipName 탐지 로직이 “clear”를 과하게 잡는지 로그로 확인하세요.
+- **(2026-07-18 수정됨) 곡 중간에 클리어 사운드가 튀어나오던 문제**: 원인은 `totalNotes`/`totalNoteWithTicks`가
+  커스텀 차트가 아니라 도너 트랙의 노트 개수로 남아있던 것이었습니다. `CustomChartInjector`가 노트 주입 직후
+  이 값을 실제 주입된 노트 수로 재계산하도록 고쳤습니다. 자세한 내용은 `02-systems/SCORE_SYSTEM.md`를 참고하세요.
+  - 확인 포인트: 로그에 `[CustomChartInjector] 노트 개수 재계산 완료: totalNotes=..., totalNoteWithTicks=...`가
+    찍히는지, 그 값이 도너 트랙이 아니라 실제 커스텀 BMS 파일의 노트 개수와 비슷한지 확인하세요.
+  - `totalNotes/totalNoteWithTicks 필드를 찾지 못해...` 경고가 뜨면 게임 빌드가 바뀌어 필드 이름이
+    달라졌을 가능성이 있습니다 (`ReflectionMemberNames.SXGTDataMembers`).
 
 
 
