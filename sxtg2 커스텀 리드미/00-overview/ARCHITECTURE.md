@@ -24,8 +24,8 @@ Game / Unity
 
 - `Hooks/Text`: 플레이 로딩 텍스트 감지와 BMS 로드 보조 경로
 - `Hooks/Manager`: MusicSelect/Play 매니저 후킹
-- `Hooks/SXGT`: `SXGTData` 생성자 후킹, 원본 노트 제거, 스코어 보정
-- `Hooks/Audio`: BGA/BGM/preview/사운드 교체
+- `Hooks/SXGT`: `SXGTData` 생성자 후킹, 원본 노트 제거, 커스텀 노트 수 갱신
+- `Hooks/Audio`: BGA/BGM/preview 교체 및 동기화
 
 ### Features
 

@@ -329,7 +329,7 @@ private static void ChangeTrackCursorPostfix(object __instance, int delta)
       └─ SXGTDataHook.ProcessPendingNoteRemovalAndInjection
          ├─ 원본 노트 제거 (ClearAllNotes) + 타입/생성자 캐시
          ├─ 커스텀 차트 주입 (InjectBmsNotesToLaneData)
-         └─ 스코어 제한 해제 (FixMaxScoreField 등)
+         └─ totalNotes/totalNoteWithTicks 갱신
 ```
 
 ---
@@ -454,12 +454,12 @@ CreateGameNote(parsedNote, noteDataType)
 - **원본 노트 제거**: ManagerPlayHook 메서드 호출 시점
 - **커스텀 차트 주입**: 원본 노트 제거 직후
 
-### 4-1. 스코어 제한 해제(현재 코드 기준)
-- `SXGTReader.MaxScore = -1f`
-- `ManagerPlay.targetBestScore = -1f`
-- `SXGTData`의 스코어 관련 필드 보정(가능한 경우)
+### 4-1. 스코어/종료 판정 값 갱신(현재 코드 기준)
+- `CustomChartInjector`가 주입된 노트 수를 집계합니다.
+- `SXGTData.totalNotes`와 `totalNoteWithTicks`를 갱신합니다.
+- `MaxScore`, `targetBestScore` 직접 보정은 사용하지 않습니다.
 
-> 참고: `NumberInterpolatorHook`은 현재 코드에서 비활성화되어 있으며, 스코어 제한 해제의 필수 구성요소가 아닙니다.
+> 참고: `NumberInterpolatorHook`은 현재 코드에서 비활성화되어 있습니다.
 
 ### 5. tickTime 생성 규칙
 - 첫 틱: `timing + 0.188초`
@@ -519,8 +519,6 @@ CreateGameNote(parsedNote, noteDataType)
 - [BMS_PARSING.md](BMS_PARSING.md): BMS 파일 파싱 상세
 - [IMPLEMENTATION.md](IMPLEMENTATION.md): 구현 상세 및 후킹 과정
 - [DOCUMENTATION.md](DOCUMENTATION.md): 종합 참조 문서
-
-
 
 
 

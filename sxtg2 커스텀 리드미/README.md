@@ -31,7 +31,7 @@ sxtg2 커스텀 리드미/
 - C# 소스 파일은 `sxtg2-mod/` 기준 87개입니다. (`bin`, `obj`, `.vs` 제외)
 - `BmsFileResolver`가 BMS 확장자와 파일 선택 규칙을 공통 관리합니다.
 - `SXGTReaderHook`, `InitialMediaFileScanner`, `NumberInterpolatorHook`, 미사용 모델/조작기/진단 파일은 제거되었습니다.
-- 스코어 보정은 `SXGTReader.MaxScore`와 `SXGTData.maxScore` 중심입니다. `ManagerPlay.targetBestScore` 보정은 제거되었습니다.
+- 스코어/종료 판정은 `CustomChartInjector`가 `SXGTData.totalNotes`와 `totalNoteWithTicks`를 갱신합니다.
 - `TextHook`는 아직 플레이 로딩 텍스트 감지 보조 경로로 남아 있습니다.
 
 ## 문서 신뢰도

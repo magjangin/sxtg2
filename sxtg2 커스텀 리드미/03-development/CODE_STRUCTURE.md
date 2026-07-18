@@ -110,7 +110,7 @@ Features/
 
 핵심:
 
-- `CustomPlayStartupFlow`: 플레이 시작 시 커스텀 트랙 확정, BMS 로드, 미디어 교체, 스코어 보정, 노트 주입을 조율합니다.
+- `CustomPlayStartupFlow`: 플레이 시작 시 커스텀 트랙 확정, BMS 로드, 미디어 교체, 노트 주입을 조율합니다.
 - `MusicSelectAnalyzer`: MusicSelect 씬에서 TrackData 리스트를 찾아 커스텀 트랙을 주입합니다.
 - `TrackDataAnalyzer`: 원본 TrackData 복제, info.txt 적용, 난이도 설정, trackDatas 리스트 추가를 담당합니다.
 - `SceneDetector`: 씬 변경 감지와 지연 실행을 담당합니다.
@@ -128,9 +128,7 @@ Hooks/Audio/
 ├── BGMPlayerHook.cs
 ├── BGMPlayerHook.Playback.cs
 ├── BgmAudioSourceFinder.cs
-├── BgmFileResolver.cs
-├── HighscoreMeterHook.Score.cs
-└── HighscoreMeterHook.SXGTReader.cs
+└── BgmFileResolver.cs
 ```
 
 초기 전체 미디어 스캔은 없습니다. 실제 교체 시점에 앨범 폴더에서 파일을 선택합니다.
@@ -144,7 +142,7 @@ Hooks/Manager/
 ```
 
 - `ManagerMusicSelectHook`: 선택 변경, 썸네일, preview 음악을 처리합니다.
-- `ManagerPlayHook`: 플레이 시작 감지와 ESC 일시정지 처리를 담당합니다.
+- `ManagerPlayHook`: 플레이 시작 감지와 원본 `PauseGame` 이후 커스텀 자켓 적용을 담당합니다.
 
 ### SXGT
 
@@ -154,8 +152,7 @@ Hooks/SXGT/
 ├── SXGTDataHook.NoteOps.cs
 ├── SXGTDataHook.NoteOps.Constructors.cs
 ├── SXGTDataHook.NoteTypeExtraction.cs
-├── SXGTDataHook.Pending.cs
-└── SXGTDataHook.Score.cs
+└── SXGTDataHook.Pending.cs
 ```
 
 `SXGTReaderHook`은 제거되었습니다. 현재 주입 핵심은 `SXGTDataHook`입니다.
@@ -184,7 +181,7 @@ Hooks/Text/
 - `Helpers/ManagerMusicSelectBridge.cs`: ManagerMusicSelect 접근
 - `Helpers/Reflection/*`: 타입/필드/메서드 탐색
 - `Helpers/Game/GameLaneDataHelper.cs`: `SXGTData.laneData` 접근
-- `Helpers/Pause/*`: ESC 일시정지 메뉴 호출
+- `Helpers/Pause/*`: 원본 일시정지 창의 `jacketImage`에 커스텀 썸네일 적용
 - `Helpers/Screen/*`: PlayLoading/Result 자켓 이미지 적용
 
 ## Loaders

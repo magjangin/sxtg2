@@ -8,22 +8,13 @@
 
 ## 현재 코드 경로
 
-- `Hooks/Audio/HighscoreMeterHook.Score.cs`
-- `Hooks/Audio/HighscoreMeterHook.SXGTReader.cs`
-- `Hooks/Audio/HighscoreMeterHook.SoundObject.cs`
-- `Hooks/Audio/HighscoreMeterHook.AudioClip.cs`
-- `Hooks/SXGT/SXGTDataHook.Score.cs`
+- `Hooks/SXGT/SXGTDataHook.Pending.cs`
 - `Processors/CustomChartInjector.cs` (`AccumulateNoteCounts` / `ApplyNoteCountsToSxgtData`)
 
 ## 적용 시점
 
 ```text
-CustomPlayStartupFlow.Run
-  -> HighscoreMeterHook.ApplyForCustomChart
-  -> FixSXGTReaderMaxScore
-
 SXGTDataHook.ProcessPendingNoteRemovalAndInjection
-  -> FixMaxScoreField
   -> CustomChartInjector.InjectBmsNotesToLaneData
        -> (레인별 노트 주입 중 AccumulateNoteCounts로 누적)
        -> ApplyNoteCountsToSxgtData (마지막에 1회, totalNotes/totalNoteWithTicks 덮어쓰기)
@@ -31,8 +22,6 @@ SXGTDataHook.ProcessPendingNoteRemovalAndInjection
 
 ## 현재 보정 대상
 
-- `SXGTReader.MaxScore`
-- `SXGTData.maxScore`
 - `SXGTData.totalNotes` / `SXGTData.totalNoteWithTicks` (2026-07-18 추가)
 - 원본 `Clear_FullCombo`/`Clear_Normal` 사운드 재생(모드 교체 없음)
 
@@ -50,9 +39,8 @@ SXGTDataHook.ProcessPendingNoteRemovalAndInjection
 곡이 중간에 끝난 것처럼 처리되어 `Clear_FullCombo`/`Clear_Normal`이
 부적절한 시점에 재생되는 증상으로 나타났습니다.
 
-`maxScore`/`MaxScore` 보정(`FixMaxScoreField`, `FixSXGTReaderMaxScore`)은 애초에 저 스코어 계산식이
-참조하지 않는 필드라 효과가 없었습니다 (게다가 `FixSXGTReaderMaxScore`는 static 필드로 찾도록
-되어 있는데 실제 `SXGTReader.MaxScore`는 인스턴스 필드라 항상 no-op이었습니다).
+이전의 `maxScore`/`MaxScore` 보정은 디컴파일 원본의 실제 판정식이 참조하지 않는 필드라 효과가
+없었습니다. 해당 보정 파일과 호출부는 현재 제거된 상태입니다.
 
 **수정**: `CustomChartInjector`가 노트를 레인에 실제로 주입하는 동안 성공한 노트 수를 직접 세어
 (원본 게임과 동일하게 레인 9/10 제외, 홀드 노트는 `tickLength`만큼 추가) 주입이 끝난 직후

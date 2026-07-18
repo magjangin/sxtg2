@@ -39,7 +39,6 @@ ManagerPlay hook
   -> TextHook.LoadAndInjectBmsForTrack
   -> BGAPlayerHook.ReplacePlaySceneBGA
   -> BGMPlayerHook.ReplacePlaySceneBGM
-  -> HighscoreMeterHook.ApplyForCustomChart
   -> SXGTDataHook.ProcessPendingNoteRemovalAndInjection
 ```
 
@@ -66,11 +65,11 @@ Album folder
 
 ```text
 CustomPlayStartupFlow
-  -> HighscoreMeterHook.ApplyForCustomChart
-     -> SXGTReader.MaxScore 보정
+  -> SXGTDataHook.ProcessPendingNoteRemovalAndInjection
+     -> CustomChartInjector가 totalNotes/totalNoteWithTicks 갱신
 
 SXGTDataHook
-  -> SXGTData.maxScore 보정
+  -> totalNotes/totalNoteWithTicks 갱신
 ```
 
 `ManagerPlay.targetBestScore` 보정은 제거되었습니다.

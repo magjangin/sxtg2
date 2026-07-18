@@ -50,6 +50,11 @@
   - BMS 파일 확장자와 파일 선택 규칙 통합
 - 불필요한 경고 제거
   - `ManagerPlay.targetBestScore` 보정 제거
+- 2026-07-18 불필요 코드 정리
+  - `HighscoreMeterHook` 및 `SoundObjectClipAccessor` 삭제
+  - `SXGTDataHook.Score`의 무효한 `maxScore` 보정 삭제
+  - ESC 강제 일시정지 호출/탐색 코드 삭제
+  - 원본 `PauseGame` 이후 커스텀 자켓 적용만 유지
 
 ## 현재 핵심 흐름
 

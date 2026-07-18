@@ -269,9 +269,9 @@ private static void StopAndMuteAllAudioSources()
 게임 원본의 `Clear_FullCombo`/`Clear_Normal` 재생 로직을 그대로 사용하며, 커스텀 차트의
 곡 종료 시점은 `SXGTData.totalNoteWithTicks` 재계산으로 보정합니다.
 
-커스텀 차트 스코어 관련 처리는 `HighscoreMeterHook.Score.cs`와
-`Hooks/SXGT/SXGTDataHook.Score.cs`에 남아 있지만, `SoundObject.Play`/
-`PlayAndDestroy` 후킹은 삭제되었습니다.
+커스텀 차트의 노트 수와 곡 종료 판정은 `CustomChartInjector`가
+`SXGTData.totalNotes`/`totalNoteWithTicks`를 갱신하는 방식으로 처리합니다.
+이전의 `HighscoreMeterHook` 및 `SoundObject.Play`/`PlayAndDestroy` 후킹은 제거되었습니다.
 
 ---
 

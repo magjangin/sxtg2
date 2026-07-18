@@ -63,8 +63,8 @@ public class SXGTDataHook
         // 2. 커스텀 차트 주입
         CustomChartInjector.InjectBmsNotesToLaneData(_currentSXGTData);
 
-        // 3. 스코어 제한 해제
-        FixMaxScoreField(_currentSXGTData);
+        // 3. 주입된 노트 수를 기준으로 종료/스코어 판정 값 갱신
+        ApplyNoteCountsToSxgtData(_currentSXGTData);
     }
 
     private static void ClearAllNotes(object sxgtData)

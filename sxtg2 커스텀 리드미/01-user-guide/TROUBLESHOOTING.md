@@ -44,7 +44,8 @@
 
 ## 5) Score/클리어 사운드가 이상함
 
-- 스코어 제한 해제는 `MaxScore/targetBestScore/SXGTData` 보정이 결합되어 동작합니다.
+- 커스텀 차트의 스코어/종료 판정은 주입된 노트 수를 `SXGTData.totalNotes`/
+  `totalNoteWithTicks`에 반영하는 방식으로 동작합니다. `MaxScore` 보정 훅은 사용하지 않습니다.
 - 클리어 사운드는 모드가 교체하지 않고 게임 원본을 그대로 재생합니다.
 - **(2026-07-18 수정됨) 곡 중간에 클리어 사운드가 튀어나오던 문제**: 원인은 `totalNotes`/`totalNoteWithTicks`가
   커스텀 차트가 아니라 도너 트랙의 노트 개수로 남아있던 것이었습니다. `CustomChartInjector`가 노트 주입 직후
@@ -56,7 +57,6 @@
 - **(2026-07-18) 클리어 사운드 교체 코드 제거**: 위 근본 원인 수정 후 실게임에서
   `Clear_FullCombo`/`Clear_Normal`이 정상 타이밍에 재생되는 것을 확인했습니다. 이에 따라
   `KeyBlue_Tam` 교체와 `SoundObject.Play`/`PlayAndDestroy` 후킹을 삭제했습니다.
-
 
 
 

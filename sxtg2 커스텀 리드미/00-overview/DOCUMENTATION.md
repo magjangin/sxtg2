@@ -32,7 +32,7 @@ Main.OnInitializeMelon
 - `SXGTReaderHook.Initialize`
 - `NumberInterpolatorHook.Initialize`
 - 초기 미디어 전체 스캔
-- `HighscoreMeterHook.Initialize` 및 클리어 사운드 교체 후킹
+- 하이스코어/클리어 사운드 교체 후킹은 제거되었습니다.
 
 ## BMS 선택과 파싱
 
@@ -58,7 +58,6 @@ ManagerPlayHook
      -> BGMPlayerHook.SetManagerPlayBGM
      -> BGAPlayerHook.ReplacePlaySceneBGA
      -> BGMPlayerHook.ReplacePlaySceneBGM
-     -> HighscoreMeterHook.ApplyForCustomChart
      -> SXGTDataHook.ProcessPendingNoteRemovalAndInjection
 ```
 
@@ -70,7 +69,7 @@ SXGTDataHook.ProcessPendingNoteRemovalAndInjection
   -> ExtractNoteDataTypeFromLaneData
   -> ClearAllNotes
   -> CustomChartInjector.InjectBmsNotesToLaneData
-  -> FixMaxScoreField
+  -> CustomChartInjector가 totalNotes/totalNoteWithTicks 갱신
 ```
 
 `SXGTReaderHook` 기반 진단 후킹은 제거되었습니다. 현재 핵심 주입 경로는 `SXGTDataHook`와 `ManagerPlayHook`입니다.
@@ -89,10 +88,10 @@ SXGTDataHook.ProcessPendingNoteRemovalAndInjection
 
 ## 스코어 보정
 
-- `HighscoreMeterHook.ApplyForCustomChart`가 커스텀 차트에서만 동작합니다.
-- `SXGTReader.MaxScore` 보정은 유지됩니다.
-- `SXGTData.maxScore` 보정은 `SXGTDataHook.Score`에서 처리합니다.
-- `ManagerPlay.targetBestScore` 보정은 타입 불일치 경고 때문에 제거되었습니다.
+- 별도의 `MaxScore` 보정 훅은 제거되었습니다. 원본 판정식은 `bms.totalNotes`와
+  `bms.totalNoteWithTicks`를 사용합니다.
+- `CustomChartInjector`가 커스텀 노트 주입 후 두 값을 다시 계산합니다.
+- `ManagerPlay.targetBestScore` 보정도 사용하지 않습니다.
 
 ## 최신 문서 위치
 

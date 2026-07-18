@@ -476,7 +476,8 @@ foreach (var field in fields)
 4. `TextHook.LoadAndInjectBmsForTrack(trackId, displayName)`로 플레이 직전 BMS를 다시 로드합니다.
 5. BGA/BGM 교체 플래그를 리셋하고 `ManagerPlay.bgm` 필드가 있으면 `BGMPlayerHook`에 넘깁니다.
 6. `BGAPlayerHook.ReplacePlaySceneBGA(albumFolder)` / `BGMPlayerHook.ReplacePlaySceneBGM(albumFolder)`를 호출합니다.
-7. `HighscoreMeterHook.ApplyForCustomChart()`와 `SXGTDataHook.ProcessPendingNoteRemovalAndInjection()`을 순서대로 실행합니다.
+7. `SXGTDataHook.ProcessPendingNoteRemovalAndInjection()`을 실행합니다. 이 과정에서
+   `CustomChartInjector`가 커스텀 노트 수를 기준으로 `totalNotes`와 `totalNoteWithTicks`를 갱신합니다.
 
 ### BGA 교체
 
@@ -730,7 +731,7 @@ public static void Lock()
 - **SXGTDataHook.cs 계열** - 핵심 후킹 파일
   - SXGTData 생성자 후킹
   - 커스텀 차트 주입 트리거
-  - 타입 추출은 `SXGTDataHook.NoteTypeExtraction.cs`, 스코어 처리는 `SXGTDataHook.Score.cs`
+  - 타입 추출은 `SXGTDataHook.NoteTypeExtraction.cs`, 노트 수 갱신은 `CustomChartInjector`가 처리
 
 - **TrackDataAnalyzer.cs 계열**
   - TrackData 분석 및 주입
@@ -743,9 +744,8 @@ public static void Lock()
   - UnityWebRequest로 비동기 로드
 
 - **PauseMethodHelper.cs 계열**
-  - `CallPauseMenu()`: ESC 키로 일시정지 메뉴 호출
-    - `LogSXGTDataDetails()`: 씬의 모든 Image 컴포넌트 열거
-    - `SetEyecatchImage()`: Eyecatch Image에 썸네일 설정
+  - 원본 `ManagerPlay.PauseGame()` Postfix에서 `RG_PS_Pause.jacketImage`에 커스텀 썸네일을 설정합니다.
+  - ESC를 직접 감지하거나 일시정지 메뉴를 강제로 호출하지 않습니다.
     - `RG_PS_Pause.Show()` 호출하여 일시정지 메뉴 표시
   - `SetEyecatchImage()`: Eyecatch 이미지 설정
     - ManagerPlay에서 TrackData 찾기 (playTrack → trackData → bms 순서)
@@ -811,5 +811,3 @@ public static void Lock()
 - [GAME_LOGIC.md](GAME_LOGIC.md): 게임 로직 분석 및 노트 생성 과정
 - [BMS_PARSING.md](BMS_PARSING.md): BMS 파일 파싱 상세
 - [DOCUMENTATION.md](DOCUMENTATION.md): 종합 참조 문서
-
-
