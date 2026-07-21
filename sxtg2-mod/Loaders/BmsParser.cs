@@ -1,7 +1,7 @@
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System;
 
 namespace sxtg2.Loaders
 {
@@ -240,8 +240,251 @@ namespace sxtg2.Loaders
             return DefaultNoteValueWidth;
         }
 
+    
+
+        // ==========================================
+        // Merged from separate partial files
+        // ==========================================
+
+        private static void ParseNoteData(string channel, string data, List<ParsedNote> notes, List<BpmData> dataList, int noteValueWidth)
+        {
+            try
+            {
+                ParseNoteChannelHeader(channel, out int measure, out string channelNum);
+
+                if (!LaneMapping.ContainsKey(channelNum) && channelNum != "04" && channelNum != "05")
+                    return;
+
+                var objLength = data.Length / noteValueWidth;
+                if (objLength == 0)
+                    return;
+
+                AppendParsedNotesFromChannelData(data, measure, channelNum, objLength, notes, dataList, noteValueWidth);
+            }
+            catch (Exception ex)
+            {
+                MelonLoader.MelonLogger.Error($"[BmsParser] 노트 데이터 파싱 오류: {ex.Message}");
+            }
+        }
+
+        private static void ParseNoteChannelHeader(string channel, out int measure, out string channelNum)
+        {
+            measure = 0;
+            channelNum = channel;
+
+            if (channel.Length >= 5)
+            {
+                var measureStr = channel.Substring(0, channel.Length - 2);
+                channelNum = channel.Substring(channel.Length - 2);
+                if (int.TryParse(measureStr, out int m))
+                    measure = m;
+            }
+            else if (channel.Length >= 2)
+            {
+                channelNum = channel.Substring(channel.Length - 2);
+                measure = 0;
+            }
+        }
+
+        private static void AppendParsedNotesFromChannelData(string data, int measure, string channelNum, int objLength, List<ParsedNote> notes, List<BpmData> dataList, int noteValueWidth)
+        {
+            for (int i = 0; i < data.Length; i += noteValueWidth)
+            {
+                if (i + noteValueWidth > data.Length)
+                    break;
+
+                var noteValue = data.Substring(i, noteValueWidth);
+                if (IsEmptyNoteValue(noteValue))
+                    continue;
+
+                var noteTypeKey = NormalizeNoteTypeKey(noteValue);
+                if (!NoteTypeMapping.ContainsKey(noteTypeKey))
+                    continue;
+
+                var noteType = NoteTypeMapping[noteTypeKey];
+                if (!TryResolveNoteLane(noteType, channelNum, out int lane))
+                    continue;
+
+                var tick = (float)measure + ((float)(i / noteValueWidth) / objLength);
+                var time = CalculateTime(tick, dataList);
+
+                notes.Add(new ParsedNote
+                {
+                    Time = time,
+                    Lane = lane,
+                    NoteType = noteType,
+                    OriginalNoteValue = noteValue
+                });
+            }
+        }
+
+        private static bool IsEmptyNoteValue(string noteValue)
+        {
+            for (int i = 0; i < noteValue.Length; i++)
+            {
+                if (noteValue[i] != '0')
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static string NormalizeNoteTypeKey(string noteValue)
+        {
+            if (noteValue.Length == ExtendedNoteValueWidth && noteValue[0] == '0')
+                return noteValue.Substring(1);
+
+            return noteValue;
+        }
+
+        private static bool TryResolveNoteLane(NoteType noteType, string channelNum, out int lane)
+        {
+            if (noteType == NoteType.Open || noteType == NoteType.Close)
+            {
+                lane = 9;
+                return true;
+            }
+
+            if (LaneMapping.ContainsKey(channelNum))
+            {
+                lane = LaneMapping[channelNum];
+                return true;
+            }
+
+            lane = 0;
+            return false;
+        }
+
+        private static float CalculateTime(float tick, List<BpmData> dataList)
+        {
+            if (dataList == null || dataList.Count == 0)
+            {
+                return tick * 0.4f;
+            }
+
+            var firstBpm = dataList[0];
+            return tick * 4f * firstBpm.Freq;
+        }
+
+
+
+        private static void CalculateHoldNoteLengths(List<ParsedNote> notes, ParseStatistics statistics)
+        {
+            var notesByLane = notes.GroupBy(n => n.Lane).ToDictionary(g => g.Key, g => g.OrderBy(n => n.Time).ToList());
+
+            foreach (var laneGroup in notesByLane)
+            {
+                if (laneGroup.Key != 9)
+                    ApplyStandardLaneHoldLengths(laneGroup.Key, laneGroup.Value, statistics);
+                else
+                    ApplyOpenLaneHoldLengths(laneGroup.Value, statistics);
+            }
+        }
+
+        private static void ApplyStandardLaneHoldLengths(int lane, List<ParsedNote> laneNotes, ParseStatistics statistics)
+        {
+            ParsedNote pendingLongNote = null;
+
+            for (int i = 0; i < laneNotes.Count; i++)
+            {
+                var note = laneNotes[i];
+
+                if (note.NoteType == NoteType.Long)
+                {
+                    if (pendingLongNote != null)
+                    {
+                        statistics.MissingEndNotes.Add(new MissingEndNoteInfo
+                        {
+                            Lane = lane,
+                            Time = pendingLongNote.Time,
+                            NoteType = "Long"
+                        });
+                    }
+                    pendingLongNote = note;
+                }
+                else if (note.NoteType == NoteType.HoldEnd)
+                {
+                    if (pendingLongNote != null)
+                    {
+                        pendingLongNote.Length = note.Time - pendingLongNote.Time;
+                        pendingLongNote = null;
+                    }
+                    else
+                    {
+                        statistics.OrphanEndNotes.Add(new MissingEndNoteInfo
+                        {
+                            Lane = lane,
+                            Time = note.Time,
+                            NoteType = "HoldEnd"
+                        });
+                    }
+                }
+            }
+
+            if (pendingLongNote != null)
+            {
+                statistics.MissingEndNotes.Add(new MissingEndNoteInfo
+                {
+                    Lane = lane,
+                    Time = pendingLongNote.Time,
+                    NoteType = "Long"
+                });
+            }
+        }
+
+        private static void ApplyOpenLaneHoldLengths(List<ParsedNote> laneNotes, ParseStatistics statistics)
+        {
+            const int lane = 9;
+            ParsedNote pendingOpenNote = null;
+
+            for (int i = 0; i < laneNotes.Count; i++)
+            {
+                var note = laneNotes[i];
+
+                if (note.NoteType == NoteType.Open)
+                {
+                    if (pendingOpenNote != null)
+                    {
+                        statistics.MissingEndNotes.Add(new MissingEndNoteInfo
+                        {
+                            Lane = lane,
+                            Time = pendingOpenNote.Time,
+                            NoteType = "Open"
+                        });
+                    }
+                    pendingOpenNote = note;
+                }
+                else if (note.NoteType == NoteType.Close)
+                {
+                    if (pendingOpenNote != null)
+                    {
+                        pendingOpenNote.Length = note.Time - pendingOpenNote.Time;
+                        pendingOpenNote = null;
+                    }
+                    else
+                    {
+                        statistics.OrphanEndNotes.Add(new MissingEndNoteInfo
+                        {
+                            Lane = lane,
+                            Time = note.Time,
+                            NoteType = "Close"
+                        });
+                    }
+                }
+            }
+
+            if (pendingOpenNote != null)
+            {
+                statistics.MissingEndNotes.Add(new MissingEndNoteInfo
+                {
+                    Lane = lane,
+                    Time = pendingOpenNote.Time,
+                    NoteType = "Open"
+                });
+            }
+        }
+
+
+    
     }
 }
-
-
-

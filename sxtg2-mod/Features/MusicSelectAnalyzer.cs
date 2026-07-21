@@ -141,7 +141,6 @@ namespace sxtg2.Features
                                     if (enumerator.MoveNext())
                                     {
                                         object firstTrack = enumerator.Current;
-                                        TrackDataAnalyzer.AnalyzeTrackData(firstTrack);
                                         
                                         // 다중 앨범 지원: 모든 BMS 파일에 대해 TrackData 생성 및 주입
                                         TrackDataAnalyzer.InjectMultipleTrackData(firstTrack, trackDatasValue, trackDatasField, instance);
