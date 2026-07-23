@@ -13,13 +13,7 @@ namespace sxtg2.Hooks.Audio
                 return preferredAudioSource;
             }
 
-            var fromAudioSources = FindFromAudioSources();
-            if (fromAudioSources != null)
-            {
-                return fromAudioSources;
-            }
-
-            return FindFromGameObjects();
+            return FindFromAudioSources();
         }
 
         private static AudioSource FindFromAudioSources()
@@ -49,27 +43,6 @@ namespace sxtg2.Hooks.Audio
             {
                 MelonLogger.Msg($"[BGMPlayerHook] 첫 번째 AudioSource 사용: {allAudioSources[0].name}");
                 return allAudioSources[0];
-            }
-
-            return null;
-        }
-
-        private static AudioSource FindFromGameObjects()
-        {
-            var allGameObjects = Object.FindObjectsOfType<GameObject>();
-            foreach (var go in allGameObjects)
-            {
-                if (go == null)
-                {
-                    continue;
-                }
-
-                var audioSource = go.GetComponent<AudioSource>();
-                if (audioSource != null)
-                {
-                    MelonLogger.Msg($"[BGMPlayerHook] GameObject에서 AudioSource 발견: {go.name}");
-                    return audioSource;
-                }
             }
 
             return null;

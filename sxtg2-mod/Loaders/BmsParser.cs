@@ -110,6 +110,39 @@ namespace sxtg2.Loaders
                 }
             }
 
+            if (!File.Exists(fullPath))
+            {
+                return null;
+            }
+
+            var lines = File.ReadAllLines(fullPath);
+            var result = ParseBmsFromLines(lines);
+
+            if (result != null)
+            {
+                lock (s_parseStatsFileCacheLock)
+                {
+                    s_parseStatsFileCache[fullPath] = (versionTicks, result);
+                }
+            }
+
+            return result;
+        }
+
+        public static ParseResult ParseBmsFromText(string text, string sourceName = "inline")
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return null;
+            }
+            var lines = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            return ParseBmsFromLines(lines);
+        }
+
+        public static ParseResult ParseBmsFromLines(string[] lines)
+        {
+            if (lines == null) return null;
+
             var notes = new List<ParsedNote>();
             var dataList = new List<BpmData>();
             var bpmDict = new Dictionary<string, float>();
@@ -117,7 +150,6 @@ namespace sxtg2.Loaders
 
             try
             {
-                var lines = File.ReadAllLines(filePath);
                 int noteValueWidth = DetectNoteValueWidth(lines);
 
                 foreach (var rawLine in lines)
@@ -202,25 +234,18 @@ namespace sxtg2.Loaders
                 // HoldEnd와 Close 노트 제거
                 notes.RemoveAll(n => n.NoteType == NoteType.HoldEnd || n.NoteType == NoteType.Close);
                 statistics.TotalNotes = notes.Count; // 제거 후 실제 노트 개수
+
+                return new ParseResult
+                {
+                    Notes = notes,
+                    Statistics = statistics
+                };
             }
             catch (Exception ex)
             {
                 MelonLoader.MelonLogger.Error($"[BmsParser] 파싱 오류: {ex.Message}");
                 return null;
             }
-
-            var parseResult = new ParseResult
-            {
-                Notes = notes,
-                Statistics = statistics
-            };
-
-            lock (s_parseStatsFileCacheLock)
-            {
-                s_parseStatsFileCache[fullPath] = (versionTicks, parseResult);
-            }
-
-            return parseResult;
         }
 
         private static int DetectNoteValueWidth(IEnumerable<string> lines)

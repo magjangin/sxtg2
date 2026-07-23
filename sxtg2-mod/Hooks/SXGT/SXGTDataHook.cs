@@ -4,77 +4,32 @@ using System.Linq;
 using System.Reflection;
 using System;
 using UnityEngine;
+using RhythmGame;
 using sxtg2.Helpers.Finders;
 using sxtg2.Helpers.Track;
 using sxtg2.Helpers;
 
 namespace sxtg2.Hooks.SXGT
 {
+    [HarmonyPatch(typeof(SXGTData))]
     public static partial class SXGTDataHook
     {
         private static bool _isInitialized = false;
 
         public static void Initialize()
         {
-            MelonLogger.Msg("[SXGTDataHook] Initialize() 호출됨");
-            
             if (_isInitialized)
             {
-                MelonLogger.Msg("[SXGTDataHook] 이미 초기화됨, 리턴");
                 return;
             }
 
-            try
-            {
-                MelonLogger.Msg("[SXGTDataHook] 초기화 시작...");
-                
-                var harmony = new HarmonyLib.Harmony("sxtg2.SXGTDataHook");
-
-                // SXGTData 타입 찾기
-                var sxgtDataType = Helpers.TypeFinderHelper.FindType("SXGTData");
-                if (sxgtDataType == null)
-                {
-                    MelonLogger.Warning("[SXGTDataHook] SXGTData 타입을 찾을 수 없습니다.");
-                    return;
-                }
-
-                // 생성자 찾기
-                var constructors = sxgtDataType.GetConstructors();
-                if (constructors.Length == 0)
-                {
-                    MelonLogger.Warning("[SXGTDataHook] SXGTData 생성자를 찾을 수 없습니다.");
-                    return;
-                }
-
-                // 모든 생성자 후킹
-                var postfix = new HarmonyMethod(typeof(SXGTDataHook).GetMethod(nameof(SXGTDataConstructorPostfix), BindingFlags.NonPublic | BindingFlags.Static));
-                int patchedCount = 0;
-                
-                foreach (var constructor in constructors)
-                {
-                    try
-                    {
-                        harmony.Patch(constructor, postfix: postfix);
-                        patchedCount++;
-                        MelonLogger.Msg($"[SXGTDataHook] 생성자 후킹 완료: {constructor.GetParameters().Length}개 매개변수");
-                    }
-                    catch (Exception ex)
-                    {
-                        MelonLogger.Warning($"[SXGTDataHook] 생성자 후킹 실패: {ex.Message}");
-                    }
-                }
-
-                MelonLogger.Msg($"[SXGTDataHook] 초기화 완료 ({patchedCount}/{constructors.Length}개 생성자 후킹)");
-                _isInitialized = true;
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"[SXGTDataHook] 초기화 실패: {ex.Message}");
-                MelonLogger.Error(ex.StackTrace);
-            }
+            MelonLogger.Msg("[SXGTDataHook] Initialize() - 자동 HarmonyPatch 적용 상태");
+            _isInitialized = true;
         }
 
-        private static void SXGTDataConstructorPostfix(ref object __instance)
+        [HarmonyPatch(MethodType.Constructor, new Type[] { typeof(int) })]
+        [HarmonyPostfix]
+        private static void SXGTDataConstructorPostfix(SXGTData __instance)
         {
             try
             {
@@ -84,12 +39,7 @@ namespace sxtg2.Hooks.SXGT
                     return;
                 }
 
-                var sxgtDataType = __instance.GetType();
-                if (sxgtDataType == null)
-                {
-                    MelonLogger.Warning("[SXGTDataHook] SXGTData 타입을 찾을 수 없습니다.");
-                    return;
-                }
+                Type sxgtDataType = typeof(SXGTData);
 
                 // 원본 노트 제거 및 커스텀 차트 주입은 ManagerPlayHook의 메서드 호출 시점으로 이동
                 // 여기서는 인스턴스만 저장

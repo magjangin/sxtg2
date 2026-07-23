@@ -62,24 +62,5 @@ namespace sxtg2.Helpers
 
             return true;
         }
-
-        public static object TryGetLaneNotes(object sxgtDataInstance, int lane)
-        {
-            if (sxgtDataInstance == null)
-                return null;
-
-            try
-            {
-                var sxgtDataType = sxgtDataInstance.GetType();
-                if (!TryGetLaneDataAndItemProperty(sxgtDataType, sxgtDataInstance, out var laneData, out var itemProperty, out _))
-                    return null;
-
-                return itemProperty.GetValue(laneData, new object[] { lane });
-            }
-            catch
-            {
-                return null;
-            }
-        }
     }
 }

@@ -60,6 +60,10 @@
       <HintPath>H:\Sixtar Gate STARTRAIL custom mode\MelonLoader\net35\0Harmony.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>H:\Sixtar Gate STARTRAIL custom mode\Sixtar Gate STARTRAIL_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Features\CustomPlayContext.cs" />
@@ -70,7 +74,6 @@
     <Compile Include="Helpers\Finders\NoteDataFinder.cs" />
     <Compile Include="Helpers\Game\GameLaneDataHelper.cs" />
     <Compile Include="Helpers\Game\GameSingletonFinder.cs" />
-    <Compile Include="Helpers\HookHelper.cs" />
     <Compile Include="Helpers\ManagerMusicSelectBridge.cs" />
     <Compile Include="Helpers\ModLog.cs" />
     <Compile Include="Helpers\Pause\PauseMethodHelper.cs" />

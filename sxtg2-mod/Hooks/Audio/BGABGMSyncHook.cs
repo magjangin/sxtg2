@@ -1,4 +1,4 @@
-﻿using MelonLoader;
+using MelonLoader;
 using UnityEngine;
 using UnityEngine.Video;
 using sxtg2.Helpers;
@@ -12,15 +12,6 @@ namespace sxtg2.Hooks.Audio
     {
         private static float _lastSyncCheckTime = 0f;
 
-        /// <summary>예전 API 호환. 실제 상세 로그는 MelonPreferences sxtg2 → LogLevel = Verbose 로 설정하세요.</summary>
-        public static void SetDebugMode(bool enabled)
-        {
-            MelonLogger.Msg($"[BGABGMSyncHook] SetDebugMode({enabled}) 호출됨 — 상세 로그는 모드 설정의 LogLevel(Verbose)을 사용합니다.");
-        }
-
-        /// <summary>
-        /// BGA와 BGM의 동기화를 체크하고 필요시 재동기화합니다.
-        /// </summary>
         /// <summary>
         /// BGA와 BGM의 동기화를 체크하고 필요시 재동기화합니다.
         /// </summary>

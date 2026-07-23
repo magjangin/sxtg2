@@ -8,77 +8,32 @@ using System;
 using UnityEngine.Networking;
 using UnityEngine.UI;
 using UnityEngine;
+using RhythmGame.MusicSelect;
 using sxtg2.Helpers.Track;
 using sxtg2.Helpers;
 using sxtg2.Loaders;
 
 namespace sxtg2.Hooks.Manager
 {
+    [HarmonyPatch(typeof(ManagerMusicSelect))]
     public static partial class ManagerMusicSelectHook
     {
         private static bool _isInitialized = false;
 
         public static void Initialize()
         {
-            MelonLogger.Msg("[ManagerMusicSelectHook] Initialize() 호출됨");
-            
             if (_isInitialized)
             {
-                MelonLogger.Warning("[ManagerMusicSelectHook] 이미 초기화되었습니다.");
                 return;
             }
 
-            try
-            {
-                MelonLogger.Msg("[ManagerMusicSelectHook] 초기화 시작...");
-                
-                var harmony = new HarmonyLib.Harmony("sxtg2.ManagerMusicSelectHook");
-
-                // ManagerMusicSelect 타입 찾기
-                var managerType = ManagerMusicSelectBridge.TryGetManagerMusicSelectType();
-                if (managerType == null)
-                {
-                    MelonLogger.Warning("[ManagerMusicSelectHook] ManagerMusicSelect 타입을 찾을 수 없습니다.");
-                    return;
-                }
-
-                // ChangeTrackCursor 메서드 후킹
-                var changeTrackCursorMethod = managerType.GetMethod("ChangeTrackCursor", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (changeTrackCursorMethod != null)
-                {
-                    var postfix = new HarmonyMethod(typeof(ManagerMusicSelectHook).GetMethod(nameof(ChangeTrackCursorPostfix), BindingFlags.NonPublic | BindingFlags.Static));
-                    harmony.Patch(changeTrackCursorMethod, postfix: postfix);
-                    MelonLogger.Msg("[ManagerMusicSelectHook] ChangeTrackCursor 메서드 후킹 완료");
-                }
-                else
-                {
-                    MelonLogger.Warning("[ManagerMusicSelectHook] ChangeTrackCursor 메서드를 찾을 수 없습니다.");
-                }
-
-                // PlayPreview 메서드 후킹 (커스텀 트랙인 경우 원래 preview 재생 방지)
-                var playPreviewMethod = managerType.GetMethod("PlayPreview", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                if (playPreviewMethod != null)
-                {
-                    var prefix = new HarmonyMethod(typeof(ManagerMusicSelectHook).GetMethod(nameof(PlayPreviewPrefix), BindingFlags.NonPublic | BindingFlags.Static));
-                    harmony.Patch(playPreviewMethod, prefix: prefix);
-                    MelonLogger.Msg("[ManagerMusicSelectHook] PlayPreview 메서드 후킹 완료");
-                }
-                else
-                {
-                    MelonLogger.Warning("[ManagerMusicSelectHook] PlayPreview 메서드를 찾을 수 없습니다.");
-                }
-
-                _isInitialized = true;
-                MelonLogger.Msg("[ManagerMusicSelectHook] 초기화 완료");
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"[ManagerMusicSelectHook] 초기화 실패: {ex.Message}");
-                MelonLogger.Error(ex.StackTrace);
-            }
+            MelonLogger.Msg("[ManagerMusicSelectHook] Initialize() - 자동 HarmonyPatch 적용 상태");
+            _isInitialized = true;
         }
 
-        private static void ChangeTrackCursorPostfix(object __instance, int delta)
+        [HarmonyPatch("ChangeTrackCursor")]
+        [HarmonyPostfix]
+        private static void ChangeTrackCursorPostfix(ManagerMusicSelect __instance, int delta)
         {
             try
             {
@@ -94,14 +49,16 @@ namespace sxtg2.Hooks.Manager
         /// <summary>
         /// 썸네일 및 demo.ogg를 주입합니다.
         /// </summary>
-        private static void InjectThumbnailAndDemo(object managerInstance)
+        private static void InjectThumbnailAndDemo(ManagerMusicSelect managerInstance)
         {
             try
             {
-                if (!ManagerMusicSelectBridge.TryGetSelectedTrackFromManagerInstance(managerInstance, out object trackData))
+                if (managerInstance == null || managerInstance.currentSelectedTrack == null)
                     return;
 
-                ManagerMusicSelectBridge.ReadTrackIdentity(trackData, out string trackId, out string displayName);
+                TrackData trackData = managerInstance.currentSelectedTrack;
+                string trackId = trackData.ID;
+                string displayName = trackData.DisplayName;
 
                 // 커스텀 트랙 확인
                 bool isCustomTrack = CustomTrackHelper.IsCustomTrack(trackData);
@@ -122,9 +79,6 @@ namespace sxtg2.Hooks.Manager
 
                 // 썸네일 주입 (앨범 폴더 포함)
                 LoadCustomThumbnail(trackId, albumFolder);
-
-                // 음악 재생은 PlayPreview에서 처리하므로 여기서는 제거
-                // LoadAndPlayDemo(managerInstance, trackId, albumFolder);
             }
             catch (Exception ex)
             {
@@ -350,240 +304,10 @@ namespace sxtg2.Hooks.Manager
         // Merged from separate partial files
         // ==========================================
 
-        private static AudioSource FindBgmSource(object managerInstance)
-        {
-            Type managerType = managerInstance.GetType();
-            FieldInfo bgmSourceField = managerType.GetField("bgmSource", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            PropertyInfo bgmSourceProp = managerType.GetProperty("bgmSource", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
 
-            AudioSource bgmSource = null;
-            if (bgmSourceField != null)
-            {
-                bgmSource = bgmSourceField.GetValue(managerInstance) as AudioSource;
-            }
-            else if (bgmSourceProp != null)
-            {
-                bgmSource = bgmSourceProp.GetValue(managerInstance) as AudioSource;
-            }
-
-            return bgmSource ?? UnityEngine.Object.FindObjectOfType<AudioSource>();
-        }
     
 
-        // ==========================================
-        // Merged from separate partial files
-        // ==========================================
 
-        /// <summary>
-        /// demo.ogg 파일을 로드하고 재생합니다.
-        /// </summary>
-        private static void LoadAndPlayDemo(object managerInstance, string trackId, string albumFolder = null)
-        {
-            AudioSource bgmSource = null;
-            float originalVolume = 1f;
-            
-            try
-            {
-                bgmSource = FindBgmSource(managerInstance);
-                if (bgmSource == null)
-                {
-                    return;
-                }
-
-                // 원래 볼륨 저장
-                originalVolume = bgmSource.volume;
-
-                // 기존 BGM 중지 및 뮤트
-                if (bgmSource.isPlaying)
-                {
-                    bgmSource.Stop();
-                }
-                bgmSource.volume = 0f;
-
-                string gamePath = Path.GetDirectoryName(Application.dataPath);
-                string hwaRootFolder = Path.Combine(gamePath, "hwa");
-                
-                if (string.IsNullOrEmpty(albumFolder))
-                {
-                    albumFolder = hwaRootFolder;
-                }
-
-                if (!Directory.Exists(hwaRootFolder))
-                {
-                    // hwa 폴더가 없으면 원래 볼륨 복원
-                    if (bgmSource != null)
-                    {
-                        bgmSource.volume = originalVolume;
-                    }
-                    return;
-                }
-
-                MelonLogger.Msg($"[ManagerMusicSelectHook] demo.ogg 검색 시작: Track ID={trackId}, 앨범 폴더={Path.GetFileName(albumFolder)}");
-
-                // demo.ogg 파일 찾기
-                string demoFile = FindDemoFile(trackId, albumFolder, hwaRootFolder);
-                if (demoFile == null || !File.Exists(demoFile))
-                {
-                    MelonLogger.Msg("[ManagerMusicSelectHook] demo.ogg 파일을 찾을 수 없습니다. 원래 BGM 볼륨 복원");
-                    // demo.ogg를 찾지 못했으면 원래 볼륨 복원
-                    if (bgmSource != null)
-                    {
-                        bgmSource.volume = originalVolume;
-                    }
-                    return;
-                }
-
-                // 코루틴으로 비동기 로드
-                var coroutineRunner = new GameObject("ManagerMusicSelectHook_DemoLoader");
-                var runner = coroutineRunner.AddComponent<DemoLoaderCoroutineRunner>();
-                runner.StartCoroutine(LoadAndPlayDemoCoroutine(bgmSource, demoFile, originalVolume));
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[ManagerMusicSelectHook] demo.ogg 로드 실패: {ex.Message}");
-                // 예외 발생 시에도 원래 볼륨 복원
-                if (bgmSource != null)
-                {
-                    bgmSource.volume = originalVolume;
-                }
-            }
-        }
-
-        private static IEnumerator LoadAndPlayDemoCoroutine(AudioSource audioSource, string demoFile, float originalVolume)
-        {
-            var fileUrl = "file://" + demoFile.Replace("\\", "/");
-            UnityWebRequest www = UnityWebRequestMultimedia.GetAudioClip(fileUrl, AudioType.OGGVORBIS);
-            yield return www.SendWebRequest();
-
-            try
-            {
-                if (!TryGetDemoClip(www, out var audioClip))
-                {
-                    audioSource.volume = originalVolume;
-                    yield break;
-                }
-
-                ApplyDemoClip(audioSource, audioClip, demoFile);
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[ManagerMusicSelectHook] demo.ogg 처리 중 오류: {ex.Message}");
-                audioSource.volume = originalVolume;
-            }
-            finally
-            {
-                if (www != null)
-                {
-                    www.Dispose();
-                }
-            }
-        }
-
-        private static bool TryGetDemoClip(UnityWebRequest www, out AudioClip audioClip)
-        {
-            audioClip = null;
-
-            if (www.result != UnityWebRequest.Result.Success)
-            {
-                MelonLogger.Warning($"[ManagerMusicSelectHook] demo.ogg 로드 실패: {www.error}");
-                return false;
-            }
-
-            var handler = www.downloadHandler as DownloadHandlerAudioClip;
-            if (handler == null)
-            {
-                return false;
-            }
-
-            audioClip = handler.audioClip;
-            return audioClip != null;
-        }
-
-        private static void ApplyDemoClip(AudioSource audioSource, AudioClip audioClip, string demoFile)
-        {
-            if (audioSource.isPlaying)
-            {
-                audioSource.Stop();
-            }
-
-            audioSource.clip = audioClip;
-            audioSource.loop = true;
-            audioSource.volume = 1f;
-            audioSource.Play();
-
-            MelonLogger.Msg($"[ManagerMusicSelectHook] demo.ogg 재생 시작: {Path.GetFileName(demoFile)}");
-        }
-
-        // 코루틴 실행용 MonoBehaviour
-        private class DemoLoaderCoroutineRunner : MonoBehaviour { }
-    
-
-        // ==========================================
-        // Merged from separate partial files
-        // ==========================================
-
-        private static string FindDemoFile(string trackId, string albumFolder, string hwaRootFolder)
-        {
-            string demoFile = null;
-            bool isAlbumFolder = !albumFolder.Equals(hwaRootFolder, StringComparison.OrdinalIgnoreCase);
-
-            if (isAlbumFolder && Directory.Exists(albumFolder))
-            {
-                demoFile = FindDemoInAlbumFolder(albumFolder);
-                if (demoFile != null)
-                {
-                    return demoFile;
-                }
-            }
-
-            demoFile = Path.Combine(hwaRootFolder, "demo.ogg");
-            if (File.Exists(demoFile))
-            {
-                MelonLogger.Msg("[ManagerMusicSelectHook] hwa 루트 폴더에서 demo.ogg 발견");
-                return demoFile;
-            }
-
-            if (!isAlbumFolder)
-            {
-                return FindDemoInSubFolders(hwaRootFolder);
-            }
-
-            return null;
-        }
-
-        private static string FindDemoInAlbumFolder(string albumFolder)
-        {
-            var demoPatterns = new[] { "demo.ogg", "preview.ogg", "sample.ogg" };
-            foreach (var pattern in demoPatterns)
-            {
-                string demoFile = Path.Combine(albumFolder, pattern);
-                if (File.Exists(demoFile))
-                {
-                    MelonLogger.Msg($"[ManagerMusicSelectHook] 앨범 폴더에서 {pattern} 발견: {Path.GetFileName(demoFile)}");
-                    return demoFile;
-                }
-            }
-
-            return null;
-        }
-
-        private static string FindDemoInSubFolders(string hwaRootFolder)
-        {
-            var albumFolders = Directory.GetDirectories(hwaRootFolder);
-            MelonLogger.Msg($"[ManagerMusicSelectHook] {albumFolders.Length}개의 앨범 폴더에서 demo.ogg 검색");
-
-            foreach (var folder in albumFolders)
-            {
-                string file = Path.Combine(folder, "demo.ogg");
-                if (File.Exists(file))
-                {
-                    MelonLogger.Msg($"[ManagerMusicSelectHook] 앨범 폴더 '{Path.GetFileName(folder)}'에서 demo.ogg 발견");
-                    return file;
-                }
-            }
-
-            return null;
-        }
     
 
         // ==========================================
@@ -600,7 +324,9 @@ namespace sxtg2.Hooks.Manager
         /// PlayPreview 메서드 prefix 후킹.
         /// 커스텀 트랙인 경우 원래 preview 재생을 막고 커스텀 음악을 재생합니다.
         /// </summary>
-        private static bool PlayPreviewPrefix(object __instance, object t)
+        [HarmonyPatch("PlayPreview")]
+        [HarmonyPrefix]
+        private static bool PlayPreviewPrefix(ManagerMusicSelect __instance, TrackData t)
         {
             try
             {
@@ -613,7 +339,8 @@ namespace sxtg2.Hooks.Manager
                     return true;
                 }
 
-                ManagerMusicSelectBridge.ReadTrackIdentity(t, out string trackId, out string displayName);
+                string trackId = t.ID;
+                string displayName = t.DisplayName;
 
                 MelonLogger.Msg($"[ManagerMusicSelectHook] PlayPreview: Track ID={trackId}, DisplayName={displayName}");
 

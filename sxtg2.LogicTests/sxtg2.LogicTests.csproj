@@ -10,6 +10,5 @@
 
   <ItemGroup>
     <Compile Include="..\sxtg2-mod\Loaders\BmsParser.cs" Link="UnderTest\BmsParser.cs" />
-    <Compile Include="..\sxtg2-mod\Loaders\BmsParser.Processing.cs" Link="UnderTest\BmsParser.Processing.cs" />
   </ItemGroup>
 </Project>

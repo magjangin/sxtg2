@@ -22,21 +22,5 @@ namespace sxtg2.Helpers.Finders
                 return null;
             }
         }
-
-        /// <summary>
-        /// 특정 레인의 노트 리스트를 가져옵니다.
-        /// </summary>
-        public static object GetLaneNotes(object sxgtDataInstance, int lane)
-        {
-            try
-            {
-                return GameLaneDataHelper.TryGetLaneNotes(sxgtDataInstance, lane);
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[NoteDataFinder] 레인 노트 가져오기 실패: {ex.Message}");
-                return null;
-            }
-        }
     }
 }

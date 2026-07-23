@@ -158,10 +158,5 @@ namespace sxtg2.Loaders
 
             return spriteNames.Select(GetCustomSprite).FirstOrDefault(s => s != null);
         }
-
-        public static void ReloadSprites()
-        {
-            LoadCustomSprites(GetCustomNoteFolder());
-        }
     }
 }

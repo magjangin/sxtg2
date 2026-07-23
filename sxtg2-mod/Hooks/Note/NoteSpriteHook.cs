@@ -4,6 +4,7 @@ using HarmonyLib;
 using MelonLoader;
 using UnityEngine;
 using UnityEngine.UI;
+using RhythmGame;
 using sxtg2.Helpers;
 using sxtg2.Helpers.UI;
 using sxtg2.Loaders;
@@ -13,53 +14,25 @@ namespace sxtg2.Hooks.Note
     /// <summary>
     /// RhythmGame.NoteGenerator.Generate 후킹으로 생성된 노트에 CustomNotes 폴더의 커스텀 스프라이트를 적용합니다.
     /// </summary>
+    [HarmonyPatch(typeof(NoteGenerator))]
     public static class NoteSpriteHook
     {
         private static bool _isInitialized = false;
 
         public static void Initialize()
         {
-            MelonLogger.Msg("[NoteSpriteHook] Initialize() 호출됨");
-
             if (_isInitialized)
             {
-                MelonLogger.Msg("[NoteSpriteHook] 이미 초기화됨, 리턴");
                 return;
             }
 
-            try
-            {
-                CustomNoteSpriteLoader.Initialize();
-
-                var noteGeneratorType = TypeFinderHelper.FindType("RhythmGame.NoteGenerator");
-                if (noteGeneratorType == null)
-                {
-                    MelonLogger.Warning("[NoteSpriteHook] RhythmGame.NoteGenerator 타입을 찾을 수 없습니다.");
-                    return;
-                }
-
-                var generateMethod = noteGeneratorType.GetMethod("Generate", BindingFlags.Public | BindingFlags.Instance);
-                if (generateMethod == null)
-                {
-                    MelonLogger.Warning("[NoteSpriteHook] NoteGenerator.Generate 메서드를 찾을 수 없습니다.");
-                    return;
-                }
-
-                var harmony = new HarmonyLib.Harmony("sxtg2.NoteSpriteHook");
-                var postfix = new HarmonyMethod(typeof(NoteSpriteHook).GetMethod(nameof(GeneratePostfix), BindingFlags.NonPublic | BindingFlags.Static));
-                harmony.Patch(generateMethod, postfix: postfix);
-
-                MelonLogger.Msg("[NoteSpriteHook] NoteGenerator.Generate 후킹 완료");
-                _isInitialized = true;
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"[NoteSpriteHook] 초기화 실패: {ex.Message}");
-                MelonLogger.Error(ex.StackTrace);
-            }
+            CustomNoteSpriteLoader.Initialize();
+            MelonLogger.Msg("[NoteSpriteHook] Initialize() - 자동 HarmonyPatch 적용 상태");
+            _isInitialized = true;
         }
 
-        // __result: NoteGenerator.Generate가 반환한 RG_NoteObject 인스턴스 (Assembly-CSharp 미참조라 object로 받음)
+        [HarmonyPatch("Generate")]
+        [HarmonyPostfix]
         private static void GeneratePostfix(object __result)
         {
             try

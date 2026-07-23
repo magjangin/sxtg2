@@ -158,16 +158,6 @@ namespace sxtg2.Features
                 throw;
             }
         }
-
-        public string GetCurrentSceneName()
-        {
-            return _currentSceneName;
-        }
-
-        public bool IsInitialized()
-        {
-            return _isInitialized;
-        }
     
 
         // ==========================================
