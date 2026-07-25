@@ -22,6 +22,10 @@ namespace sxtg2.Helpers
         private static MelonPreferences_Entry _logLevelEntry;
         private static readonly Stack<string> CorrelationStack = new Stack<string>();
 
+        private static MelonPreferences_Entry _autoPlayEntry;
+        private static MelonPreferences_Entry _allPerfectEntry;
+        private static MelonPreferences_Entry _blockSaveEntry;
+
         public static void RegisterPreferences()
         {
             if (_category != null)
@@ -34,7 +38,32 @@ namespace sxtg2.Helpers
                 "로그 레벨",
                 "0=오류만, 1=보통, 2=상세/대량 덤프",
                 false);
+
+            _autoPlayEntry = _category.CreateEntry(
+                "EnableAutoPlay",
+                false,
+                "오토 플레이 활성화",
+                "플레이 씬 진입 시 오토플레이 자동 작동",
+                false);
+
+            _allPerfectEntry = _category.CreateEntry(
+                "EnableAllPerfect",
+                false,
+                "올 퍼펙트 판정 조작 (BLUESTAR)",
+                "모든 판정을 BLUESTAR로 강제 변환",
+                false);
+
+            _blockSaveEntry = _category.CreateEntry(
+                "BlockSaveBestRanking",
+                true,
+                "랭킹/베스트 스코어 저장 차단",
+                "오토플레이 또는 판정 조작 시 스코어 저장을 차단",
+                false);
         }
+
+        public static bool EnableAutoPlay => SaveCustomKeyConfig.AutoPlay || (_autoPlayEntry != null && Convert.ToBoolean(_autoPlayEntry.BoxedValue));
+        public static bool EnableAllPerfect => SaveCustomKeyConfig.AllPerfect || (_allPerfectEntry != null && Convert.ToBoolean(_allPerfectEntry.BoxedValue));
+        public static bool BlockSaveBestRanking => SaveCustomKeyConfig.BlockSave || (_blockSaveEntry != null && Convert.ToBoolean(_blockSaveEntry.BoxedValue));
 
         public static ModLogLevel Level
         {

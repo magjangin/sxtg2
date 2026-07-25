@@ -19,15 +19,43 @@ namespace sxtg2
             try
             {
                 ModLog.RegisterPreferences();
+                SaveCustomKeyConfig.Initialize();
                 string gamePath = Path.GetDirectoryName(Application.dataPath);
                 Directory.CreateDirectory(Path.Combine(gamePath, "hwa"));
 
                 NoteSpriteHook.Initialize();
+
+                try
+                {
+                    UnityEngine.SceneManagement.SceneManager.activeSceneChanged += OnActiveSceneChanged;
+                    UpdatePlaySceneState(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
+                }
+                catch (Exception ex)
+                {
+                    MelonLogger.Warning($"[Main] 씬 감지 이벤트 등록 실패: {ex.Message}");
+                }
+
                 MelonLogger.Msg("[Main] sxtg2 모드 초기화 완료");
             }
             catch (Exception ex)
             {
                 MelonLogger.Error($"[Main] 초기화 실패: {ex}");
+            }
+        }
+
+        private static void OnActiveSceneChanged(UnityEngine.SceneManagement.Scene prev, UnityEngine.SceneManagement.Scene next)
+        {
+            UpdatePlaySceneState(next.name);
+        }
+
+        private static void UpdatePlaySceneState(string sceneName)
+        {
+            if (string.IsNullOrEmpty(sceneName)) return;
+            string s = sceneName.ToLowerInvariant();
+            Hooks.Play.AutoPlayHook.IsPlayScene = s.Contains("play") || s.Contains("rhythm") || s.Contains("game");
+            if (!Hooks.Play.AutoPlayHook.IsPlayScene)
+            {
+                Hooks.Play.AutoPlayHook.CurrentTimeSeconds = -1f;
             }
         }
 

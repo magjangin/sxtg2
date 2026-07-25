@@ -69,6 +69,7 @@
     <Compile Include="Features\TrackDataAnalyzer.cs" />
     <Compile Include="Models\CustomTrackData.cs" />
     <Compile Include="Helpers\ModLog.cs" />
+    <Compile Include="Helpers\SaveCustomKeyConfig.cs" />
     <Compile Include="Helpers\Track\ThumbnailLoader.cs" />
     <Compile Include="Helpers\UI\NoteRendererRecovery.cs" />
     <Compile Include="Hooks\Audio\BGABGMSyncHook.cs" />
@@ -79,6 +80,9 @@
     <Compile Include="Hooks\Manager\ManagerMusicSelectHook.cs" />
     <Compile Include="Hooks\Manager\ManagerPlayHook\ManagerPlayHook.cs" />
     <Compile Include="Hooks\Note\NoteSpriteHook.cs" />
+    <Compile Include="Hooks\Play\AutoPlayHook.cs" />
+    <Compile Include="Hooks\Judge\AllPerfectJudgeHook.cs" />
+    <Compile Include="Hooks\Result\ResultSaveBlockHook.cs" />
     <Compile Include="Hooks\Track\TrackDataMediaHook.cs" />
     <Compile Include="Loaders\BmsParser.cs" />
     <Compile Include="Loaders\CustomNoteSpriteLoader.cs" />
