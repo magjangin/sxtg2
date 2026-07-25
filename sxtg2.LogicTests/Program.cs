@@ -194,6 +194,66 @@ internal static class Program
             Console.WriteLine($"[LogicTests] 임시 BMS 삭제 건너뜀: {ex.Message}");
         }
     }
+    private static void InspectInputTypes()
+    {
+        string asmPath = @"H:\Sixtar Gate STARTRAIL custom mode\Sixtar Gate STARTRAIL_Data\Managed\Assembly-CSharp.dll";
+        if (!File.Exists(asmPath)) return;
+
+        var asm = System.Reflection.Assembly.LoadFrom(asmPath);
+        Console.WriteLine("\n=== INSPECTING Assembly-CSharp.dll INPUT TYPES ===");
+
+        foreach (var type in asm.GetTypes())
+        {
+            if (type.FullName == null) continue;
+            if (type.FullName.Contains("Input") || type.FullName.Contains("KeyConfig") || type.FullName.Contains("Keyboard") || type.FullName.Contains("Control") || type.FullName.Contains("RG_PS_Judgement"))
+            {
+                Console.WriteLine($"TYPE: {type.FullName}");
+                foreach (var m in type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static))
+                {
+                    if (m.DeclaringType != type) continue;
+                    var paramsInfo = string.Join(", ", m.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}"));
+                    Console.WriteLine($"   - {m.Name}({paramsInfo}) -> {m.ReturnType.Name}");
+                }
+            }
+        }
+    }
+    private static void InspectInputCandidates()
+    {
+        string asmPath = @"H:\Sixtar Gate STARTRAIL custom mode\Sixtar Gate STARTRAIL_Data\Managed\Assembly-CSharp.dll";
+        if (!File.Exists(asmPath)) return;
+
+        var asm = System.Reflection.Assembly.LoadFrom(asmPath);
+        Console.WriteLine("\n=== CANDIDATE INPUT TYPES & METHOD BODY CHECK ===");
+
+        string[] typeNames = {
+            "RhythmGame.Play.RG_Gear",
+            "RhythmGame.Play.RG_Gear_Default",
+            "RhythmGame.Play.RG_Gear_Gothic",
+            "RhythmGame.Play.RG_Gear_Pianist",
+            "RhythmGame.Play.RG_Gear_Sherbet",
+            "RhythmGame.Play.RG_Gear_Stellar",
+            "RhythmGame.Play.RG_Gear_Voyager",
+            "RhythmGame.Play.RG_PS_Judgement"
+        };
+
+        foreach (var typeName in typeNames)
+        {
+            var type = asm.GetType(typeName);
+            if (type == null)
+            {
+                Console.WriteLine($"TYPE NOT FOUND: {typeName}");
+                continue;
+            }
+
+            Console.WriteLine($"\nTYPE: {type.FullName} (IsAbstract={type.IsAbstract})");
+            foreach (var m in type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static))
+            {
+                if (m.DeclaringType != type) continue;
+                var body = m.GetMethodBody();
+                Console.WriteLine($"   - {m.Name} (IsAbstract={m.IsAbstract}, HasBody={body != null})");
+            }
+        }
+    }
 }
 
 internal static class Assert

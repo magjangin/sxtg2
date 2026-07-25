@@ -2,9 +2,10 @@ using System;
 using System.IO;
 using MelonLoader;
 using UnityEngine;
+using sxtg2.Features;
 using sxtg2.Helpers;
+using sxtg2.Hooks;
 using sxtg2.Hooks.Audio;
-using sxtg2.Hooks.Note;
 
 [assembly: MelonInfo(typeof(sxtg2.Main), "sxtg2", "1.0.0", "화영왕")]
 [assembly: MelonGame("Lyrebird Studio", "Sixtar Gate STARTRAIL")]
@@ -52,16 +53,24 @@ namespace sxtg2
         {
             if (string.IsNullOrEmpty(sceneName)) return;
             string s = sceneName.ToLowerInvariant();
-            Hooks.Play.AutoPlayHook.IsPlayScene = s.Contains("play") || s.Contains("rhythm") || s.Contains("game");
-            if (!Hooks.Play.AutoPlayHook.IsPlayScene)
+            AutoPlayHook.IsPlayScene = s.Contains("play") || s.Contains("rhythm") || s.Contains("game");
+            if (!AutoPlayHook.IsPlayScene)
             {
-                Hooks.Play.AutoPlayHook.CurrentTimeSeconds = -1f;
+                AutoPlayHook.CurrentTimeSeconds = -1f;
             }
         }
 
         public override void OnUpdate()
         {
             BGABGMSyncHook.CheckAndSync();
+        }
+
+        public override void OnGUI()
+        {
+            if (AutoPlayHook.IsPlayScene)
+            {
+                JudgmentBar.DrawJudgmentBar();
+            }
         }
 
         public override void OnApplicationQuit()

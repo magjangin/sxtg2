@@ -66,28 +66,16 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Features\TrackDataAnalyzer.cs" />
-    <Compile Include="Models\CustomTrackData.cs" />
-    <Compile Include="Helpers\ModLog.cs" />
-    <Compile Include="Helpers\SaveCustomKeyConfig.cs" />
-    <Compile Include="Helpers\Track\ThumbnailLoader.cs" />
-    <Compile Include="Helpers\UI\NoteRendererRecovery.cs" />
-    <Compile Include="Hooks\Audio\BGABGMSyncHook.cs" />
-    <Compile Include="Hooks\Audio\BgaFileResolver.cs" />
-    <Compile Include="Hooks\Audio\BGAPlayerHook.cs" />
-    <Compile Include="Hooks\Audio\BgmFileResolver.cs" />
-    <Compile Include="Hooks\Audio\BGMPlayerHook.cs" />
-    <Compile Include="Hooks\Manager\ManagerMusicSelectHook.cs" />
-    <Compile Include="Hooks\Manager\ManagerPlayHook\ManagerPlayHook.cs" />
-    <Compile Include="Hooks\Note\NoteSpriteHook.cs" />
-    <Compile Include="Hooks\Play\AutoPlayHook.cs" />
-    <Compile Include="Hooks\Judge\AllPerfectJudgeHook.cs" />
-    <Compile Include="Hooks\Result\ResultSaveBlockHook.cs" />
-    <Compile Include="Hooks\Track\TrackDataMediaHook.cs" />
+    <Compile Include="Features\JudgmentBarFeature.cs" />
+    <Compile Include="Features\MusicSelectFeature.cs" />
+    <Compile Include="Helpers\ModHelpers.cs" />
+    <Compile Include="Hooks\AudioHooks.cs" />
+    <Compile Include="Hooks\GameplayHooks.cs" />
     <Compile Include="Loaders\BmsParser.cs" />
-    <Compile Include="Loaders\CustomNoteSpriteLoader.cs" />
+    <Compile Include="Loaders\CustomNoteLoaders.cs" />
     <Compile Include="Loaders\TrackInfoParser.cs" />
     <Compile Include="Main\Main.cs" />
+    <Compile Include="Models\CustomTrackData.cs" />
     <Compile Include="Processors\CustomChartInjector.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
