@@ -10,6 +10,8 @@ internal static class Program
         {
             ("ParseBmsFromText_ParsesBasicNotesAndLengths", ParseBmsFromText_ParsesBasicNotesAndLengths),
             ("ParseBmsFromText_UsesThreeCharacterNoteValuesForExtendedWavKeys", ParseBmsFromText_UsesThreeCharacterNoteValuesForExtendedWavKeys),
+            ("ParseBmsFromText_UsesBpmRegardlessOfHeaderOrder", ParseBmsFromText_UsesBpmRegardlessOfHeaderOrder),
+            ("ParseBmsFromText_PairsOpenAndCloseNotes", ParseBmsFromText_PairsOpenAndCloseNotes),
             ("ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd", ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd),
             ("ParseBmsFileWithStatistics_UsesCacheForSamePath", ParseBmsFileWithStatistics_UsesCacheForSamePath),
         };
@@ -55,6 +57,7 @@ internal static class Program
 
         var result = BmsParser.ParseBmsFromText(bms, "inline");
         Assert.NotNull(result, "결과가 null입니다.");
+        Assert.True(result!.BaseBpm == 150f, $"예상 BPM 150, 실제 {result.BaseBpm}");
         Assert.True(result!.Notes.Count == 2, $"예상 노트 수 2, 실제 {result.Notes.Count}");
 
         var normal = result.Notes.SingleOrDefault(n => n.NoteType == BmsParser.NoteType.Normal);
@@ -62,6 +65,7 @@ internal static class Program
 
         Assert.NotNull(normal, "Normal 노트가 없습니다.");
         Assert.NotNull(longStart, "Long 시작 노트가 없습니다.");
+        Assert.True(Math.Abs(normal!.Time - 1.6f) < 0.0001f, $"예상 첫 노트 시각 1.6, 실제 {normal.Time}");
         Assert.True(longStart!.Length > 0f, "Long 노트 길이가 계산되지 않았습니다.");
     }
 
@@ -88,6 +92,39 @@ internal static class Program
         Assert.True(normal!.OriginalNoteValue == "001", $"Normal 원본 값 예상 001, 실제 {normal.OriginalNoteValue}");
         Assert.True(longStart!.OriginalNoteValue == "002", $"Long 원본 값 예상 002, 실제 {longStart.OriginalNoteValue}");
         Assert.True(longStart.Length > 0f, "3글자 Long 노트 길이가 계산되지 않았습니다.");
+    }
+
+    private static void ParseBmsFromText_UsesBpmRegardlessOfHeaderOrder()
+    {
+        string bms = """
+#00111:0100
+#BPM 120
+""";
+
+        var result = BmsParser.ParseBmsFromText(bms);
+        Assert.NotNull(result, "결과가 null입니다.");
+        Assert.True(result!.BaseBpm == 120f, $"예상 BPM 120, 실제 {result.BaseBpm}");
+        Assert.True(Math.Abs(result.Notes.Single().Time - 2f) < 0.0001f,
+            $"예상 노트 시각 2.0, 실제 {result.Notes.Single().Time}");
+    }
+
+    private static void ParseBmsFromText_PairsOpenAndCloseNotes()
+    {
+        string bms = """
+#BPM 150
+#00111:0400
+#00211:0005
+""";
+
+        var result = BmsParser.ParseBmsFromText(bms);
+        Assert.NotNull(result, "결과가 null입니다.");
+        var open = result!.Notes.SingleOrDefault(
+            note => note.NoteType == BmsParser.NoteType.Open);
+        Assert.NotNull(open, "Open 노트가 없습니다.");
+        Assert.True(open!.Lane == 9, $"예상 Open 레인 9, 실제 {open.Lane}");
+        Assert.True(open.Length > 0f, "Open/Close 길이가 계산되지 않았습니다.");
+        Assert.True(result.Statistics.CloseNotes == 1,
+            $"예상 Close 통계 1, 실제 {result.Statistics.CloseNotes}");
     }
 
     private static void ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd()

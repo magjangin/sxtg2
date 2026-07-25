@@ -1,13 +1,12 @@
 using System;
 using System.IO;
 using MelonLoader;
-using UnityEngine;
 
 namespace sxtg2.Hooks.Audio
 {
     internal static class BgaFileResolver
     {
-        public static string FindForAlbum(string albumFolder, bool allowRootFallback)
+        public static string FindForAlbum(string albumFolder)
         {
             try
             {
@@ -18,14 +17,7 @@ namespace sxtg2.Hooks.Audio
                     return albumFile;
                 }
 
-                if (!allowRootFallback)
-                {
-                    return null;
-                }
-
-                var gamePath = Path.GetDirectoryName(Application.dataPath);
-                var hwaFolder = Path.Combine(gamePath, "hwa");
-                return FindFirstMp4(hwaFolder);
+                return null;
             }
             catch (Exception ex)
             {

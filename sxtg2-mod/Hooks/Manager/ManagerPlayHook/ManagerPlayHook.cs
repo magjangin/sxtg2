@@ -1,75 +1,75 @@
+using System;
 using HarmonyLib;
 using MelonLoader;
-using System.Reflection;
-using System;
+using GameSetting;
 using RhythmGame;
-using sxtg2.Features;
-using sxtg2.Helpers;
+using UnityEngine;
+using UnityEngine.Video;
+using sxtg2.Hooks.Audio;
+using sxtg2.Loaders;
+using sxtg2.Models;
+using sxtg2.Processors;
 
 namespace sxtg2.Hooks.Manager
 {
     [HarmonyPatch(typeof(ManagerPlay))]
-    public static partial class ManagerPlayHook
+    public static class ManagerPlayHook
     {
-        private static bool _isInitialized = false;
-
-        public static void Initialize()
-        {
-            if (_isInitialized)
-            {
-                return;
-            }
-
-            MelonLogger.Msg("[ManagerPlayHook] Initialize() - 자동 HarmonyPatch 적용 상태");
-            _isInitialized = true;
-        }
-
-        [HarmonyPatch("PauseGame")]
-        [HarmonyPostfix]
-        private static void PauseGamePostfix()
-        {
-            try
-            {
-                PauseMethodHelper.ApplyCustomPauseJacket();
-            }
-            catch (Exception ex)
-            {
-                ModLog.Exception("ManagerPlayHook.PauseGamePostfix", ex);
-            }
-        }
-
-        private static void OnPlaySceneStart(object __instance = null, string methodName = null)
-        {
-            try
-            {
-                CustomPlayStartupFlow.Run(__instance, methodName);
-            }
-            catch (Exception ex)
-            {
-                var errorContext = string.IsNullOrEmpty(methodName) ? "플레이 씬 시작" : methodName;
-                MelonLogger.Warning($"[ManagerPlayHook] {errorContext} 후킹 오류: {ex.Message}");
-            }
-        }
-
-        [HarmonyPatch("set_bms")]
-        [HarmonyPostfix]
-        private static void SetBmsPostfix(ManagerPlay __instance)
-        {
-            OnPlaySceneStart(__instance, "set_bms");
-        }
-
         [HarmonyPatch("FetchBMSToModules")]
-        [HarmonyPostfix]
-        private static void FetchBMSToModulesPostfix(ManagerPlay __instance)
+        [HarmonyPrefix]
+        private static void FetchBMSToModulesPrefix(
+            ManagerPlay __instance,
+            SXGTData _bms,
+            TrackData ___playTrack,
+            VideoPlayer ___bgaPlayer,
+            GameObject ___defaultBGAcanvas)
         {
-            OnPlaySceneStart(__instance, "FetchBMSToModules");
+            if (!(___playTrack is CustomTrackData customTrack))
+                return;
+
+            try
+            {
+                var chart = BmsParser.ParseBmsFileWithStatistics(customTrack.BmsPath);
+                if (chart?.Notes == null || chart.Notes.Count == 0)
+                {
+                    MelonLogger.Warning(
+                        $"[ManagerPlayHook] 차트를 읽지 못해 원본 패턴을 유지합니다: {customTrack.BmsPath}");
+                }
+                else
+                {
+                    CustomChartInjector.SetParsedChart(chart);
+                    CustomChartInjector.InjectBmsNotesToLaneData(_bms);
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[ManagerPlayHook] 커스텀 차트 주입 실패: {ex}");
+            }
+
+            try
+            {
+                BGMPlayerHook.ResetReplacementFlag();
+                BGMPlayerHook.ReplacePlaySceneBGM(__instance.bgm, customTrack.AlbumFolder);
+
+                BGAPlayerHook.ResetReplacementFlag();
+                if (UserAccountModule.Instance.userData.bgaMode == BGAMode.ON &&
+                    BGAPlayerHook.ReplacePlaySceneBGA(___bgaPlayer, customTrack.AlbumFolder))
+                {
+                    ___bgaPlayer.gameObject.SetActive(true);
+                    ___defaultBGAcanvas.SetActive(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[ManagerPlayHook] 커스텀 미디어 교체 실패: {ex}");
+            }
         }
 
-        [HarmonyPatch("GetPatternFromDir")]
-        [HarmonyPostfix]
-        private static void GetPatternFromDirPostfix(ManagerPlay __instance)
+        [HarmonyPatch("CheckBGMStart")]
+        [HarmonyPrefix]
+        private static bool CheckBGMStartPrefix(TrackData ___playTrack)
         {
-            OnPlaySceneStart(__instance, "GetPatternFromDir");
+            return !(___playTrack is CustomTrackData) || !BGMPlayerHook.IsLoading();
         }
     }
 }

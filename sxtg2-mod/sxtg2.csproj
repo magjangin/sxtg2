@@ -66,41 +66,20 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Features\CustomPlayContext.cs" />
-    <Compile Include="Features\CustomPlayStartupFlow.cs" />
-    <Compile Include="Features\MusicSelectAnalyzer.cs" />
-    <Compile Include="Features\SceneDetector\SceneDetector.cs" />
     <Compile Include="Features\TrackDataAnalyzer.cs" />
-    <Compile Include="Helpers\Finders\NoteDataFinder.cs" />
-    <Compile Include="Helpers\Game\GameLaneDataHelper.cs" />
-    <Compile Include="Helpers\Game\GameSingletonFinder.cs" />
-    <Compile Include="Helpers\ManagerMusicSelectBridge.cs" />
+    <Compile Include="Models\CustomTrackData.cs" />
     <Compile Include="Helpers\ModLog.cs" />
-    <Compile Include="Helpers\Pause\PauseMethodHelper.cs" />
-    <Compile Include="Helpers\Reflection\ReflectionHelper.cs" />
-    <Compile Include="Helpers\Reflection\ReflectionMemberNames.cs" />
-    <Compile Include="Helpers\Screen\PlayLoadingScreenHelper.cs" />
-    <Compile Include="Helpers\Screen\ResultScreenHelper.cs" />
-    <Compile Include="Helpers\SteamManifestLock.cs" />
-    <Compile Include="Helpers\Track\CustomTrackHelper.cs" />
-    <Compile Include="Helpers\Track\BmsFileResolver.cs" />
     <Compile Include="Helpers\Track\ThumbnailLoader.cs" />
-    <Compile Include="Helpers\Track\TrackDataCloner.cs" />
-    <Compile Include="Helpers\Reflection\TypeFinderHelper.cs" />
-    <Compile Include="Helpers\SaveCustomKeyFolderHelper.cs" />
     <Compile Include="Helpers\UI\NoteRendererRecovery.cs" />
     <Compile Include="Hooks\Audio\BGABGMSyncHook.cs" />
     <Compile Include="Hooks\Audio\BgaFileResolver.cs" />
     <Compile Include="Hooks\Audio\BGAPlayerHook.cs" />
-    <Compile Include="Hooks\Audio\BgaVideoPlayerFinder.cs" />
-    <Compile Include="Hooks\Audio\BgmAudioSourceFinder.cs" />
     <Compile Include="Hooks\Audio\BgmFileResolver.cs" />
     <Compile Include="Hooks\Audio\BGMPlayerHook.cs" />
     <Compile Include="Hooks\Manager\ManagerMusicSelectHook.cs" />
     <Compile Include="Hooks\Manager\ManagerPlayHook\ManagerPlayHook.cs" />
     <Compile Include="Hooks\Note\NoteSpriteHook.cs" />
-    <Compile Include="Hooks\SXGT\SXGTDataHook.cs" />
-    <Compile Include="Hooks\Text\TextHook.cs" />
+    <Compile Include="Hooks\Track\TrackDataMediaHook.cs" />
     <Compile Include="Loaders\BmsParser.cs" />
     <Compile Include="Loaders\CustomNoteSpriteLoader.cs" />
     <Compile Include="Loaders\TrackInfoParser.cs" />

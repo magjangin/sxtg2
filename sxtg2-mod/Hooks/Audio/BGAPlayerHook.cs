@@ -5,42 +5,16 @@ using UnityEngine.Video;
 
 namespace sxtg2.Hooks.Audio
 {
-    public static partial class BGAPlayerHook
+    public static class BGAPlayerHook
     {
-        private static bool _isInitialized = false;
         private static bool _isReplaced = false;
         private static string _bgaFilePath = null;
         private static VideoPlayer _currentVideoPlayer = null;
-
-        public static void Initialize()
-        {
-            if (_isInitialized)
-            {
-                return;
-            }
-
-            try
-            {
-                _isInitialized = true;
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Error($"[BGAPlayerHook] 초기화 실패: {ex.Message}");
-            }
-        }
 
         public static void ResetReplacementFlag()
         {
             _isReplaced = false;
             _currentVideoPlayer = null;
-        }
-
-        /// <summary>
-        /// BGA가 교체되었는지 확인합니다.
-        /// </summary>
-        public static bool IsReplaced()
-        {
-            return _isReplaced;
         }
 
         /// <summary>
@@ -51,12 +25,13 @@ namespace sxtg2.Hooks.Audio
             return _currentVideoPlayer;
         }
 
-        public static void ReplacePlaySceneBGA(string customAlbumFolder = null)
+        public static bool ReplacePlaySceneBGA(
+            VideoPlayer videoPlayer,
+            string customAlbumFolder)
         {
             if (_isReplaced)
             {
-                // 이미 교체되었으면 리턴
-                return;
+                return true;
             }
 
             try
@@ -64,31 +39,30 @@ namespace sxtg2.Hooks.Audio
                 if (string.IsNullOrEmpty(customAlbumFolder))
                 {
                     MelonLogger.Msg("[BGAPlayerHook] 커스텀 앨범 폴더가 없어 BGA 교체를 건너뜁니다.");
-                    return;
+                    return false;
                 }
 
                 MelonLogger.Msg($"[BGAPlayerHook] ReplacePlaySceneBGA 호출: albumFolder={customAlbumFolder}");
 
-                string bgaFile = BgaFileResolver.FindForAlbum(customAlbumFolder, allowRootFallback: false);
+                string bgaFile = BgaFileResolver.FindForAlbum(customAlbumFolder);
 
                 if (string.IsNullOrEmpty(bgaFile))
                 {
-                    // BGA 파일이 없으면 로그 없이 리턴
-                    return;
+                    return false;
                 }
 
-                VideoPlayer videoPlayer = BgaVideoPlayerFinder.Find();
                 if (videoPlayer == null)
                 {
-                    // VideoPlayer를 찾지 못했으면 조용히 리턴 (나중에 다시 시도)
-                    return;
+                    MelonLogger.Warning("[BGAPlayerHook] 대상 VideoPlayer가 없습니다.");
+                    return false;
                 }
 
-                LoadRegularBGA(videoPlayer, bgaFile);
+                return LoadRegularBGA(videoPlayer, bgaFile);
             }
             catch (Exception ex)
             {
                 MelonLogger.Warning($"[BGAPlayerHook] BGA 교체 실패: {ex.Message}");
+                return false;
             }
         }
 
@@ -97,7 +71,7 @@ namespace sxtg2.Hooks.Audio
         /// </summary>
         /// <param name="videoPlayer">VideoPlayer 인스턴스</param>
         /// <param name="bgaFilePath">BGA 파일 경로</param>
-        private static void LoadRegularBGA(VideoPlayer videoPlayer, string bgaFilePath)
+        private static bool LoadRegularBGA(VideoPlayer videoPlayer, string bgaFilePath)
         {
             try
             {
@@ -132,10 +106,12 @@ namespace sxtg2.Hooks.Audio
                 _bgaFilePath = bgaFilePath; // 업데이트
                 _isReplaced = true;
                 MelonLogger.Msg($"[BGAPlayerHook] BGA 교체 완료: {Path.GetFileName(_bgaFilePath)}");
+                return true;
             }
             catch (Exception ex)
             {
                 MelonLogger.Error($"[BGAPlayerHook] 일반 BGA 로드 실패: {ex.Message}");
+                return false;
             }
         }
 

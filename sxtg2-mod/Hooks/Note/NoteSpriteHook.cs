@@ -1,5 +1,4 @@
 using System;
-using System.Reflection;
 using HarmonyLib;
 using MelonLoader;
 using UnityEngine;
@@ -18,6 +17,12 @@ namespace sxtg2.Hooks.Note
     public static class NoteSpriteHook
     {
         private static bool _isInitialized = false;
+        private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> ShortNote =
+            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("shortNote");
+        private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> TailNote =
+            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("tailNote");
+        private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> HoldTexture =
+            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("holdTexture");
 
         public static void Initialize()
         {
@@ -33,14 +38,14 @@ namespace sxtg2.Hooks.Note
 
         [HarmonyPatch("Generate")]
         [HarmonyPostfix]
-        private static void GeneratePostfix(object __result)
+        private static void GeneratePostfix(RG_NoteObject __result)
         {
             try
             {
                 if (__result == null)
                     return;
 
-                var noteObject = ReflectionHelper.GetFirstMemberValueSafe(__result, "gameObject") as GameObject;
+                var noteObject = __result.gameObject;
                 if (noteObject == null)
                     return;
 
@@ -53,26 +58,22 @@ namespace sxtg2.Hooks.Note
             }
         }
 
-        private static void ApplyCustomSprites(object noteInstance, GameObject noteObject)
+        private static void ApplyCustomSprites(RG_NoteObject noteInstance, GameObject noteObject)
         {
             string noteType = CustomNoteSpriteLoader.ExtractNoteType(noteObject.name);
             ModLog.Verbose($"[NoteSpriteHook] 노트 생성: name={noteObject.name}, 추출된 타입={(string.IsNullOrEmpty(noteType) ? "(없음)" : noteType)}");
 
-            ApplyToField(noteInstance, "shortNote", CustomNoteSpriteLoader.GetCustomSpriteForNote(noteObject.name));
-            ApplyToField(noteInstance, "tailNote", CustomNoteSpriteLoader.GetTailNoteSprite(noteType));
-            ApplyToField(noteInstance, "holdTexture", CustomNoteSpriteLoader.GetHoldTextureSprite(noteType));
+            ApplyToTarget(ShortNote(noteInstance), CustomNoteSpriteLoader.GetCustomSpriteForNote(noteObject.name));
+            ApplyToTarget(TailNote(noteInstance), CustomNoteSpriteLoader.GetTailNoteSprite(noteType));
+            ApplyToTarget(HoldTexture(noteInstance), CustomNoteSpriteLoader.GetHoldTextureSprite(noteType));
         }
 
-        private static void ApplyToField(object noteInstance, string fieldName, Sprite sprite)
+        private static void ApplyToTarget(RectTransform target, Sprite sprite)
         {
-            if (sprite == null)
+            if (sprite == null || target == null)
                 return;
 
-            var rectTransform = ReflectionHelper.GetFieldValueSafe(noteInstance, fieldName) as RectTransform;
-            if (rectTransform == null)
-                return;
-
-            var image = rectTransform.GetComponent<Image>();
+            var image = target.GetComponent<Image>();
             if (image != null)
             {
                 image.sprite = sprite;
