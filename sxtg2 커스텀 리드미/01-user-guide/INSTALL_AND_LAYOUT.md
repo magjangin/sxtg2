@@ -81,13 +81,29 @@
 - 관련 구현: `Loaders/CustomNoteSpriteLoader.cs`, `Hooks/Note/NoteSpriteHook.cs`, `Helpers/UI/NoteRendererRecovery.cs`
 - 자세한 흐름은 `02-systems/NOTE_SYSTEM.md`의 "노트 스킨(커스텀 스프라이트)" 절 참고.
 
-## 6) SaveCustomKey 폴더(폴더만 생성, 아직 저장 로직 없음)
+## 6) SaveCustomKey 폴더(모드 설정 파일)
 
-- 경로: `{게임 설치 폴더}\SaveCustomKey\`
-- 모드 초기화 시 `Helpers/SaveCustomKeyFolderHelper.cs`가 폴더 존재를 보장(없으면 생성)합니다.
+- 경로: `{게임 설치 폴더}\SaveCustomKey\config.txt`
+- 모드 초기화 시 `SaveCustomKeyConfig.Initialize()`(`Helpers/ModHelpers.cs`)가 폴더와 설정 파일을
+  자동 생성하고 읽어옵니다. 설정은 **게임 시작 시 1회** 로드되므로, 값을 바꿨으면 게임을 다시 켜야 합니다.
+- 값 형식은 유연합니다: `1`/`0`, `true`/`false`, `on`/`off`, `켜짐`/`꺼짐` 모두 인식합니다.
+  `#` 또는 `//`로 시작하는 줄은 주석입니다.
+
+| 키 | 기본값 | 설명 |
+| --- | --- | --- |
+| `AutoPlay` | `0` | 오토 플레이 |
+| `AllPerfect` | `0` | 모든 판정을 BLUESTAR로 강제 |
+| `BlockSave` | `1` | 베스트 스코어/랭킹 저장 차단 |
+| `EnableJudgmentBar` | `1` | 실시간 판정바 표시 |
+| `JudgmentBarVertical` | `1` | 판정바 형태 (1 = 세로, 0 = 가로) |
+| `EnableKeyViewer` | `1` | 실시간 키뷰어 표시 |
+
+- 설정 파일에 항목이 아예 없으면 위 기본값이 그대로 적용됩니다(이전 버전에서 만들어진 파일이라
+  새 항목이 빠져 있어도 동작함).
+- 판정바/키뷰어의 표시 규칙과 동작은 `02-systems/PLAY_OVERLAY.md`를 참고하세요.
 - 게임 자체의 커스텀 키 설정은 `UserAccountModule.Instance.userData.customKeySetting`(세이브 데이터 내부,
-  `GameSetting/KeyPresetSetting.cs`)로 관리되며, 아직 이 폴더에 실제로 읽고 쓰는 기능은 없습니다 —
-  향후 커스텀 키 프리셋을 파일로 내보내기/가져오기 하는 기능을 위한 준비 단계입니다.
+  `GameSetting/KeyPresetSetting.cs`)로 관리되며, 이 폴더와는 별개입니다. 키 프리셋을 파일로
+  내보내기/가져오기 하는 기능은 아직 없습니다.
 
 ---
 

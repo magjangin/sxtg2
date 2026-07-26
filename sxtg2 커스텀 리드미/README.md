@@ -10,8 +10,9 @@
 - [00-overview/PROJECT_OVERVIEW.md](00-overview/PROJECT_OVERVIEW.md): 프로젝트 개요
 - [00-overview/DOCUMENTATION.md](00-overview/DOCUMENTATION.md): 최신 종합 흐름
 - [03-development/CODE_STRUCTURE.md](03-development/CODE_STRUCTURE.md): 현재 코드 구조
-- [01-user-guide/INSTALL_AND_LAYOUT.md](01-user-guide/INSTALL_AND_LAYOUT.md): 설치와 `hwa` 폴더 배치
+- [01-user-guide/INSTALL_AND_LAYOUT.md](01-user-guide/INSTALL_AND_LAYOUT.md): 설치, `hwa` 폴더 배치, 모드 설정 파일
 - [01-user-guide/TROUBLESHOOTING.md](01-user-guide/TROUBLESHOOTING.md): 문제 해결
+- [02-systems/PLAY_OVERLAY.md](02-systems/PLAY_OVERLAY.md): 플레이 씬 판정바 / 키뷰어 오버레이
 
 ## 폴더 구조
 

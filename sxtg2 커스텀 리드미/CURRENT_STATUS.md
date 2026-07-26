@@ -1,6 +1,6 @@
 # 현재 상태
 
-기준일: 2026-07-18
+기준일: 2026-07-26
 
 ## 현재 결론
 
@@ -11,6 +11,39 @@
 - `dotnet build sxtg2-mod/sxtg2.csproj --configuration Debug` 성공 (경고 0개)
 - `sxtg2.LogicTests` 4개 통과
 - 실제 게임에서 커스텀 차트 흐름 정상 동작 확인
+
+## 2026-07-26 추가: 플레이 씬 키뷰어 (v0.1.4)
+
+- **추가한 것**: 플레이 씬 하단 중앙에 7개 레인(LT LL L GATE R RR RT)의 실시간 입력 상태를 표시하는
+  오버레이. 새 파일 `Features/KeyViewerFeature.cs`, `Main.OnUpdate()/OnGUI()`에서 호출.
+- 키 라벨은 `UserAccountModule.Instance.userData.keySetting.GetKeyFromLane()`에서 읽으므로 게임에서
+  키를 리매핑하면 그대로 반영됩니다. 입력 감지는 `Input.GetKey()` 직접 폴링 — 게임의
+  `ManagerPlay.LaneTouchStates`는 일시정지/게이트 미개방 상태에서 갱신되지 않아 키뷰어 용도로는 부정확함.
+- `config.txt`의 `EnableKeyViewer` 항목은 이전부터 파싱만 되고 소비하는 코드가 없는 죽은 플래그였는데,
+  이번에 실제로 동작하게 됨.
+- **검증**: `dotnet build` 성공(경고 0개), 실게임에서 표시 확인 완료.
+- 자세한 내용: `02-systems/PLAY_OVERLAY.md`, `01-user-guide/INSTALL_AND_LAYOUT.md`(6절)
+
+## 2026-07-26 수정: 판정바가 실제 게임 판정과 어긋나던 문제 (v0.1.4)
+
+- **증상**: 표시되는 ms 값 자체는 맞았지만, 색과 라벨이 실제 판정 등급과 일치하지 않았음.
+- **원인**: 판정바가 `±30ms = Perfect`, `±70ms = Great`로 **하드코딩**되어 있었음. 실제 판정 범위는
+  `ManagerPlay.Set()`이 난이도별 `JudgeBalancer.BalanceList[(int)lv]`를 주입하는 구조라
+  Comet 72ms / Nova 54ms / SuperNova·Quasar 36ms(BLUESTAR 기준)로 전부 다름. 즉 어떤 난이도에서도
+  하드코딩 값과 맞지 않았고, Comet에서 50ms로 친 BLUESTAR가 판정바에서는 FAST/SLOW로 표시됨.
+- **수정**:
+  - 틱 색을 오차 크기로 추정하지 않고, `OnGetJudge`가 넘겨주는 `EJudges` 값을 그대로 사용
+    (BLUESTAR 파랑 / WHITESTAR 흰색 / YELLOWSTAR 노랑 / REDSTAR 빨강).
+  - `JudgmentBar.RefreshJudgeRange()`가 `RG_PS_Judgement.JudgeRange`를 런타임에 읽어 배경 박스와
+    바 전체 스케일을 난이도에 자동으로 맞춤.
+  - 오차 텍스트를 소수점 1자리 + 판정 등급명으로 변경(`+32.4 ms · BLUESTAR (FAST)`). 기존 `F0` 반올림
+    표시가 게임 화면 숫자(`Mathf.Floor`)와 1ms 어긋나 보이던 문제도 해소.
+- **미해결로 남긴 것**: `OnGetJudge`는 `WidgeInvoke`로 모든 `PlayWidget`에 브로드캐스트되고
+  `JudgeTextViewer`가 2-인자 버전을 오버라이드하지 않아, 히트 1회가 중복 등록될 수 있음. 판정바 표시에는
+  영향이 없지만(같은 값이 겹쳐 그려짐) 결과 화면 통계로 집계할 계획이라면
+  `RG_PS_Judgement.TryJudgeShortNote`(노트당 1회) 후킹으로 옮겨야 함.
+- **검증**: `dotnet build` 성공(경고 0개). 실게임 확인은 아직 안 됨.
+- 자세한 내용: `02-systems/PLAY_OVERLAY.md`
 
 ## 2026-07-18 추가: InventoryPopup 모드의 노트 스킨 기능 이식
 
