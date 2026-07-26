@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using MelonLoader;
+using RhythmGame;
+using RhythmGame.Play;
 using UnityEngine;
 using sxtg2.Helpers;
 
@@ -21,42 +23,70 @@ namespace sxtg2.Features
         private static float _lastHitOffsetMs = 0f;
         private static float _lastHitTime = -999f;
         private static Color _lastHitColor = Color.white;
+        private static int _lastHitJudge = -1;
+
+        // EJudges 순서: BLUESTAR / WHITESTAR / YELLOWSTAR / REDSTAR
+        private static readonly string[] JudgeNames = { "BLUESTAR", "WHITESTAR", "YELLOWSTAR", "REDSTAR" };
+
+        // 게임의 RG_PS_Judgement.JudgeRange(초)를 ms로 캐시. 초기값은 SuperNova/Quasar 기준 폴백.
+        private static readonly float[] RangeMs = { 36f, 85f, 136f, 187f };
 
         private static Texture2D _whiteTex;
         private static GUIStyle _labelStyle;
 
-        public static void RegisterHit(float gapInSeconds)
+        /// <summary>난이도별로 다른 실제 판정 범위를 게임에서 읽어온다.</summary>
+        public static void RefreshJudgeRange()
+        {
+            try
+            {
+                ManagerPlay manager = ManagerPlay.Instance;
+                if (manager == null)
+                    return;
+
+                RG_PS_Judgement judgeModule = manager.judgeModule;
+                if (judgeModule == null)
+                    return;
+
+                var ranges = judgeModule.JudgeRange;
+                if (ranges == null || ranges.Count < RangeMs.Length)
+                    return;
+
+                for (int i = 0; i < RangeMs.Length; i++)
+                {
+                    float ms = ranges[i] * 1000f;
+                    if (ms > 0f)
+                        RangeMs[i] = ms;
+                }
+            }
+            catch
+            {
+                // 판정 모듈이 아직 준비되지 않은 프레임은 폴백 값 유지
+            }
+        }
+
+        private static Color JudgeColor(int judgeIndex)
+        {
+            switch (judgeIndex)
+            {
+                case 0: return new Color(0.30f, 0.65f, 1f);    // BLUESTAR
+                case 1: return new Color(0.95f, 0.95f, 0.95f); // WHITESTAR
+                case 2: return new Color(1f, 0.85f, 0.20f);    // YELLOWSTAR
+                case 3: return new Color(0.95f, 0.25f, 0.25f); // REDSTAR
+                default: return new Color(0.7f, 0.7f, 0.7f);
+            }
+        }
+
+        public static void RegisterHit(float gapInSeconds, int judgeIndex)
         {
             try
             {
                 float offsetMs = gapInSeconds * 1000f;
-
-                Color tickColor;
-                float absOffset = Math.Abs(offsetMs);
-
-                if (absOffset <= 30f)
-                {
-                    tickColor = new Color(1f, 0.82f, 0f); // Perfect: Gold
-                }
-                else if (absOffset <= 70f)
-                {
-                    tickColor = new Color(0.25f, 0.85f, 0.3f); // Great: Green
-                }
-                else
-                {
-                    if (offsetMs > 0f)
-                    {
-                        tickColor = new Color(0.2f, 0.6f, 0.95f); // Fast: Cyan/Blue
-                    }
-                    else
-                    {
-                        tickColor = new Color(0.95f, 0.25f, 0.25f); // Slow: Red
-                    }
-                }
+                Color tickColor = JudgeColor(judgeIndex);
 
                 _lastHitOffsetMs = offsetMs;
                 _lastHitTime = Time.time;
                 _lastHitColor = tickColor;
+                _lastHitJudge = judgeIndex;
 
                 HitHistory.Add(new HitTick
                 {
@@ -98,25 +128,17 @@ namespace sxtg2.Features
                 float centerX = isVertical ? 60f : screenWidth / 2f;
                 float centerY = screenHeight / 2f;
 
-                float maxMsRange = 150f;
+                // 눈금 범위는 게임의 최대 판정 폭(REDSTAR 경계)에 맞춘다.
+                float maxMsRange = RangeMs[3];
                 float scale = (isVertical ? (barH / 2f) : (barW / 2f)) / maxMsRange;
 
-                // 1. 전체 배경 트랙 (±150ms 범위)
+                // 1. 전체 배경 트랙 (±REDSTAR 범위)
                 DrawColorRect(new Rect(centerX - barW / 2f, centerY - barH / 2f, barW, barH), new Color(0.08f, 0.08f, 0.08f, 0.65f));
 
-                // 2. Great 범위 박스 시각화 (±70ms)
-                float greatSize = 70f * 2f * scale;
-                if (isVertical)
-                    DrawColorRect(new Rect(centerX - barW / 2f + 1f, centerY - greatSize / 2f, barW - 2f, greatSize), new Color(0.6f, 0.55f, 0.15f, 0.2f));
-                else
-                    DrawColorRect(new Rect(centerX - greatSize / 2f, centerY - barH / 2f + 1f, greatSize, barH - 2f), new Color(0.6f, 0.55f, 0.15f, 0.2f));
-
-                // 3. Perfect 범위 박스 시각화 (±30ms)
-                float perfectSize = 30f * 2f * scale;
-                if (isVertical)
-                    DrawColorRect(new Rect(centerX - barW / 2f + 1f, centerY - perfectSize / 2f, barW - 2f, perfectSize), new Color(0.15f, 0.65f, 0.75f, 0.3f));
-                else
-                    DrawColorRect(new Rect(centerX - perfectSize / 2f, centerY - barH / 2f + 1f, perfectSize, barH - 2f), new Color(0.15f, 0.65f, 0.75f, 0.3f));
+                // 2~4. 실제 판정 범위 박스 (넓은 등급부터 겹쳐 그림)
+                DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[2] * 2f * scale, new Color(0.65f, 0.55f, 0.12f, 0.18f)); // YELLOWSTAR
+                DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[1] * 2f * scale, new Color(0.75f, 0.75f, 0.75f, 0.20f)); // WHITESTAR
+                DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[0] * 2f * scale, new Color(0.20f, 0.50f, 0.85f, 0.32f)); // BLUESTAR
 
                 // 4. Center Line (0ms)
                 if (isVertical)
@@ -151,8 +173,9 @@ namespace sxtg2.Features
                 if (textElapsed < duration)
                 {
                     string sign = _lastHitOffsetMs >= 0f ? "+" : "";
-                    string tag = Math.Abs(_lastHitOffsetMs) <= 30f ? "PERFECT" : (_lastHitOffsetMs > 0f ? "FAST" : "SLOW");
-                    string msText = $"{sign}{_lastHitOffsetMs:F0} ms ({tag})";
+                    string judgeName = (_lastHitJudge >= 0 && _lastHitJudge < JudgeNames.Length) ? JudgeNames[_lastHitJudge] : "?";
+                    string tag = _lastHitOffsetMs >= 0f ? "FAST" : "SLOW";
+                    string msText = $"{sign}{_lastHitOffsetMs:F1} ms · {judgeName} ({tag})";
 
                     float alpha = Mathf.Clamp01(1f - (textElapsed / duration));
 
@@ -167,8 +190,8 @@ namespace sxtg2.Features
                     _labelStyle.fontSize = 16;
 
                     Rect labelRect = isVertical
-                        ? new Rect(centerX + barW / 2f + 10f, centerY - 12f, 180f, 24f)
-                        : new Rect(centerX - 90f, centerY - barH / 2f - 28f, 180f, 24f);
+                        ? new Rect(centerX + barW / 2f + 10f, centerY - 12f, 260f, 24f)
+                        : new Rect(centerX - 90f, centerY - barH / 2f - 28f, 260f, 24f);
 
                     // 그림자
                     _labelStyle.normal.textColor = new Color(0f, 0f, 0f, alpha * 0.8f);
@@ -187,6 +210,14 @@ namespace sxtg2.Features
             {
                 ModLog.Warning($"[JudgmentBar] OnGUI 드로우 에러: {ex.Message}");
             }
+        }
+
+        private static void DrawRangeBox(float centerX, float centerY, float barW, float barH, bool isVertical, float size, Color color)
+        {
+            if (isVertical)
+                DrawColorRect(new Rect(centerX - barW / 2f + 1f, centerY - size / 2f, barW - 2f, size), color);
+            else
+                DrawColorRect(new Rect(centerX - size / 2f, centerY - barH / 2f + 1f, size, barH - 2f), color);
         }
 
         private static void DrawColorRect(Rect rect, Color color)
@@ -248,8 +279,15 @@ namespace sxtg2.Features
                     return;
                 }
 
-                JudgmentBar.RegisterHit(deltaTime);
-                ModLog.Verbose($"[JudgmentBar] 히트 감지: deltaTime={deltaTime:F4}s ({deltaTime * 1000f:F1}ms)");
+                // __args[0]은 EJudges (0=BLUESTAR ~ 3=REDSTAR)
+                int judgeIndex = -1;
+                if (__args[0] != null && __args[0].GetType().IsEnum)
+                {
+                    judgeIndex = Convert.ToInt32(__args[0]);
+                }
+
+                JudgmentBar.RegisterHit(deltaTime, judgeIndex);
+                ModLog.Verbose($"[JudgmentBar] 히트 감지: judge={judgeIndex}, deltaTime={deltaTime:F4}s ({deltaTime * 1000f:F1}ms)");
             }
             catch (Exception ex)
             {

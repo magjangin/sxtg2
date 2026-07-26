@@ -67,6 +67,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Features\JudgmentBarFeature.cs" />
+    <Compile Include="Features\KeyViewerFeature.cs" />
     <Compile Include="Features\MusicSelectFeature.cs" />
     <Compile Include="Helpers\ModHelpers.cs" />
     <Compile Include="Hooks\AudioHooks.cs" />

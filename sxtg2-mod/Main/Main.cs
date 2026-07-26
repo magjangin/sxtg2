@@ -58,11 +58,18 @@ namespace sxtg2
             {
                 AutoPlayHook.CurrentTimeSeconds = -1f;
             }
+            KeyViewer.Reset();
         }
 
         public override void OnUpdate()
         {
             BGABGMSyncHook.CheckAndSync();
+
+            if (AutoPlayHook.IsPlayScene)
+            {
+                KeyViewer.Poll();
+                JudgmentBar.RefreshJudgeRange();
+            }
         }
 
         public override void OnGUI()
@@ -70,6 +77,7 @@ namespace sxtg2
             if (AutoPlayHook.IsPlayScene)
             {
                 JudgmentBar.DrawJudgmentBar();
+                KeyViewer.Draw();
             }
         }
 
