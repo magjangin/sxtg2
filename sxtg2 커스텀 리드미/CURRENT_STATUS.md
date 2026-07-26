@@ -42,7 +42,7 @@
   `JudgeTextViewer`가 2-인자 버전을 오버라이드하지 않아, 히트 1회가 중복 등록될 수 있음. 판정바 표시에는
   영향이 없지만(같은 값이 겹쳐 그려짐) 결과 화면 통계로 집계할 계획이라면
   `RG_PS_Judgement.TryJudgeShortNote`(노트당 1회) 후킹으로 옮겨야 함.
-- **검증**: `dotnet build` 성공(경고 0개). 실게임 확인은 아직 안 됨.
+- **검증**: `dotnet build` 성공(경고 0개), 실게임에서 판정 등급별 색이 정상 표시되는 것 확인 완료.
 - 자세한 내용: `02-systems/PLAY_OVERLAY.md`
 
 ## 2026-07-18 추가: InventoryPopup 모드의 노트 스킨 기능 이식
