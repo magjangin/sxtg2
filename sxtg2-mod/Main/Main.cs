@@ -60,6 +60,7 @@ namespace sxtg2
             }
             KeyViewer.Reset();
             NoteSwayHook.Reset();
+            NoteSpeedChaosHook.Reset();
         }
 
         public override void OnUpdate()

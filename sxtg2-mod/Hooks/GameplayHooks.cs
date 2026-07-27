@@ -234,6 +234,149 @@ namespace sxtg2.Hooks
         }
     }
 
+    /// <summary>
+    /// [챌린지] 노트마다 낙하 속도 배율을 다르게 준다.
+    /// 원본은 모든 노트가 같은 noteSpeed를 쓰므로 순서가 절대 뒤집히지 않지만, 배율을 노트별로
+    /// 흩뿌리면 노트끼리 서로 추월한다. 읽기 난이도를 올리는 것이 목적인 기능이다.
+    /// 판정은 Note.timing만 보므로 정확도 자체에는 영향이 없다.
+    /// </summary>
+    [HarmonyPatch]
+    public static class NoteSpeedChaosHook
+    {
+        private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> ShortNote =
+            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("shortNote");
+        private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> HoldMask =
+            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("holdMask");
+        private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> HoldTexture =
+            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("holdTexture");
+        private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> TailNote =
+            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("tailNote");
+        private static readonly AccessTools.FieldRef<RG_NoteObject, float> HoldTextureYOffset =
+            AccessTools.FieldRefAccess<RG_NoteObject, float>("holdTextureYOffset");
+
+        private static readonly Dictionary<int, float> Multipliers = new Dictionary<int, float>();
+
+        public static void Reset()
+        {
+            Multipliers.Clear();
+        }
+
+        /// <summary>
+        /// 원본이 계산해 둔 y를 배율만큼 늘린다. 홀드는 헤드·길이에 같은 배율을 걸어야
+        /// 몸통이 늘어난 만큼 꼬리도 따라간다.
+        /// </summary>
+        [HarmonyPatch(typeof(RG_NoteObject), "CalculatePosition")]
+        [HarmonyPostfix]
+        private static void CalculatePositionPostfix(RG_NoteObject __instance)
+        {
+            if (!SaveCustomKeyConfig.EnableNoteSpeedChaos)
+                return;
+
+            try
+            {
+                float multiplier = GetMultiplier(__instance);
+                if (Mathf.Approximately(multiplier, 1f))
+                    return;
+
+                var head = ShortNote(__instance);
+                if (head == null)
+                    return;
+
+                float headY = head.anchoredPosition.y * multiplier;
+                head.anchoredPosition = new Vector2(head.anchoredPosition.x, headY);
+
+                if (__instance.Duration == 0f)
+                    return;
+
+                var mask = HoldMask(__instance);
+                if (mask == null)
+                    return;
+
+                // 원본이 방금 세팅한 sizeDelta.y가 (꼬리y - 헤드y)라서 길이만 배율을 걸면 된다.
+                float length = mask.sizeDelta.y * multiplier;
+                mask.sizeDelta = new Vector2(mask.sizeDelta.x, length);
+                mask.anchoredPosition = new Vector2(mask.anchoredPosition.x, headY + length / 2f);
+
+                var texture = HoldTexture(__instance);
+                if (texture != null)
+                {
+                    // 마스크를 옮겼으면 무늬가 반대로 밀리지 않도록 원본과 같은 상쇄를 다시 건다.
+                    texture.anchoredPosition = new Vector2(
+                        texture.anchoredPosition.x,
+                        mask.anchoredPosition.y * -1f + HoldTextureYOffset(__instance));
+                }
+
+                var tail = TailNote(__instance);
+                if (tail != null)
+                {
+                    tail.anchoredPosition = new Vector2(tail.anchoredPosition.x, headY + length);
+                }
+            }
+            catch
+            {
+                // 플레이 중 프레임 예외 방지
+            }
+        }
+
+        /// <summary>
+        /// 느린 노트는 생성 시점에 이미 화면 안쪽에 있어야 해서 그대로 두면 허공에서 튀어나온다.
+        /// NoteGenerator는 속도와 무관하게 고정 3초 전에 노트를 만들므로, 가장 느린 배율만큼
+        /// 선행 생성 시간을 늘려준다.
+        /// </summary>
+        [HarmonyPatch(typeof(NoteGenerator), "Start")]
+        [HarmonyPostfix]
+        private static void NoteGeneratorStartPostfix(NoteGenerator __instance)
+        {
+            if (!SaveCustomKeyConfig.EnableNoteSpeedChaos)
+                return;
+
+            float slowest = SaveCustomKeyConfig.NoteSpeedChaosMin;
+            if (slowest >= 1f)
+                return;
+
+            try
+            {
+                var field = AccessTools.Field(typeof(NoteGenerator), "notePreGenerateTime");
+                if (field == null)
+                    return;
+
+                float current = (float)field.GetValue(__instance);
+                float extended = current / slowest;
+                field.SetValue(__instance, extended);
+                ModLog.Msg($"[NoteSpeedChaos] 노트 선행 생성 시간을 {current:0.##}초 → {extended:0.##}초로 늘렸습니다 (최저 배율 {slowest:0.##}).");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[NoteSpeedChaos] 선행 생성 시간 조정 실패: {ex.Message}");
+            }
+        }
+
+        private static float GetMultiplier(RG_NoteObject note)
+        {
+            int id = note.GetInstanceID();
+            if (Multipliers.TryGetValue(id, out float cached))
+                return cached;
+
+            // 레인별 모드에서는 같은 레인(같은 NoteGroup 부모)의 노트가 같은 배율을 받는다.
+            float seed;
+            if (SaveCustomKeyConfig.NoteSpeedChaosPerLane)
+                seed = note.transform.parent != null ? note.transform.parent.GetInstanceID() % 1000 : 0f;
+            else
+                seed = note.Timing;
+
+            float random = Mathf.Abs(Mathf.Sin(seed * 12.9898f) * 43758.5453f);
+            random -= Mathf.Floor(random);
+
+            float multiplier = Mathf.Lerp(
+                SaveCustomKeyConfig.NoteSpeedChaosMin,
+                SaveCustomKeyConfig.NoteSpeedChaosMax,
+                random);
+
+            Multipliers[id] = multiplier;
+            return multiplier;
+        }
+    }
+
     [HarmonyPatch]
     public static class AutoPlayHook
     {

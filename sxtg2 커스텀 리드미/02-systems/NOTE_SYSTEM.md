@@ -454,3 +454,62 @@ offset = amplitude * sin(curTime * speed * 2π + phase)
 프리팹 설정이라 코드로는 확인할 수 없으므로, 기본값(12px)에서 시작해 실제 화면을 보며 조정하세요.
 
 상태(`BaseX`/`Phase`)는 노트 인스턴스 ID로 캐싱하며 씬 전환 시 `NoteSwayHook.Reset()`으로 비웁니다.
+
+---
+
+## 노트 속도 카오스 (NoteSpeedChaos, 2026-07-27 추가)
+
+노트마다 낙하 속도 배율을 다르게 주는 **챌린지용** 기능입니다. `SaveCustomKey/config.txt`의
+`NoteSpeedChaos`로 켭니다(기본 꺼짐). 구현은 `Hooks/GameplayHooks.cs`의 `NoteSpeedChaosHook`.
+
+### 왜 "챌린지용"인가
+
+원본 위치 식은 모든 노트가 같은 `noteSpeed`를 씁니다.
+
+```csharp
+y = Max((Timing - curTime) * noteSpeed * 2.5f, 0f)
+```
+
+여기서 배율을 노트별로 다르게 주면 **노트끼리 서로 추월합니다**. 예를 들어 10초 노트에 배율
+1.8, 12초 노트에 배율 0.6을 주면 나중에 쳐야 할 노트가 화면상 더 아래에 그려집니다. 읽기
+난이도를 올리는 것이 목적인 기능이라 의도된 동작이지만, **정상적인 SV(스크롤 속도 변화)와는
+다른 것**이라는 점을 알아둬야 합니다.
+
+제대로 된 SV는 노트별 배율이 아니라 곡 전체에 하나뿐인 누적 거리 함수 `F(t)`를 만들고
+`y = (F(Timing) - F(curTime)) * 2.5f`로 계산합니다. `F`가 단조증가라 순서가 절대 뒤집히지
+않고, 기울기 0이면 STOP, 음수면 역스크롤이 됩니다. 커스텀 곡에서 BPM 변화를 쓰지 않으므로
+현재는 구현하지 않았습니다.
+
+### 홀드 처리
+
+원본이 `holdMask.sizeDelta.y`에 `꼬리y - 헤드y`를 넣어두므로, 헤드와 길이에 같은 배율을 걸고
+꼬리를 `헤드 + 길이`로 다시 잡습니다. 빠른 홀드는 길쭉하게, 느린 홀드는 뭉툭하게 보입니다.
+마스크를 옮겼으니 `holdTexture` 상쇄(`-holdMask.y + holdTextureYOffset`)도 원본과 같은 식으로
+다시 걸어줘야 무늬가 반대로 밀리지 않습니다.
+
+### 노트 선행 생성 시간 조정
+
+`NoteGenerator.CheckNoteGenerate`는 **속도와 무관하게** 고정 시간 기준으로 노트를 만듭니다.
+
+```csharp
+private readonly float notePreGenerateTime = 3f;
+if (_curTime + notePreGenerateTime >= note.timing) { Generate(...); }
+```
+
+배율이 1보다 작은(느린) 노트는 생성 시점에 이미 화면 안쪽에 있어야 해서, 그대로 두면 허공에서
+튀어나옵니다. 그래서 `NoteGenerator.Start` Postfix에서 `notePreGenerateTime`을 `3 / 최저배율`로
+늘립니다. `private readonly`지만 인스턴스 필드라 리플렉션 `SetValue`가 동작합니다.
+
+### 배율 결정
+
+- `NoteSpeedChaosPerLane=0`: `Timing`을 시드로 노트마다 다른 배율(완전 카오스)
+- `NoteSpeedChaosPerLane=1`: 부모 `NoteGroup`(레인)의 인스턴스 ID를 시드로 레인마다 다른 배율.
+  같은 레인 안에서는 순서가 유지되므로 읽을 수는 있습니다.
+
+시드 기반이라 결정론적이고, 리트라이해도 같은 패턴이 나옵니다. `Min > Max`로 적어두면 설정
+로드 시 두 값을 맞바꿉니다.
+
+### 판정과의 관계
+
+`NoteSway`와 마찬가지로 판정은 `Note.timing`과 시간만 비교하므로 **정확도 자체에는 영향이
+없습니다**. 어렵게 느껴지는 것은 순전히 읽기 난이도 때문입니다.

@@ -212,6 +212,11 @@ namespace sxtg2.Helpers
         public static bool NoteSwayDamping { get; set; } = true;
         public static float NoteSwayDampingTime { get; set; } = 0.4f;
 
+        public static bool EnableNoteSpeedChaos { get; set; } = false;
+        public static float NoteSpeedChaosMin { get; set; } = 0.6f;
+        public static float NoteSpeedChaosMax { get; set; } = 1.8f;
+        public static bool NoteSpeedChaosPerLane { get; set; } = false;
+
         public static void EnsureInitialized()
         {
             if (!_initialized)
@@ -268,6 +273,7 @@ namespace sxtg2.Helpers
             sb.AppendLine("EnableKeyViewer=1");
             AppendMaxScoreSection(sb);
             AppendNoteSwaySection(sb);
+            AppendNoteSpeedChaosSection(sb);
 
             File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
             MelonLogger.Msg($"[SaveCustomKey] 기본 설정 파일 생성 완료: {filePath}");
@@ -301,6 +307,22 @@ namespace sxtg2.Helpers
             sb.AppendLine();
             sb.AppendLine("# 판정선 도달 몇 초 전부터 흔들림이 잦아들지");
             sb.AppendLine("NoteSwayDampingTime=0.4");
+        }
+
+        private static void AppendNoteSpeedChaosSection(StringBuilder sb)
+        {
+            sb.AppendLine();
+            sb.AppendLine("# [챌린지] 노트마다 낙하 속도를 제각각으로 (1 = 켜짐, 0 = 꺼짐)");
+            sb.AppendLine("# 노트끼리 서로 추월하므로 읽기가 매우 어려워집니다. 판정에는 영향이 없습니다.");
+            sb.AppendLine("NoteSpeedChaos=0");
+            sb.AppendLine();
+            sb.AppendLine("# 속도 배율 범위 (1 = 원래 속도). 예: 0.6 ~ 1.8");
+            sb.AppendLine("NoteSpeedChaosMin=0.6");
+            sb.AppendLine("NoteSpeedChaosMax=1.8");
+            sb.AppendLine();
+            sb.AppendLine("# 1 = 레인마다 속도가 다름(같은 레인 안에서는 순서 유지, 읽을 수는 있음)");
+            sb.AppendLine("# 0 = 노트마다 속도가 다름(완전 카오스)");
+            sb.AppendLine("NoteSpeedChaosPerLane=0");
         }
 
         /// <summary>이전 버전에서 만들어진 설정 파일에는 새 항목이 없으므로 뒤에 덧붙여준다.</summary>
@@ -389,11 +411,35 @@ namespace sxtg2.Helpers
                     {
                         NoteSwayDampingTime = ParseFloatSetting("NoteSwayDampingTime", val, NoteSwayDampingTime, 0.01f, 30f);
                     }
+                    else if (key.Equals("NoteSpeedChaos", StringComparison.OrdinalIgnoreCase) || key.Equals("EnableNoteSpeedChaos", StringComparison.OrdinalIgnoreCase))
+                    {
+                        EnableNoteSpeedChaos = ParseFlexibleBool(val, EnableNoteSpeedChaos);
+                    }
+                    else if (key.Equals("NoteSpeedChaosMin", StringComparison.OrdinalIgnoreCase))
+                    {
+                        NoteSpeedChaosMin = ParseFloatSetting("NoteSpeedChaosMin", val, NoteSpeedChaosMin, 0.05f, 10f);
+                    }
+                    else if (key.Equals("NoteSpeedChaosMax", StringComparison.OrdinalIgnoreCase))
+                    {
+                        NoteSpeedChaosMax = ParseFloatSetting("NoteSpeedChaosMax", val, NoteSpeedChaosMax, 0.05f, 10f);
+                    }
+                    else if (key.Equals("NoteSpeedChaosPerLane", StringComparison.OrdinalIgnoreCase))
+                    {
+                        NoteSpeedChaosPerLane = ParseFlexibleBool(val, NoteSpeedChaosPerLane);
+                    }
+                }
+
+                if (NoteSpeedChaosMin > NoteSpeedChaosMax)
+                {
+                    MelonLogger.Warning($"[SaveCustomKey] NoteSpeedChaosMin({NoteSpeedChaosMin:0.##})이 Max({NoteSpeedChaosMax:0.##})보다 큽니다 → 두 값을 맞바꿉니다.");
+                    float swap = NoteSpeedChaosMin;
+                    NoteSpeedChaosMin = NoteSpeedChaosMax;
+                    NoteSpeedChaosMax = swap;
                 }
 
                 AppendSectionsMissingFrom(filePath, seenKeys);
 
-                MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}");
+                MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}, NoteSpeedChaos={(EnableNoteSpeedChaos ? $"켜짐(배율 {NoteSpeedChaosMin:0.##}~{NoteSpeedChaosMax:0.##}, {(NoteSpeedChaosPerLane ? "레인별" : "노트별")})" : "꺼짐(0)")}");
             }
             catch (Exception ex)
             {
@@ -418,6 +464,12 @@ namespace sxtg2.Helpers
             {
                 sections.Add(AppendNoteSwaySection);
                 names.Add("NoteSway");
+            }
+
+            if (!seenKeys.Contains("NoteSpeedChaos") && !seenKeys.Contains("EnableNoteSpeedChaos"))
+            {
+                sections.Add(AppendNoteSpeedChaosSection);
+                names.Add("NoteSpeedChaos");
             }
 
             if (sections.Count > 0)
