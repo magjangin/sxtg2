@@ -97,9 +97,14 @@
 | `EnableJudgmentBar` | `1` | 실시간 판정바 표시 |
 | `JudgmentBarVertical` | `1` | 판정바 형태 (1 = 세로, 0 = 가로) |
 | `EnableKeyViewer` | `1` | 실시간 키뷰어 표시 |
+| `MaxScore` | `1000000` | 점수 상한(만점 기준값). `ScoreLimit`도 같은 키로 인식 |
 
+- `MaxScore`만 숫자 값입니다(불리언 아님). 기본값 `1000000`이면 원본과 동일하게 동작하고,
+  다른 값을 넣었을 때만 게임 코드에 IL 패치가 적용됩니다. 0 이하이거나 숫자로 읽을 수 없는 값은
+  경고 로그를 남기고 무시합니다. 자세한 내용은 `02-systems/SCORE_SYSTEM.md`의 "점수 상한 설정" 절 참고.
 - 설정 파일에 항목이 아예 없으면 위 기본값이 그대로 적용됩니다(이전 버전에서 만들어진 파일이라
-  새 항목이 빠져 있어도 동작함).
+  새 항목이 빠져 있어도 동작함). 단 `MaxScore`는 예외로, 항목이 없으면 모드가 파일 끝에
+  기본값 줄을 자동으로 덧붙여줍니다.
 - 판정바/키뷰어의 표시 규칙과 동작은 `02-systems/PLAY_OVERLAY.md`를 참고하세요.
 - 게임 자체의 커스텀 키 설정은 `UserAccountModule.Instance.userData.customKeySetting`(세이브 데이터 내부,
   `GameSetting/KeyPresetSetting.cs`)로 관리되며, 이 폴더와는 별개입니다. 키 프리셋을 파일로

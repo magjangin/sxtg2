@@ -1,6 +1,6 @@
 # 현재 상태
 
-기준일: 2026-07-26
+기준일: 2026-07-27
 
 ## 현재 결론
 
@@ -11,6 +11,21 @@
 - `dotnet build sxtg2-mod/sxtg2.csproj --configuration Debug` 성공 (경고 0개)
 - `sxtg2.LogicTests` 4개 통과
 - 실제 게임에서 커스텀 차트 흐름 정상 동작 확인
+
+## 2026-07-27 추가: 설정 파일로 점수 상한 지정
+
+- **추가한 것**: `SaveCustomKey/config.txt`의 `MaxScore` 항목으로 만점 기준값을 지정할 수 있게 함.
+  새 훅 `JudgeScoreMaxHook`(`Hooks/GameplayHooks.cs`, Harmony Transpiler)이
+  `RG_PS_Judgement.Update()` / `CalculateJudgeScore(float)`에 리터럴로 박힌 `1000000f`를 교체.
+- 상수를 새 값으로 굽지 않고 `GetMaxScore()` 호출로 바꿔서, 설정 로드와 패치 적용 순서에
+  관계없이 항상 최신 설정값을 읽도록 함. `MaxScore`가 기본값이면 `Prepare()`가 `false`를 반환해
+  패치를 아예 붙이지 않음.
+- 이전 버전에서 만들어진 `config.txt`에는 `MaxScore` 항목이 없으므로, 없으면 파일 끝에 기본값 줄을
+  자동으로 덧붙임.
+- **검증**: `dotnet build` 성공(경고 0개), 로직 테스트 6개 통과, 게임 `Mods/`에 배포 완료.
+  실게임에서 점수 상한이 실제로 바뀌는지는 **미확인** — 값을 바꿔 플레이 확인 필요.
+- 자세한 내용: `02-systems/SCORE_SYSTEM.md`("점수 상한 설정" 절),
+  `01-user-guide/INSTALL_AND_LAYOUT.md`(6절)
 
 ## 2026-07-26 추가: 플레이 씬 키뷰어 (v0.1.4)
 

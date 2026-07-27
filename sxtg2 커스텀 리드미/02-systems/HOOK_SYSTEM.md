@@ -32,6 +32,33 @@ private static void MethodPostfix(TargetClass __instance, ReturnType __result)
 }
 ```
 
+### Transpiler Hook
+
+메서드 **안에 리터럴로 박힌 상수나 로직 자체**를 바꿔야 할 때 씁니다. Prefix/Postfix는 원본 메서드
+바깥에서만 개입할 수 있어서, `Mathf.Min(JudgeScore, 1000000f)` 같은 하드코딩 값은 손댈 수 없습니다.
+
+```csharp
+[HarmonyTranspiler]
+private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+{
+    var codes = new List<CodeInstruction>(instructions);
+    foreach (var code in codes)
+    {
+        if (code.opcode != OpCodes.Ldc_R4 || !(code.operand is float value)) continue;
+        // opcode/operand만 갈아끼우면 라벨과 예외 블록이 그대로 보존된다
+        code.opcode = OpCodes.Call;
+        code.operand = AccessTools.Method(typeof(MyHook), nameof(MyHook.GetValue));
+    }
+    return codes;
+}
+```
+
+상수를 다른 상수로 굽는 대신 **static 메서드 호출로 교체**하면(스택 효과가 같아 안전) 런타임
+설정값을 그대로 반영할 수 있고, 패치 적용 시점과 설정 로드 순서에 영향받지 않습니다.
+
+> 어떤 값을 바꾸고 싶을 때는 먼저 디컴파일 원본(`sxtg2/` 폴더)에서 **그 값이 필드에서 읽히는지,
+> 메서드 안에 리터럴로 박혀 있는지**부터 확인하세요. 후자면 리플렉션 필드 수정은 무조건 무효입니다.
+
 ---
 
 ## 주요 Hook 구현
@@ -179,6 +206,31 @@ public class NoteSpriteHook
 ```
 
 자세한 내용은 `02-systems/NOTE_SYSTEM.md`의 "노트 스킨(커스텀 스프라이트)" 절 참고.
+
+### JudgeScoreMaxHook
+
+`SaveCustomKey/config.txt`의 `MaxScore` 값으로 점수 상한을 바꾸는 Transpiler 훅입니다
+(`Hooks/GameplayHooks.cs`).
+
+```csharp
+[HarmonyPatch]
+public static class JudgeScoreMaxHook
+{
+    // 기본값이면 패치 자체를 붙이지 않는다. EnsureInitialized로 설정 로드 순서 문제도 해소.
+    private static bool Prepare()
+    {
+        SaveCustomKeyConfig.EnsureInitialized();
+        return SaveCustomKeyConfig.IsMaxScoreCustom;
+    }
+
+    // RG_PS_Judgement.Update() / CalculateJudgeScore(float)
+    private static IEnumerable<MethodBase> TargetMethods() { ... }
+
+    public static float GetMaxScore() => SaveCustomKeyConfig.MaxScore;
+}
+```
+
+자세한 내용은 `02-systems/SCORE_SYSTEM.md`의 "점수 상한 설정" 절 참고.
 
 ---
 

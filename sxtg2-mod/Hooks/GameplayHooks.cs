@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Reflection.Emit;
 using HarmonyLib;
 using MelonLoader;
 using GameSetting;
@@ -337,6 +338,87 @@ namespace sxtg2.Hooks
             }
 
             return true;
+        }
+    }
+
+    /// <summary>
+    /// RG_PS_Judgement의 점수 계산에 리터럴로 박혀 있는 만점 상수(1000000f)를
+    /// SaveCustomKey/config.txt의 MaxScore 값으로 바꾼다.
+    /// 필드(SXGTData.maxScore)가 아니라 메서드 IL에 직접 박힌 값이라 Transpiler로만 교체 가능.
+    /// </summary>
+    [HarmonyPatch]
+    public static class JudgeScoreMaxHook
+    {
+        /// <summary>Transpiler가 원본 IL에서 찾아 교체할 상수.</summary>
+        private const float OriginalMaxScore = 1000000f;
+
+        /// <summary>교체된 IL이 매 프레임 호출한다. 상수를 직접 굽지 않아 설정 로드 순서에 영향받지 않는다.</summary>
+        public static float GetMaxScore()
+        {
+            return SaveCustomKeyConfig.MaxScore;
+        }
+
+        private static bool Prepare()
+        {
+            SaveCustomKeyConfig.EnsureInitialized();
+
+            if (!SaveCustomKeyConfig.IsMaxScoreCustom)
+                return false;
+
+            MelonLogger.Msg($"[JudgeScoreMax] 점수 상한을 {SaveCustomKeyConfig.MaxScore:0.###}(으)로 교체합니다 (원본 {OriginalMaxScore:0.###}).");
+            return true;
+        }
+
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            var type = AccessTools.TypeByName("RhythmGame.Play.RG_PS_Judgement");
+            if (type == null)
+            {
+                MelonLogger.Warning("[JudgeScoreMax] RG_PS_Judgement 타입을 찾지 못해 점수 상한을 적용하지 못했습니다.");
+                yield break;
+            }
+
+            var update = AccessTools.Method(type, "Update");
+            if (update != null) yield return update;
+
+            var calculate = AccessTools.Method(type, "CalculateJudgeScore", new[] { typeof(float) });
+            if (calculate != null) yield return calculate;
+        }
+
+        [HarmonyTranspiler]
+        private static IEnumerable<CodeInstruction> Transpiler(
+            IEnumerable<CodeInstruction> instructions,
+            MethodBase __originalMethod)
+        {
+            var codes = new List<CodeInstruction>(instructions);
+            var getter = AccessTools.Method(typeof(JudgeScoreMaxHook), nameof(GetMaxScore));
+            int replaced = 0;
+
+            for (int i = 0; i < codes.Count; i++)
+            {
+                var code = codes[i];
+                if (code.opcode != OpCodes.Ldc_R4 || !(code.operand is float value))
+                    continue;
+
+                if (Math.Abs(value - OriginalMaxScore) > 0.001f)
+                    continue;
+
+                // opcode/operand만 갈아끼워 라벨과 예외 블록을 그대로 보존한다.
+                code.opcode = OpCodes.Call;
+                code.operand = getter;
+                replaced++;
+            }
+
+            if (replaced == 0)
+            {
+                MelonLogger.Warning($"[JudgeScoreMax] {__originalMethod?.Name}에서 만점 상수({OriginalMaxScore:0.###})를 찾지 못했습니다. 게임 업데이트로 코드가 바뀌었을 수 있습니다.");
+            }
+            else
+            {
+                ModLog.Msg($"[JudgeScoreMax] {__originalMethod?.Name}: 만점 상수 {replaced}곳 교체 완료");
+            }
+
+            return codes;
         }
     }
 

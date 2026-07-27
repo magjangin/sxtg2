@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using MelonLoader;
@@ -193,15 +194,28 @@ namespace sxtg2.Helpers
 
     public static class SaveCustomKeyConfig
     {
+        public const float DefaultMaxScore = 1000000f;
+
+        private static bool _initialized = false;
+
         public static bool AutoPlay { get; set; } = false;
         public static bool AllPerfect { get; set; } = false;
         public static bool BlockSave { get; set; } = true;
         public static bool EnableJudgmentBar { get; set; } = true;
         public static bool JudgmentBarVertical { get; set; } = true;
         public static bool EnableKeyViewer { get; set; } = true;
+        public static float MaxScore { get; set; } = DefaultMaxScore;
+
+        public static void EnsureInitialized()
+        {
+            if (!_initialized)
+                Initialize();
+        }
 
         public static void Initialize()
         {
+            _initialized = true;
+
             try
             {
                 string gamePath = Path.GetDirectoryName(Application.dataPath);
@@ -246,9 +260,35 @@ namespace sxtg2.Helpers
             sb.AppendLine();
             sb.AppendLine("# 실시간 키뷰어 표시 (1 = 켜짐, 0 = 꺼짐)");
             sb.AppendLine("EnableKeyViewer=1");
+            AppendMaxScoreSection(sb);
 
             File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
             MelonLogger.Msg($"[SaveCustomKey] 기본 설정 파일 생성 완료: {filePath}");
+        }
+
+        private static void AppendMaxScoreSection(StringBuilder sb)
+        {
+            sb.AppendLine();
+            sb.AppendLine("# 점수 상한 (만점 기준값). 기본값 1000000 = 원본과 동일");
+            sb.AppendLine("# 1000000 이외의 값을 넣으면 판정 점수 계산의 만점이 그 값으로 바뀝니다.");
+            sb.AppendLine("# 0 이하 또는 숫자가 아닌 값은 무시되고 기본값이 사용됩니다.");
+            sb.AppendLine($"MaxScore={DefaultMaxScore:0.###}");
+        }
+
+        /// <summary>이전 버전에서 만들어진 설정 파일에는 MaxScore 항목이 없으므로 뒤에 덧붙여준다.</summary>
+        private static void AppendMaxScoreSection(string filePath)
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                AppendMaxScoreSection(sb);
+                File.AppendAllText(filePath, sb.ToString(), Encoding.UTF8);
+                MelonLogger.Msg($"[SaveCustomKey] 기존 설정 파일에 MaxScore 항목을 추가했습니다: {filePath}");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[SaveCustomKey] MaxScore 항목 추가 실패: {ex.Message}");
+            }
         }
 
         private static void LoadConfigFile(string filePath)
@@ -256,6 +296,7 @@ namespace sxtg2.Helpers
             try
             {
                 var lines = File.ReadAllLines(filePath, Encoding.UTF8);
+                bool hasMaxScoreKey = false;
                 foreach (var line in lines)
                 {
                     var trimmed = line.Trim();
@@ -293,14 +334,44 @@ namespace sxtg2.Helpers
                     {
                         EnableKeyViewer = ParseFlexibleBool(val, EnableKeyViewer);
                     }
+                    else if (key.Equals("MaxScore", StringComparison.OrdinalIgnoreCase) || key.Equals("ScoreLimit", StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasMaxScoreKey = true;
+                        MaxScore = ParseMaxScore(val, MaxScore);
+                    }
                 }
 
-                MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}");
+                if (!hasMaxScoreKey)
+                    AppendMaxScoreSection(filePath);
+
+                MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}");
             }
             catch (Exception ex)
             {
                 MelonLogger.Error($"[SaveCustomKey] 설정 파일 읽기 실패: {ex.Message}");
             }
+        }
+
+        public static bool IsMaxScoreCustom => Math.Abs(MaxScore - DefaultMaxScore) > 0.001f;
+
+        public static float ParseMaxScore(string val, float defaultValue)
+        {
+            if (string.IsNullOrEmpty(val))
+                return defaultValue;
+
+            if (!float.TryParse(val.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed))
+            {
+                MelonLogger.Warning($"[SaveCustomKey] MaxScore 값을 숫자로 읽지 못했습니다: \"{val}\" → 기본값 {defaultValue:0.###} 유지");
+                return defaultValue;
+            }
+
+            if (parsed <= 0f)
+            {
+                MelonLogger.Warning($"[SaveCustomKey] MaxScore는 0보다 커야 합니다: {parsed:0.###} → 기본값 {defaultValue:0.###} 유지");
+                return defaultValue;
+            }
+
+            return parsed;
         }
 
         public static bool ParseFlexibleBool(string val, bool defaultValue)
