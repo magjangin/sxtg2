@@ -12,6 +12,24 @@
 - `sxtg2.LogicTests` 4개 통과
 - 실제 게임에서 커스텀 차트 흐름 정상 동작 확인
 
+## 2026-07-27 추가: 노트 흔들림 연출 (NoteSway)
+
+- **추가한 것**: 노트가 눈송이처럼 좌우로 흔들리며 내려오는 시각 효과.
+  `Hooks/GameplayHooks.cs`의 `NoteSwayHook`이 `RG_NoteObject.CalculatePosition` Postfix에서
+  **루트 RectTransform**의 x를 밀어준다. config의 `NoteSway`로 켜며 기본은 꺼짐.
+- 자식(`shortNote`/`holdMask`/`tailNote`)이 아니라 루트를 미는 이유: 홀드 몸통이 단일
+  RectTransform이라 S자로 휠 수 없고, `holdMask`만 옮기면 `holdTexture`가 상대적으로 밀려
+  무늬만 반대로 미끄러져 보인다. 루트를 밀면 헤드·몸통·꼬리가 한 덩어리로 움직인다
+  (최신 게임 버전의 연출도 뻣뻣한 막대가 통째로 움직이는 형태라고 사용자가 확인해줌).
+- 흔들림은 곡 진행 시간 기준 사인파이고, 위상은 `Timing`을 시드로 흩뿌려 노트마다 다르다
+  (결정론적 — 리트라이해도 궤적 동일). 감쇠를 켜면 판정선 근처에서 진폭이 0으로 수렴한다.
+- 판정은 `Note.timing`과 시간만 비교하므로 이 연출은 정확도에 영향이 없다.
+- **검증**: `dotnet build` 성공(경고 0개), 로직 테스트 6개 통과, 게임 `Mods/`에 배포 완료.
+  실게임 확인 **미완료** — `Lane` 프리팹에 `RectMask2D`가 있으면 진폭이 클 때 노트가 잘릴 수
+  있는데 이는 코드로 확인이 불가능하므로 실제 화면을 보며 진폭을 조정해야 한다.
+- 자세한 내용: `02-systems/NOTE_SYSTEM.md`("노트 흔들림 연출" 절),
+  `01-user-guide/INSTALL_AND_LAYOUT.md`(6절)
+
 ## 2026-07-27 추가: 설정 파일로 점수 상한 지정
 
 - **추가한 것**: `SaveCustomKey/config.txt`의 `MaxScore` 항목으로 만점 기준값을 지정할 수 있게 함.

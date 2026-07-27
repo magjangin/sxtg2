@@ -397,3 +397,60 @@ public static void LogNoteDetails(object note)
 `CustomNoteSpriteLoader`가 `{게임 설치 폴더}\CustomNotes\*.png`를 읽어 `Sprite.Create`로 변환하고
 파일명(첫 글자만 대문자로 표준화) 기준으로 캐싱한다. 폴더 규칙은 `01-user-guide/INSTALL_AND_LAYOUT.md`
 5절 참고.
+
+---
+
+## 노트 흔들림 연출 (NoteSway, 2026-07-27 추가)
+
+노트가 눈송이처럼 좌우로 흔들리며 내려오는 순수 시각 효과입니다. `SaveCustomKey/config.txt`의
+`NoteSway` 항목으로 켭니다(기본 꺼짐). 구현은 `Hooks/GameplayHooks.cs`의 `NoteSwayHook`.
+
+### 왜 루트를 흔드는가
+
+원본 `RG_NoteObject.CalculatePosition(curTime)`은 **x를 항상 0으로 고정**한 채 자식들의 y만 세팅합니다.
+
+```csharp
+shortNote.anchoredPosition = new Vector3(0f, num, 0f);
+if (Duration != 0f)
+{
+    holdMask.sizeDelta        = (x, num2 - num);           // 길이 = 꼬리y - 헤드y
+    holdMask.anchoredPosition = (0, num + (num2-num)/2);   // 중심
+    holdTexture.anchoredPosition = (0, -holdMask.y + 450); // 마스크 이동을 상쇄
+    tailNote.anchoredPosition = (0, num2);
+}
+```
+
+홀드 몸통은 **단일 RectTransform 직사각형**이라 S자로 휘게 만들 수 없습니다. 그래서 자식이 아니라
+`RG_NoteObject`의 **루트 RectTransform**을 통째로 미는 방식을 씁니다.
+
+- 헤드·몸통·꼬리가 한 덩어리(뻣뻣한 막대)로 움직입니다. 최신 게임 버전의 연출도 이 형태입니다.
+- `holdMask`만 x로 옮기면 그 안의 `holdTexture`가 상대적으로 밀려서 무늬만 반대로 미끄러져 보입니다
+  (원본이 y축에 대해 정확히 그 보정을 하고 있음). 루트를 옮기면 마스크와 텍스처가 함께 움직여
+  이 문제가 생기지 않습니다.
+- 루트의 x는 게임이 건드리지 않습니다. `ForceSetPosition`이 유일하게 루트를 만지는 메서드인데
+  현재 빌드에서 **호출하는 곳이 없습니다**. 그래서 최초 관측 시의 x를 기준점(`BaseX`)으로 캡처해도
+  안전합니다.
+
+### 흔들림 식
+
+```text
+offset = amplitude * sin(curTime * speed * 2π + phase)
+```
+
+- `curTime`은 곡 진행 시간(`Time.time`이 아님)이라 일시정지하면 흔들림도 같이 멈춥니다.
+- `phase`는 `Mathf.Repeat(Timing * 12.9898f, 2π)` — 노트마다 위상을 흩뿌려 제각각 흔들리게 합니다.
+  `Timing` 기반이라 결정론적이고, 리트라이해도 같은 궤적이 나옵니다.
+- `NoteSwayDamping`이 켜져 있으면 판정선 도달 `NoteSwayDampingTime`초 전부터 진폭이 0으로 수렴합니다.
+  화면 위쪽에서는 나풀거리다가 칠 때는 제자리에 있으므로 정확도에 영향을 주지 않습니다.
+
+### 판정과의 관계
+
+판정은 `RG_PS_Judgement.TryJudgeShortNote`가 `Note.timing`과 시간만 비교하고 화면 위치는 보지
+않습니다. 따라서 이 연출은 진폭을 아무리 키워도 **판정에 전혀 영향이 없습니다**.
+
+### 주의
+
+`Lane` 프리팹에 `RectMask2D`가 붙어 있으면 진폭이 클 때 레인 밖으로 나간 노트가 잘립니다.
+프리팹 설정이라 코드로는 확인할 수 없으므로, 기본값(12px)에서 시작해 실제 화면을 보며 조정하세요.
+
+상태(`BaseX`/`Phase`)는 노트 인스턴스 ID로 캐싱하며 씬 전환 시 `NoteSwayHook.Reset()`으로 비웁니다.

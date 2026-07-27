@@ -59,6 +59,7 @@ namespace sxtg2
                 AutoPlayHook.CurrentTimeSeconds = -1f;
             }
             KeyViewer.Reset();
+            NoteSwayHook.Reset();
         }
 
         public override void OnUpdate()

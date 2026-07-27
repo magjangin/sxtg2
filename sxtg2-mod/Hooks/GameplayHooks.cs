@@ -150,6 +150,90 @@ namespace sxtg2.Hooks
         }
     }
 
+    /// <summary>
+    /// 노트가 눈송이처럼 좌우로 흔들리며 내려오게 하는 순수 시각 효과.
+    /// 판정은 노트의 화면 위치가 아니라 시간(Note.timing)만 보므로 정확도에는 영향이 없다.
+    /// </summary>
+    [HarmonyPatch(typeof(RG_NoteObject))]
+    public static class NoteSwayHook
+    {
+        private sealed class SwayState
+        {
+            public RectTransform Root;
+            public float BaseX;
+            public float Phase;
+        }
+
+        private static readonly Dictionary<int, SwayState> States = new Dictionary<int, SwayState>();
+
+        public static void Reset()
+        {
+            States.Clear();
+        }
+
+        /// <summary>
+        /// CalculatePosition은 자식(shortNote/holdMask/tailNote)의 y만 세팅하고 루트는 건드리지 않는다.
+        /// 그래서 루트를 통째로 밀면 헤드·몸통·꼬리가 한 덩어리로 움직이고, 홀드 몸통과
+        /// holdTexture의 상대 위치도 그대로 유지된다(마스크만 옮기면 무늬가 반대로 밀려 보인다).
+        /// </summary>
+        [HarmonyPatch("CalculatePosition")]
+        [HarmonyPostfix]
+        private static void CalculatePositionPostfix(RG_NoteObject __instance, float __0)
+        {
+            if (!SaveCustomKeyConfig.EnableNoteSway)
+                return;
+
+            try
+            {
+                var state = GetOrCreateState(__instance);
+                if (state == null || state.Root == null)
+                    return;
+
+                float amplitude = SaveCustomKeyConfig.NoteSwayAmplitude;
+                if (SaveCustomKeyConfig.NoteSwayDamping)
+                {
+                    // 판정선에 가까워질수록 진폭을 0으로 수렴시켜 칠 때는 제자리에 있게 한다.
+                    float remaining = __instance.Timing - __0;
+                    amplitude *= Mathf.Clamp01(remaining / SaveCustomKeyConfig.NoteSwayDampingTime);
+                }
+
+                if (amplitude <= 0f)
+                    return;
+
+                float angle = __0 * SaveCustomKeyConfig.NoteSwaySpeed * 2f * Mathf.PI + state.Phase;
+                float offset = amplitude * Mathf.Sin(angle);
+
+                var pos = state.Root.anchoredPosition;
+                state.Root.anchoredPosition = new Vector2(state.BaseX + offset, pos.y);
+            }
+            catch
+            {
+                // 플레이 중 프레임 예외 방지
+            }
+        }
+
+        private static SwayState GetOrCreateState(RG_NoteObject note)
+        {
+            int id = note.GetInstanceID();
+            if (States.TryGetValue(id, out var state))
+                return state;
+
+            var root = note.GetComponent<RectTransform>();
+            if (root == null)
+                return null;
+
+            state = new SwayState
+            {
+                Root = root,
+                BaseX = root.anchoredPosition.x,
+                // Timing을 시드로 삼아 노트마다 위상을 흩뿌린다. 결정론적이라 리트라이해도 궤적이 같다.
+                Phase = Mathf.Repeat(note.Timing * 12.9898f, 2f * Mathf.PI)
+            };
+            States[id] = state;
+            return state;
+        }
+    }
+
     [HarmonyPatch]
     public static class AutoPlayHook
     {

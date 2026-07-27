@@ -206,6 +206,12 @@ namespace sxtg2.Helpers
         public static bool EnableKeyViewer { get; set; } = true;
         public static float MaxScore { get; set; } = DefaultMaxScore;
 
+        public static bool EnableNoteSway { get; set; } = false;
+        public static float NoteSwayAmplitude { get; set; } = 12f;
+        public static float NoteSwaySpeed { get; set; } = 0.8f;
+        public static bool NoteSwayDamping { get; set; } = true;
+        public static float NoteSwayDampingTime { get; set; } = 0.4f;
+
         public static void EnsureInitialized()
         {
             if (!_initialized)
@@ -261,6 +267,7 @@ namespace sxtg2.Helpers
             sb.AppendLine("# 실시간 키뷰어 표시 (1 = 켜짐, 0 = 꺼짐)");
             sb.AppendLine("EnableKeyViewer=1");
             AppendMaxScoreSection(sb);
+            AppendNoteSwaySection(sb);
 
             File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
             MelonLogger.Msg($"[SaveCustomKey] 기본 설정 파일 생성 완료: {filePath}");
@@ -275,19 +282,42 @@ namespace sxtg2.Helpers
             sb.AppendLine($"MaxScore={DefaultMaxScore:0.###}");
         }
 
-        /// <summary>이전 버전에서 만들어진 설정 파일에는 MaxScore 항목이 없으므로 뒤에 덧붙여준다.</summary>
-        private static void AppendMaxScoreSection(string filePath)
+        private static void AppendNoteSwaySection(StringBuilder sb)
+        {
+            sb.AppendLine();
+            sb.AppendLine("# 노트가 눈송이처럼 좌우로 흔들리며 내려오는 연출 (1 = 켜짐, 0 = 꺼짐)");
+            sb.AppendLine("# 판정에는 전혀 영향이 없는 순수 시각 효과입니다.");
+            sb.AppendLine("NoteSway=0");
+            sb.AppendLine();
+            sb.AppendLine("# 흔들림 폭 (픽셀). 너무 크면 레인 밖으로 나가 잘릴 수 있습니다.");
+            sb.AppendLine("NoteSwayAmplitude=12");
+            sb.AppendLine();
+            sb.AppendLine("# 흔들림 속도 (초당 왕복 횟수)");
+            sb.AppendLine("NoteSwaySpeed=0.8");
+            sb.AppendLine();
+            sb.AppendLine("# 판정선에 가까워지면 흔들림을 잦아들게 함 (1 = 켜짐, 0 = 꺼짐)");
+            sb.AppendLine("# 끄면 판정선에 닿는 순간까지 계속 흔들립니다.");
+            sb.AppendLine("NoteSwayDamping=1");
+            sb.AppendLine();
+            sb.AppendLine("# 판정선 도달 몇 초 전부터 흔들림이 잦아들지");
+            sb.AppendLine("NoteSwayDampingTime=0.4");
+        }
+
+        /// <summary>이전 버전에서 만들어진 설정 파일에는 새 항목이 없으므로 뒤에 덧붙여준다.</summary>
+        private static void AppendMissingSections(string filePath, List<Action<StringBuilder>> sections, string keyNames)
         {
             try
             {
                 var sb = new StringBuilder();
-                AppendMaxScoreSection(sb);
+                foreach (var section in sections)
+                    section(sb);
+
                 File.AppendAllText(filePath, sb.ToString(), Encoding.UTF8);
-                MelonLogger.Msg($"[SaveCustomKey] 기존 설정 파일에 MaxScore 항목을 추가했습니다: {filePath}");
+                MelonLogger.Msg($"[SaveCustomKey] 기존 설정 파일에 {keyNames} 항목을 추가했습니다: {filePath}");
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[SaveCustomKey] MaxScore 항목 추가 실패: {ex.Message}");
+                MelonLogger.Warning($"[SaveCustomKey] 설정 항목 추가 실패: {ex.Message}");
             }
         }
 
@@ -296,7 +326,7 @@ namespace sxtg2.Helpers
             try
             {
                 var lines = File.ReadAllLines(filePath, Encoding.UTF8);
-                bool hasMaxScoreKey = false;
+                var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var line in lines)
                 {
                     var trimmed = line.Trim();
@@ -309,6 +339,7 @@ namespace sxtg2.Helpers
 
                     var key = parts[0].Trim();
                     var val = parts[1].Trim();
+                    seenKeys.Add(key);
 
                     if (key.Equals("AutoPlay", StringComparison.OrdinalIgnoreCase))
                     {
@@ -336,15 +367,33 @@ namespace sxtg2.Helpers
                     }
                     else if (key.Equals("MaxScore", StringComparison.OrdinalIgnoreCase) || key.Equals("ScoreLimit", StringComparison.OrdinalIgnoreCase))
                     {
-                        hasMaxScoreKey = true;
-                        MaxScore = ParseMaxScore(val, MaxScore);
+                        MaxScore = ParseFloatSetting("MaxScore", val, MaxScore, 0.001f, float.MaxValue);
+                    }
+                    else if (key.Equals("NoteSway", StringComparison.OrdinalIgnoreCase) || key.Equals("EnableNoteSway", StringComparison.OrdinalIgnoreCase))
+                    {
+                        EnableNoteSway = ParseFlexibleBool(val, EnableNoteSway);
+                    }
+                    else if (key.Equals("NoteSwayAmplitude", StringComparison.OrdinalIgnoreCase))
+                    {
+                        NoteSwayAmplitude = ParseFloatSetting("NoteSwayAmplitude", val, NoteSwayAmplitude, 0f, 1000f);
+                    }
+                    else if (key.Equals("NoteSwaySpeed", StringComparison.OrdinalIgnoreCase))
+                    {
+                        NoteSwaySpeed = ParseFloatSetting("NoteSwaySpeed", val, NoteSwaySpeed, 0f, 50f);
+                    }
+                    else if (key.Equals("NoteSwayDamping", StringComparison.OrdinalIgnoreCase))
+                    {
+                        NoteSwayDamping = ParseFlexibleBool(val, NoteSwayDamping);
+                    }
+                    else if (key.Equals("NoteSwayDampingTime", StringComparison.OrdinalIgnoreCase))
+                    {
+                        NoteSwayDampingTime = ParseFloatSetting("NoteSwayDampingTime", val, NoteSwayDampingTime, 0.01f, 30f);
                     }
                 }
 
-                if (!hasMaxScoreKey)
-                    AppendMaxScoreSection(filePath);
+                AppendSectionsMissingFrom(filePath, seenKeys);
 
-                MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}");
+                MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}");
             }
             catch (Exception ex)
             {
@@ -354,20 +403,41 @@ namespace sxtg2.Helpers
 
         public static bool IsMaxScoreCustom => Math.Abs(MaxScore - DefaultMaxScore) > 0.001f;
 
-        public static float ParseMaxScore(string val, float defaultValue)
+        private static void AppendSectionsMissingFrom(string filePath, HashSet<string> seenKeys)
+        {
+            var sections = new List<Action<StringBuilder>>();
+            var names = new List<string>();
+
+            if (!seenKeys.Contains("MaxScore") && !seenKeys.Contains("ScoreLimit"))
+            {
+                sections.Add(AppendMaxScoreSection);
+                names.Add("MaxScore");
+            }
+
+            if (!seenKeys.Contains("NoteSway") && !seenKeys.Contains("EnableNoteSway"))
+            {
+                sections.Add(AppendNoteSwaySection);
+                names.Add("NoteSway");
+            }
+
+            if (sections.Count > 0)
+                AppendMissingSections(filePath, sections, string.Join(", ", names.ToArray()));
+        }
+
+        public static float ParseFloatSetting(string key, string val, float defaultValue, float min, float max)
         {
             if (string.IsNullOrEmpty(val))
                 return defaultValue;
 
             if (!float.TryParse(val.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed))
             {
-                MelonLogger.Warning($"[SaveCustomKey] MaxScore 값을 숫자로 읽지 못했습니다: \"{val}\" → 기본값 {defaultValue:0.###} 유지");
+                MelonLogger.Warning($"[SaveCustomKey] {key} 값을 숫자로 읽지 못했습니다: \"{val}\" → 기본값 {defaultValue:0.###} 유지");
                 return defaultValue;
             }
 
-            if (parsed <= 0f)
+            if (parsed < min || parsed > max)
             {
-                MelonLogger.Warning($"[SaveCustomKey] MaxScore는 0보다 커야 합니다: {parsed:0.###} → 기본값 {defaultValue:0.###} 유지");
+                MelonLogger.Warning($"[SaveCustomKey] {key}는 {min:0.###} ~ {max:0.###} 범위여야 합니다: {parsed:0.###} → 기본값 {defaultValue:0.###} 유지");
                 return defaultValue;
             }
 
