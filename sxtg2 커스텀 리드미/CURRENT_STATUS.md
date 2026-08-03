@@ -61,18 +61,16 @@
   (a) 쪽이 코드 수정 없이 되는 가장 간단한 경로로 보임.
 - 아직 실제 착수 전 — 조사만 완료된 상태.
 
-## 2026-08-03 추가: 판정바 모양(캡슐/사각) + 좌우 위치 설정, config.txt 마이그레이션 누락 수정
+## 2026-08-03 추가: 판정바 삼각(Triangle) 모양 옵션 추가 및 등급별 범위 박스 커스텀 확장
 
 - **추가한 것**:
-  - `JudgmentBarCapsule` (1 = 알약 캡슐, 0 = 사각 바, 기본값 0) — 가장 바깥쪽 배경 트랙의
-    모양만 바꿈. 안쪽 등급 범위 박스(BLUESTAR/WHITESTAR/YELLOWSTAR)는 항상 사각형으로 유지
-    (처음엔 안쪽 박스에도 캡슐을 적용했다가, 사용자 피드백으로 바깥쪽 트랙에만 적용하도록 수정함).
-    **향후 계획**: 나중에 이 3개 범위 박스도 각각 따로 모양을 커스터마이징할 수 있게 만들 예정
-    (자세한 내용은 `02-systems/PLAY_OVERLAY.md`의 "표시 규칙" 절 참고).
-  - `JudgmentBarSide` (`Left`/`Right`/`Center`, 기본값 `Center`) — 판정바를 화면 왼쪽/오른쪽
-    가장자리(여백 60px)에 붙이거나, 기존 기본 위치(세로=왼쪽 고정, 가로=정중앙)를 그대로 씀.
-    둘 다 `JudgmentBarVertical`(세로/가로)과는 독립적인 설정.
-  - 세로 바를 `Right`로 두면 히트 오차 텍스트 라벨이 자동으로 바 왼쪽으로 옮겨 붙어서
+  - `JudgmentBarShape` (0 = 사각 바, 1 = 알약 캡슐, 2 = 삼각/다이아몬드 바, 기본값 0) — 기존 `JudgmentBarCapsule=1`과 100% 하위 호환 유지.
+  - 삼각(Triangle) 모양은 중앙(0ms 기준선)에서 너비가 가장 넓고 양끝(±MaxMs) 오차 한계선으로 갈수록 뾰족해지는 다이아몬드/이등변삼각형 마스크 텍스처(`GetTriangleTexture`)를 생성하여 픽셀 안티에일리어싱 렌더링.
+  - `JudgmentBarRangeShape` (-1 = 배경 트랙 모양 추종, 0 = 사각, 1 = 알약, 2 = 삼각, 기본값 -1) — 배경 트랙뿐만 아니라 내부 판정 범위 박스(BLUESTAR/WHITESTAR/YELLOWSTAR)에도 지정한 모양이 적용되도록 통일/분리 커스텀 구현.
+  - `JudgmentBarSide` (`Left`/`Right`/`Center`, 기본값 `Center`) — 판정바를 화면 왼쪽/오른쪽 가장자리(여백 60px)에 붙이거나, 기존 기본 위치(세로=왼쪽 고정, 가로=정중앙)를 그대로 씀.
+  - **키뷰어 색상 커스터마이징 (`KeyViewerPressedColor`, `KeyViewerNormalColor`, `KeyViewerGatePressedColor`)**: 키뷰어 입력 배경/미입력 배경/중앙 GATE 키 전용 눌림 색상을 설정 가능하게 추가. `#RRGGBB`, `#RRGGBBAA`, `R,G,B,A` 수치뿐 아니라 **한글 색상명**(`시안`, `마젠타`, `노랑`, `빨강`, `파랑`, `초록`, `흰색`, `검정`, `주황`, `보라`, `분홍`, `하늘색`, `민트` 등) 파싱을 완벽 지원(`ParseColorSetting`).
+  - **결과 씬 오퍼레이터 레이어 로깅 (`ManagerResultHook`)**: 결과 화면(`RhythmGame.Result.ManagerResult`) 진입 시 오퍼레이터 관련 필드, 씬 내 `Operator Layer` / `characterLayer`, Live2D 모델(`SHII_MODEL_211103`) 및 `OperatorCharacter` 계층 구조(`LogHierarchy`)를 상세 진단 로깅.
+- **검증**: `dotnet build` 성공 (경고 0개), `sxtg2.LogicTests` 6개 통과, `Mods/sxtg2.dll` 배포 완료.
     화면 밖으로 잘리지 않음(`labelOnLeftOfBar` 분기).
 - 캡슐 모양은 `JudgmentBarFeature.cs`의 `GetCapsuleTexture(w, h)`가 크기별 알파 마스크
   텍스처를 생성해 캐시하는 방식으로 구현(스타디움 형태, 반지름 = `min(가로,세로)/2`,

@@ -56,16 +56,10 @@ RG_PS_Judgement.TryJudgeShortNote(judgeTime, note)
 - 텍스트: `+32.4 ms · BLUESTAR (FAST)` 형식 (소수점 1자리)
 - 틱과 텍스트는 1.5초에 걸쳐 서서히 사라집니다.
 - 배치: `JudgmentBarVertical=1`이면 화면 좌측 세로 바(x=60), `0`이면 화면 정중앙 가로 바
-- 모양: `JudgmentBarCapsule=1`이면 가장 바깥쪽 배경 트랙만 양끝이 둥근 알약(캡슐) 모양,
-  `0`(기본값)이면 각진 사각 바. 안쪽의 등급 범위 박스(BLUESTAR/WHITESTAR/YELLOWSTAR)와
-  중앙선, 히트 틱은 이 설정과 무관하게 항상 각진 사각형/직선으로 그려짐(배경 트랙 안에
-  겹쳐 그려지는 얇은 눈금이라 굳이 둥글릴 필요가 없다고 판단).
-  캡슐 모양은 크기별로 마스크 텍스처를 생성해 캐시하며(`GetCapsuleTexture`), 반지름은
-  `min(가로, 세로)/2`로 계산되는 완전한 스타디움(stadium) 형태.
-  **향후 계획**: BLUESTAR/WHITESTAR/YELLOWSTAR 3개 범위 박스도 각각 따로 모양(사각/캡슐)을
-  커스터마이징할 수 있게 만들 예정. 지금은 `DrawRangeBox`가 항상 `DrawColorRect`(사각형)만
-  호출하는데, 나중에는 박스별로 `JudgmentBarCapsule`류 설정을 3개로 늘리거나 배열/구분자로
-  받아서 각 박스마다 `DrawBarShape(isCapsuleN, ...)`를 선택적으로 호출하도록 확장해야 함.
+- 모양: `JudgmentBarShape`로 `0`(사각 바), `1`(알약/캡슐), `2`(삼각/다이아몬드) 중 선택할 수 있습니다.
+  - 기존 `JudgmentBarCapsule=1` 설정과 100% 하위 호환됩니다.
+  - 삼각(Triangle) 모양은 중앙(0ms)에서 너비가 가장 넓고 양끝(±MaxMs) 오차 한계선으로 갈수록 뾰족해지는 다이아몬드 마스크 텍스처(`GetTriangleTexture`)를 생성하여 안티에일리어싱 처리됩니다.
+  - `JudgmentBarRangeShape` (`-1` = 추종, `0` = 사각, `1` = 알약, `2` = 삼각) 설정으로 안쪽 등급 범위 박스(BLUESTAR/WHITESTAR/YELLOWSTAR)의 모양도 통일하거나 다르게 바꿀 수 있습니다.
 - 좌우 위치: `JudgmentBarSide`로 `Left`(화면 왼쪽 가장자리, 여백 60px) / `Right`(화면 오른쪽
   가장자리, 여백 60px) / `Center`(기본값 — 세로 바는 기존처럼 왼쪽 고정, 가로 바는 화면 정중앙)
   중 선택. 세로 바를 `Right`로 두면 히트 텍스트 라벨도 자동으로 바 왼쪽으로 붙어서 화면 밖으로
@@ -134,10 +128,17 @@ RG_PS_Judgement.TryJudgeShortNote(judgeTime, note)
 게이트 미개방(`gear.IsGateOpened == false`) 상태에서 갱신되지 않아
 키를 눌러도 false로 남기 때문입니다. 키뷰어는 물리 입력을 그대로 보여주는 쪽이 맞습니다.
 
-### 표시 규칙
+### 표시 규칙 및 색상 커스터마이징
 
 - 박스 크기 44×44, 간격 6, 화면 하단에서 56px 위
-- 눌린 키: 청록 채움 + 흰 테두리 / 안 눌린 키: 어두운 반투명 + 옅은 테두리
+- `config.txt`에서 커스텀 색상 지정 가능:
+  - `KeyViewerPressedColor`: 일반 노트 키 입력 시 배경색 (기본값 `#26BFD9D9` / 시안)
+  - `KeyViewerNormalColor`: 미입력 상태 배경색 (기본값 `#141414A6` / 반투명 다크)
+  - `KeyViewerGatePressedColor`: 중앙 GATE 키 입력 시 전용 배경색 (기본값 `#FF4081E6` / 마젠타)
+- 색상 표기 지원 포맷:
+  - HEX 헥스코드: `#00FFCC`, `#26BFD9D9`
+  - RGBA 수치: `255,128,0`, `0.15,0.75,0.85,0.85`
+  - **한글 색상명 지원**: `시안`, `마젠타`, `노랑`, `빨강`, `파랑`, `초록`, `흰색`, `검정`, `주황`, `보라`, `분홍`, `하늘색`, `민트` 등
 - 렌더링 순서상 판정바보다 나중에 그려지므로, 겹칠 경우 키뷰어가 위에 옵니다.
   (기본 좌표에서는 겹치지 않습니다 — 세로 판정바와는 창이 868×500 미만,
   가로 판정바와는 창 높이 224px 미만일 때만 겹칩니다.)

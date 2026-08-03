@@ -203,9 +203,18 @@ namespace sxtg2.Helpers
         public static bool BlockSave { get; set; } = true;
         public static bool EnableJudgmentBar { get; set; } = true;
         public static bool JudgmentBarVertical { get; set; } = true;
-        public static bool JudgmentBarCapsule { get; set; } = false;
+        public static int JudgmentBarShape { get; set; } = 0;
+        public static int JudgmentBarRangeShape { get; set; } = -1;
+        public static bool JudgmentBarCapsule
+        {
+            get => JudgmentBarShape == 1;
+            set => JudgmentBarShape = value ? 1 : (JudgmentBarShape == 1 ? 0 : JudgmentBarShape);
+        }
         public static string JudgmentBarSide { get; set; } = "Center";
         public static bool EnableKeyViewer { get; set; } = true;
+        public static Color KeyViewerPressedColor { get; set; } = new Color(0.15f, 0.75f, 0.85f, 0.85f);
+        public static Color KeyViewerNormalColor { get; set; } = new Color(0.08f, 0.08f, 0.08f, 0.65f);
+        public static Color KeyViewerGatePressedColor { get; set; } = new Color(1.0f, 0.25f, 0.5f, 0.9f);
         public static float MaxScore { get; set; } = DefaultMaxScore;
 
         public static bool EnableNoteSway { get; set; } = false;
@@ -287,8 +296,12 @@ namespace sxtg2.Helpers
         private static void AppendJudgmentBarCapsuleSection(StringBuilder sb)
         {
             sb.AppendLine();
-            sb.AppendLine("# 판정바 모양 (1 = 알약 캡슐 모양(양끝 둥글게), 0 = 사각 바)");
-            sb.AppendLine("JudgmentBarCapsule=0");
+            sb.AppendLine("# 판정바 모양 (0 = 사각 바, 1 = 알약 캡슐 모양, 2 = 삼각/다이아몬드 모양)");
+            sb.AppendLine("# 기존 JudgmentBarCapsule=1 키도 캡슐(1)로 동일하게 작동합니다.");
+            sb.AppendLine("JudgmentBarShape=0");
+            sb.AppendLine();
+            sb.AppendLine("# 판정바 안쪽 범위 박스 모양 (-1 = 판정바 모양 추종, 0 = 사각, 1 = 알약, 2 = 삼각)");
+            sb.AppendLine("JudgmentBarRangeShape=-1");
         }
 
         private static void AppendJudgmentBarSideSection(StringBuilder sb)
@@ -297,6 +310,20 @@ namespace sxtg2.Helpers
             sb.AppendLine("# 판정바 위치 (Left = 화면 왼쪽, Right = 화면 오른쪽, Center = 기본 위치)");
             sb.AppendLine("# 기본 위치는 세로 판정바는 왼쪽 고정, 가로 판정바는 화면 정중앙입니다.");
             sb.AppendLine("JudgmentBarSide=Center");
+        }
+
+        private static void AppendKeyViewerColorSection(StringBuilder sb)
+        {
+            sb.AppendLine();
+            sb.AppendLine("# 키뷰어 눌림 색상 (일반 노트 키 입력 시)");
+            sb.AppendLine("# 지원 형식: #RRGGBB, #RRGGBBAA, R,G,B,A, 영문/한글 색상명 (시안, 마젠타, 노랑, 빨강, 파랑, 초록, 흰색, 검정, 주황, 보라, 분홍, 하늘, 민트)");
+            sb.AppendLine("KeyViewerPressedColor=#26BFD9D9");
+            sb.AppendLine();
+            sb.AppendLine("# 키뷰어 미입력 기본 색상");
+            sb.AppendLine("KeyViewerNormalColor=#141414A6");
+            sb.AppendLine();
+            sb.AppendLine("# 키뷰어 GATE 키(중앙 4번) 전용 눌림 색상");
+            sb.AppendLine("KeyViewerGatePressedColor=#FF4081E6");
         }
 
         private static void AppendMaxScoreSection(StringBuilder sb)
@@ -403,9 +430,18 @@ namespace sxtg2.Helpers
                     {
                         JudgmentBarVertical = ParseFlexibleBool(val, JudgmentBarVertical);
                     }
-                    else if (key.Equals("JudgmentBarCapsule", StringComparison.OrdinalIgnoreCase) || key.Equals("JudgmentBarShape", StringComparison.OrdinalIgnoreCase))
+                    else if (key.Equals("JudgmentBarShape", StringComparison.OrdinalIgnoreCase))
                     {
-                        JudgmentBarCapsule = ParseFlexibleBool(val, JudgmentBarCapsule);
+                        JudgmentBarShape = ParseShapeSetting("JudgmentBarShape", val, JudgmentBarShape);
+                    }
+                    else if (key.Equals("JudgmentBarRangeShape", StringComparison.OrdinalIgnoreCase))
+                    {
+                        JudgmentBarRangeShape = ParseShapeSetting("JudgmentBarRangeShape", val, JudgmentBarRangeShape);
+                    }
+                    else if (key.Equals("JudgmentBarCapsule", StringComparison.OrdinalIgnoreCase))
+                    {
+                        bool isCap = ParseFlexibleBool(val, JudgmentBarCapsule);
+                        JudgmentBarCapsule = isCap;
                     }
                     else if (key.Equals("JudgmentBarSide", StringComparison.OrdinalIgnoreCase) || key.Equals("JudgmentBarPosition", StringComparison.OrdinalIgnoreCase))
                     {
@@ -414,6 +450,18 @@ namespace sxtg2.Helpers
                     else if (key.Equals("EnableKeyViewer", StringComparison.OrdinalIgnoreCase) || key.Equals("KeyViewer", StringComparison.OrdinalIgnoreCase))
                     {
                         EnableKeyViewer = ParseFlexibleBool(val, EnableKeyViewer);
+                    }
+                    else if (key.Equals("KeyViewerPressedColor", StringComparison.OrdinalIgnoreCase))
+                    {
+                        KeyViewerPressedColor = ParseColorSetting("KeyViewerPressedColor", val, KeyViewerPressedColor);
+                    }
+                    else if (key.Equals("KeyViewerNormalColor", StringComparison.OrdinalIgnoreCase))
+                    {
+                        KeyViewerNormalColor = ParseColorSetting("KeyViewerNormalColor", val, KeyViewerNormalColor);
+                    }
+                    else if (key.Equals("KeyViewerGatePressedColor", StringComparison.OrdinalIgnoreCase))
+                    {
+                        KeyViewerGatePressedColor = ParseColorSetting("KeyViewerGatePressedColor", val, KeyViewerGatePressedColor);
                     }
                     else if (key.Equals("MaxScore", StringComparison.OrdinalIgnoreCase) || key.Equals("ScoreLimit", StringComparison.OrdinalIgnoreCase))
                     {
@@ -467,7 +515,9 @@ namespace sxtg2.Helpers
 
                 AppendSectionsMissingFrom(filePath, seenKeys);
 
-                MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, Shape={(JudgmentBarCapsule ? "캡슐(1)" : "사각(0)")}, Side={JudgmentBarSide}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}, NoteSpeedChaos={(EnableNoteSpeedChaos ? $"켜짐(배율 {NoteSpeedChaosMin:0.##}~{NoteSpeedChaosMax:0.##}, {(NoteSpeedChaosPerLane ? "레인별" : "노트별")})" : "꺼짐(0)")}");
+                string shapeStr = JudgmentBarShape == 2 ? "삼각(2)" : (JudgmentBarShape == 1 ? "캡슐(1)" : "사각(0)");
+                string rangeShapeStr = JudgmentBarRangeShape == -1 ? "추종(-1)" : (JudgmentBarRangeShape == 2 ? "삼각(2)" : (JudgmentBarRangeShape == 1 ? "캡슐(1)" : "사각(0)"));
+                MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, Shape={shapeStr}(범위:{rangeShapeStr}), Side={JudgmentBarSide}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}, NoteSpeedChaos={(EnableNoteSpeedChaos ? $"켜짐(배율 {NoteSpeedChaosMin:0.##}~{NoteSpeedChaosMax:0.##}, {(NoteSpeedChaosPerLane ? "레인별" : "노트별")})" : "꺼짐(0)")}");
             }
             catch (Exception ex)
             {
@@ -492,6 +542,12 @@ namespace sxtg2.Helpers
             {
                 sections.Add(AppendJudgmentBarSideSection);
                 names.Add("JudgmentBarSide");
+            }
+
+            if (!seenKeys.Contains("KeyViewerPressedColor") && !seenKeys.Contains("KeyViewerNormalColor"))
+            {
+                sections.Add(AppendKeyViewerColorSection);
+                names.Add("KeyViewerColor");
             }
 
             if (!seenKeys.Contains("MaxScore") && !seenKeys.Contains("ScoreLimit"))
@@ -554,6 +610,101 @@ namespace sxtg2.Helpers
 
             MelonLogger.Warning($"[SaveCustomKey] {key} 값을 알 수 없습니다: \"{val}\" (Left/Right/Center 중 하나) → 기본값 {defaultValue} 유지");
             return defaultValue;
+        }
+
+        public static int ParseShapeSetting(string key, string val, int defaultValue)
+        {
+            if (string.IsNullOrEmpty(val))
+                return defaultValue;
+
+            var s = val.Trim().ToLowerInvariant();
+
+            if (s == "0" || s == "rect" || s == "rectangle" || s == "square" || s == "사각" || s == "사각형" || s == "false" || s == "off")
+                return 0;
+
+            if (s == "1" || s == "capsule" || s == "pill" || s == "알약" || s == "캡슐" || s == "true" || s == "on")
+                return 1;
+
+            if (s == "2" || s == "triangle" || s == "diamond" || s == "삼각" || s == "삼각형" || s == "다이아몬드")
+                return 2;
+
+            if (s == "-1" || s == "same" || s == "default" || s == "기본" || s == "추종")
+                return -1;
+
+            if (int.TryParse(s, out int parsedInt) && parsedInt >= -1 && parsedInt <= 2)
+                return parsedInt;
+
+            MelonLogger.Warning($"[SaveCustomKey] {key} 모양 설정 값을 알 수 없습니다: \"{val}\" (0=사각, 1=알약, 2=삼각) → 기본값 유지");
+            return defaultValue;
+        }
+
+        public static Color ParseColorSetting(string key, string val, Color defaultColor)
+        {
+            if (string.IsNullOrEmpty(val))
+                return defaultColor;
+
+            string s = val.Trim().ToLowerInvariant();
+
+            // 1. 한글 / 영문 색상 키워드 파싱
+            switch (s)
+            {
+                case "cyan": case "시안": case "청록": case "청록색": case "민트": case "민트색":
+                    return new Color(0.15f, 0.75f, 0.85f, 0.85f);
+                case "magenta": case "pink": case "마젠타": case "분홍": case "분홍색": case "핑": case "핫핑크":
+                    return new Color(1.0f, 0.25f, 0.5f, 0.9f);
+                case "yellow": case "노랑": case "노란색": case "황색":
+                    return new Color(1.0f, 0.85f, 0.20f, 0.9f);
+                case "red": case "빨강": case "빨간색": case "적색":
+                    return new Color(0.95f, 0.25f, 0.25f, 0.9f);
+                case "blue": case "파랑": case "파란색": case "청색":
+                    return new Color(0.20f, 0.50f, 0.85f, 0.9f);
+                case "green": case "초록": case "초록색": case "녹색":
+                    return new Color(0.25f, 0.85f, 0.35f, 0.9f);
+                case "white": case "흰색": case "하양": case "백색":
+                    return new Color(0.95f, 0.95f, 0.95f, 0.9f);
+                case "black": case "검정": case "검은색": case "흑색":
+                    return new Color(0.08f, 0.08f, 0.08f, 0.85f);
+                case "orange": case "주황": case "주황색":
+                    return new Color(1.0f, 0.55f, 0.15f, 0.9f);
+                case "purple": case "violet": case "보라": case "보라색": case "자색":
+                    return new Color(0.65f, 0.35f, 0.85f, 0.9f);
+                case "sky": case "skyblue": case "하늘": case "하늘색":
+                    return new Color(0.40f, 0.75f, 1.0f, 0.9f);
+            }
+
+            // 2. HTML 헥스코드 파싱 (#RRGGBB, #RRGGBBAA, RRGGBB, RRGGBBAA)
+            string hexCandidate = s.StartsWith("#") ? s : "#" + s;
+            if (ColorUtility.TryParseHtmlString(hexCandidate, out Color parsedColor))
+            {
+                return parsedColor;
+            }
+
+            // 3. 쉼표 구분 RGBA 파싱 (예: 255,128,0 또는 0.15,0.75,0.85,0.85)
+            var parts = s.Split(',');
+            if (parts.Length == 3 || parts.Length == 4)
+            {
+                try
+                {
+                    float r = float.Parse(parts[0].Trim(), CultureInfo.InvariantCulture);
+                    float g = float.Parse(parts[1].Trim(), CultureInfo.InvariantCulture);
+                    float b = float.Parse(parts[2].Trim(), CultureInfo.InvariantCulture);
+                    float a = parts.Length == 4 ? float.Parse(parts[3].Trim(), CultureInfo.InvariantCulture) : 1f;
+
+                    if (r > 1f || g > 1f || b > 1f || a > 1f)
+                    {
+                        r = Mathf.Clamp01(r / 255f);
+                        g = Mathf.Clamp01(g / 255f);
+                        b = Mathf.Clamp01(b / 255f);
+                        a = a > 1f ? Mathf.Clamp01(a / 255f) : a;
+                    }
+
+                    return new Color(r, g, b, a);
+                }
+                catch { }
+            }
+
+            MelonLogger.Warning($"[SaveCustomKey] {key} 색상 값을 읽지 못했습니다: \"{val}\" → 기본값 유지");
+            return defaultColor;
         }
 
         public static bool ParseFlexibleBool(string val, bool defaultValue)

@@ -126,11 +126,17 @@ namespace sxtg2.Features
 
                     bool pressed = Pressed[i];
                     bool unbound = Keys[i] == KeyCode.None;
+                    bool isGate = Lanes[i] == SixtarInput.RhythmGame_GATE;
+
+                    Color normalBg = SaveCustomKeyConfig.KeyViewerNormalColor;
+                    Color pressedBg = isGate
+                        ? SaveCustomKeyConfig.KeyViewerGatePressedColor
+                        : SaveCustomKeyConfig.KeyViewerPressedColor;
 
                     // 박스 배경
                     Color bg = unbound
-                        ? new Color(0.08f, 0.08f, 0.08f, 0.35f)
-                        : (pressed ? new Color(0.15f, 0.75f, 0.85f, 0.85f) : new Color(0.08f, 0.08f, 0.08f, 0.65f));
+                        ? new Color(normalBg.r, normalBg.g, normalBg.b, normalBg.a * 0.5f)
+                        : (pressed ? pressedBg : normalBg);
                     DrawColorRect(box, bg);
 
                     // 테두리

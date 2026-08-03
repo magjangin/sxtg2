@@ -34,6 +34,7 @@ namespace sxtg2.Features
         private static Texture2D _whiteTex;
         private static GUIStyle _labelStyle;
         private static readonly Dictionary<(int, int), Texture2D> CapsuleTexCache = new Dictionary<(int, int), Texture2D>();
+        private static readonly Dictionary<(int, int), Texture2D> TriangleTexCache = new Dictionary<(int, int), Texture2D>();
 
         /// <summary>난이도별로 다른 실제 판정 범위를 게임에서 읽어온다.</summary>
         public static void RefreshJudgeRange()
@@ -123,7 +124,8 @@ namespace sxtg2.Features
                 float screenHeight = Screen.height;
 
                 bool isVertical = SaveCustomKeyConfig.JudgmentBarVertical;
-                bool isCapsule = SaveCustomKeyConfig.JudgmentBarCapsule;
+                int trackShape = SaveCustomKeyConfig.JudgmentBarShape;
+                int rangeShape = SaveCustomKeyConfig.JudgmentBarRangeShape == -1 ? trackShape : SaveCustomKeyConfig.JudgmentBarRangeShape;
                 string side = SaveCustomKeyConfig.JudgmentBarSide;
                 bool isLeft = side.Equals("Left", StringComparison.OrdinalIgnoreCase);
                 bool isRight = side.Equals("Right", StringComparison.OrdinalIgnoreCase);
@@ -146,12 +148,12 @@ namespace sxtg2.Features
                 float scale = (isVertical ? (barH / 2f) : (barW / 2f)) / maxMsRange;
 
                 // 1. 전체 배경 트랙 (±REDSTAR 범위)
-                DrawBarShape(isCapsule, new Rect(centerX - barW / 2f, centerY - barH / 2f, barW, barH), new Color(0.08f, 0.08f, 0.08f, 0.65f));
+                DrawBarShape(trackShape, new Rect(centerX - barW / 2f, centerY - barH / 2f, barW, barH), new Color(0.08f, 0.08f, 0.08f, 0.65f));
 
-                // 2~4. 실제 판정 범위 박스 (넓은 등급부터 겹쳐 그림) - 모양 설정과 무관하게 항상 사각형
-                DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[2] * 2f * scale, new Color(0.65f, 0.55f, 0.12f, 0.18f)); // YELLOWSTAR
-                DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[1] * 2f * scale, new Color(0.75f, 0.75f, 0.75f, 0.20f)); // WHITESTAR
-                DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[0] * 2f * scale, new Color(0.20f, 0.50f, 0.85f, 0.32f)); // BLUESTAR
+                // 2~4. 실제 판정 범위 박스 (넓은 등급부터 겹쳐 그림)
+                DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[2] * 2f * scale, new Color(0.65f, 0.55f, 0.12f, 0.18f), rangeShape); // YELLOWSTAR
+                DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[1] * 2f * scale, new Color(0.75f, 0.75f, 0.75f, 0.20f), rangeShape); // WHITESTAR
+                DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[0] * 2f * scale, new Color(0.20f, 0.50f, 0.85f, 0.32f), rangeShape); // BLUESTAR
 
                 // 4. Center Line (0ms)
                 if (isVertical)
@@ -232,12 +234,13 @@ namespace sxtg2.Features
             }
         }
 
-        private static void DrawRangeBox(float centerX, float centerY, float barW, float barH, bool isVertical, float size, Color color)
+        private static void DrawRangeBox(float centerX, float centerY, float barW, float barH, bool isVertical, float size, Color color, int shapeType)
         {
-            if (isVertical)
-                DrawColorRect(new Rect(centerX - barW / 2f + 1f, centerY - size / 2f, barW - 2f, size), color);
-            else
-                DrawColorRect(new Rect(centerX - size / 2f, centerY - barH / 2f + 1f, size, barH - 2f), color);
+            Rect rect = isVertical
+                ? new Rect(centerX - barW / 2f + 1f, centerY - size / 2f, barW - 2f, size)
+                : new Rect(centerX - size / 2f, centerY - barH / 2f + 1f, size, barH - 2f);
+
+            DrawBarShape(shapeType, rect, color);
         }
 
         private static void DrawColorRect(Rect rect, Color color)
@@ -247,25 +250,31 @@ namespace sxtg2.Features
             GUI.color = Color.white;
         }
 
-        /// <summary>isCapsule에 따라 사각 바 또는 양끝이 둥근 알약(캡슐) 바를 그린다.</summary>
-        private static void DrawBarShape(bool isCapsule, Rect rect, Color color)
+        /// <summary>shapeType(0=사각, 1=알약 캡슐, 2=삼각/다이아몬드)에 따라 판정 바를 그린다.</summary>
+        private static void DrawBarShape(int shapeType, Rect rect, Color color)
         {
-            if (!isCapsule)
+            int w = Mathf.RoundToInt(rect.width);
+            int h = Mathf.RoundToInt(rect.height);
+            if (w < 2 || h < 2 || shapeType == 0)
             {
                 DrawColorRect(rect, color);
                 return;
             }
 
-            int w = Mathf.RoundToInt(rect.width);
-            int h = Mathf.RoundToInt(rect.height);
-            if (w < 2 || h < 2)
+            Texture2D tex = null;
+            if (shapeType == 1)
+                tex = GetCapsuleTexture(w, h);
+            else if (shapeType == 2)
+                tex = GetTriangleTexture(w, h);
+
+            if (tex == null)
             {
                 DrawColorRect(rect, color);
                 return;
             }
 
             GUI.color = color;
-            GUI.DrawTexture(rect, GetCapsuleTexture(w, h));
+            GUI.DrawTexture(rect, tex);
             GUI.color = Color.white;
         }
 
@@ -315,6 +324,51 @@ namespace sxtg2.Features
             tex.SetPixels32(pixels);
             tex.Apply();
             CapsuleTexCache[key] = tex;
+            return tex;
+        }
+
+        /// <summary>중앙이 가장 넓고 양끝이 뾰족해지는 삼각/다이아몬드 모양의 알파 마스크 텍스처를 생성/캐시한다.</summary>
+        private static Texture2D GetTriangleTexture(int w, int h)
+        {
+            var key = (w, h);
+            if (TriangleTexCache.TryGetValue(key, out var cached) && cached != null)
+                return cached;
+
+            if (TriangleTexCache.Count > 64)
+                TriangleTexCache.Clear();
+
+            var tex = new Texture2D(w, h, TextureFormat.ARGB32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+
+            float cx = w / 2f;
+            float cy = h / 2f;
+            float halfW = w / 2f;
+            float halfH = h / 2f;
+            float hyp = Mathf.Sqrt(halfW * halfW + halfH * halfH);
+
+            var pixels = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                float py = y + 0.5f;
+                float dy = Mathf.Abs(py - cy);
+                for (int x = 0; x < w; x++)
+                {
+                    float px = x + 0.5f;
+                    float dx = Mathf.Abs(px - cx);
+
+                    // 다이아몬드/삼각 빗면 직선방정식 기반 부호있는 거리 계산 (halfH * dx + halfW * dy - halfW * halfH = 0)
+                    float signedDist = (halfH * dx + halfW * dy - halfW * halfH) / hyp;
+                    float alpha = Mathf.Clamp01(0.5f - signedDist);
+                    pixels[y * w + x] = new Color(1f, 1f, 1f, alpha);
+                }
+            }
+
+            tex.SetPixels32(pixels);
+            tex.Apply();
+            TriangleTexCache[key] = tex;
             return tex;
         }
 

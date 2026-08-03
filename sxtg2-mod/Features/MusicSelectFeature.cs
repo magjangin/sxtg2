@@ -421,4 +421,111 @@ namespace sxtg2.Features
             }
         }
     }
+
+    [HarmonyPatch(typeof(RhythmGame.Result.ManagerResult))]
+    public static class ManagerResultHook
+    {
+        private static readonly AccessTools.FieldRef<RhythmGame.Result.ManagerResult, Animator> OperatorAnimatorField =
+            AccessTools.FieldRefAccess<RhythmGame.Result.ManagerResult, Animator>("operatorAnimator");
+
+        [HarmonyPatch("Start")]
+        [HarmonyPostfix]
+        private static void StartPostfix(RhythmGame.Result.ManagerResult __instance)
+        {
+            try
+            {
+                MelonLogger.Msg("[ManagerResultHook] ManagerResult.Start Postfix 실행 감지");
+                LogResultOperatorLayer(__instance);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[ManagerResultHook] 결과 씬 로깅 실패: {ex.Message}");
+            }
+        }
+
+        private static void LogResultOperatorLayer(RhythmGame.Result.ManagerResult instance)
+        {
+            if (instance == null)
+            {
+                MelonLogger.Msg("[ManagerResultHook] ManagerResult 인스턴스가 null입니다.");
+                return;
+            }
+
+            MelonLogger.Msg("[ManagerResultHook] === 결과 씬 오퍼레이터 레이어 스캔 시작 ===");
+
+            Animator animator = null;
+            try
+            {
+                animator = OperatorAnimatorField(instance);
+            }
+            catch
+            {
+                System.Reflection.FieldInfo field = AccessTools.Field(typeof(RhythmGame.Result.ManagerResult), "operatorAnimator");
+                if (field != null)
+                    animator = field.GetValue(instance) as Animator;
+            }
+
+            if (animator == null)
+            {
+                MelonLogger.Msg("[ManagerResultHook] operatorAnimator 필드가 null입니다.");
+            }
+            else
+            {
+                GameObject animObj = animator.gameObject;
+                MelonLogger.Msg($"[ManagerResultHook] operatorAnimator 오브젝트: {animObj.name} (activeSelf={animObj.activeSelf}, activeInHierarchy={animObj.activeInHierarchy})");
+                if (animObj.transform.parent != null)
+                {
+                    MelonLogger.Msg($"[ManagerResultHook] operatorAnimator 부모: {animObj.transform.parent.name}");
+                    LogHierarchy(animObj.transform.parent, 1);
+                }
+                else
+                {
+                    LogHierarchy(animObj.transform, 1);
+                }
+            }
+
+            OperatorCharacter[] operators = instance.GetComponentsInChildren<OperatorCharacter>(includeInactive: true);
+            if (operators.Length == 0)
+            {
+                operators = UnityEngine.Object.FindObjectsOfType<OperatorCharacter>();
+            }
+
+            MelonLogger.Msg($"[ManagerResultHook] 씬 내 OperatorCharacter 수: {operators.Length}");
+            foreach (OperatorCharacter op in operators)
+            {
+                MelonLogger.Msg(
+                    $"[ManagerResultHook]   -> Operator 발견: name={op.OperatorName} " +
+                    $"(type={op.GetType().Name}, object={op.gameObject.name}, activeSelf={op.gameObject.activeSelf}, activeInHierarchy={op.gameObject.activeInHierarchy})");
+                LogHierarchy(op.transform, 1);
+            }
+
+            GameObject[] allObjects = UnityEngine.Object.FindObjectsOfType<GameObject>();
+            int matchedCount = 0;
+            foreach (GameObject obj in allObjects)
+            {
+                if (obj == null) continue;
+                string objName = obj.name;
+                if (objName.IndexOf("operator", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    objName.IndexOf("shii", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    objName.IndexOf("character", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    matchedCount++;
+                    MelonLogger.Msg($"[ManagerResultHook] 매칭 오브젝트: {obj.name} (activeSelf={obj.activeSelf}, activeInHierarchy={obj.activeInHierarchy})");
+                }
+            }
+
+            MelonLogger.Msg($"[ManagerResultHook] === 결과 씬 오퍼레이터 레이어 스캔 완료 (매칭 오브젝트 {matchedCount}개) ===");
+        }
+
+        private static void LogHierarchy(Transform t, int depth)
+        {
+            if (t == null || depth > 4) return;
+            foreach (Transform child in t)
+            {
+                MelonLogger.Msg(
+                    $"[ManagerResultHook] {new string(' ', depth * 2)}- {child.name} (activeSelf={child.gameObject.activeSelf}, activeInHierarchy={child.gameObject.activeInHierarchy})");
+                LogHierarchy(child, depth + 1);
+            }
+        }
+    }
 }

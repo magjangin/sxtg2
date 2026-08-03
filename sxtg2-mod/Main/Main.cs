@@ -7,7 +7,7 @@ using sxtg2.Helpers;
 using sxtg2.Hooks;
 using sxtg2.Hooks.Audio;
 
-[assembly: MelonInfo(typeof(sxtg2.Main), "sxtg2", "1.0.0", "화영왕")]
+[assembly: MelonInfo(typeof(sxtg2.Main), "sxtg2", "1.0.1", "화영왕")]
 [assembly: MelonGame("Lyrebird Studio", "Sixtar Gate STARTRAIL")]
 [assembly: MelonColor(128, 0, 255, 255)]
 
