@@ -56,6 +56,20 @@ RG_PS_Judgement.TryJudgeShortNote(judgeTime, note)
 - 텍스트: `+32.4 ms · BLUESTAR (FAST)` 형식 (소수점 1자리)
 - 틱과 텍스트는 1.5초에 걸쳐 서서히 사라집니다.
 - 배치: `JudgmentBarVertical=1`이면 화면 좌측 세로 바(x=60), `0`이면 화면 정중앙 가로 바
+- 모양: `JudgmentBarCapsule=1`이면 가장 바깥쪽 배경 트랙만 양끝이 둥근 알약(캡슐) 모양,
+  `0`(기본값)이면 각진 사각 바. 안쪽의 등급 범위 박스(BLUESTAR/WHITESTAR/YELLOWSTAR)와
+  중앙선, 히트 틱은 이 설정과 무관하게 항상 각진 사각형/직선으로 그려짐(배경 트랙 안에
+  겹쳐 그려지는 얇은 눈금이라 굳이 둥글릴 필요가 없다고 판단).
+  캡슐 모양은 크기별로 마스크 텍스처를 생성해 캐시하며(`GetCapsuleTexture`), 반지름은
+  `min(가로, 세로)/2`로 계산되는 완전한 스타디움(stadium) 형태.
+  **향후 계획**: BLUESTAR/WHITESTAR/YELLOWSTAR 3개 범위 박스도 각각 따로 모양(사각/캡슐)을
+  커스터마이징할 수 있게 만들 예정. 지금은 `DrawRangeBox`가 항상 `DrawColorRect`(사각형)만
+  호출하는데, 나중에는 박스별로 `JudgmentBarCapsule`류 설정을 3개로 늘리거나 배열/구분자로
+  받아서 각 박스마다 `DrawBarShape(isCapsuleN, ...)`를 선택적으로 호출하도록 확장해야 함.
+- 좌우 위치: `JudgmentBarSide`로 `Left`(화면 왼쪽 가장자리, 여백 60px) / `Right`(화면 오른쪽
+  가장자리, 여백 60px) / `Center`(기본값 — 세로 바는 기존처럼 왼쪽 고정, 가로 바는 화면 정중앙)
+  중 선택. 세로 바를 `Right`로 두면 히트 텍스트 라벨도 자동으로 바 왼쪽으로 붙어서 화면 밖으로
+  나가지 않음.
 
 ### 정밀도 한계 (게임 원본 특성)
 

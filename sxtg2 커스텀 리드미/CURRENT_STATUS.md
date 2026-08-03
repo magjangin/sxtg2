@@ -1,6 +1,6 @@
 # 현재 상태
 
-기준일: 2026-07-27
+기준일: 2026-08-03
 
 ## 현재 결론
 
@@ -11,6 +11,32 @@
 - `dotnet build sxtg2-mod/sxtg2.csproj --configuration Debug` 성공 (경고 0개)
 - `sxtg2.LogicTests` 4개 통과
 - 실제 게임에서 커스텀 차트 흐름 정상 동작 확인
+
+## 2026-08-03 추가: 판정바 모양(캡슐/사각) + 좌우 위치 설정, config.txt 마이그레이션 누락 수정
+
+- **추가한 것**:
+  - `JudgmentBarCapsule` (1 = 알약 캡슐, 0 = 사각 바, 기본값 0) — 가장 바깥쪽 배경 트랙의
+    모양만 바꿈. 안쪽 등급 범위 박스(BLUESTAR/WHITESTAR/YELLOWSTAR)는 항상 사각형으로 유지
+    (처음엔 안쪽 박스에도 캡슐을 적용했다가, 사용자 피드백으로 바깥쪽 트랙에만 적용하도록 수정함).
+    **향후 계획**: 나중에 이 3개 범위 박스도 각각 따로 모양을 커스터마이징할 수 있게 만들 예정
+    (자세한 내용은 `02-systems/PLAY_OVERLAY.md`의 "표시 규칙" 절 참고).
+  - `JudgmentBarSide` (`Left`/`Right`/`Center`, 기본값 `Center`) — 판정바를 화면 왼쪽/오른쪽
+    가장자리(여백 60px)에 붙이거나, 기존 기본 위치(세로=왼쪽 고정, 가로=정중앙)를 그대로 씀.
+    둘 다 `JudgmentBarVertical`(세로/가로)과는 독립적인 설정.
+  - 세로 바를 `Right`로 두면 히트 오차 텍스트 라벨이 자동으로 바 왼쪽으로 옮겨 붙어서
+    화면 밖으로 잘리지 않음(`labelOnLeftOfBar` 분기).
+- 캡슐 모양은 `JudgmentBarFeature.cs`의 `GetCapsuleTexture(w, h)`가 크기별 알파 마스크
+  텍스처를 생성해 캐시하는 방식으로 구현(스타디움 형태, 반지름 = `min(가로,세로)/2`,
+  픽셀 중심점과 선분 사이 거리로 1px 안티에일리어싱). 중앙선과 히트 틱은 항상 얇은 직선 그대로 둠.
+- **버그 수정**: 기존 설치본의 `config.txt`에는 `JudgmentBarCapsule`/`JudgmentBarSide` 키가
+  없는데도 모드가 파일에 자동으로 추가해주지 않는 문제가 있었음(`AppendSectionsMissingFrom`에
+  이 두 키가 등록돼 있지 않았음 — `MaxScore`/`NoteSway`/`NoteSpeedChaos`만 자동 추가 대상이었음).
+  두 키를 `AppendSectionsMissingFrom` 목록에 추가해서, 다음 게임 실행부터는 기존 `config.txt`
+  파일 끝에 두 항목이 자동으로 덧붙여지도록 고침.
+- **검증**: `dotnet build` 성공(경고 0개), `sxtg2.LogicTests` 6개 통과, `Mods/sxtg2.dll`에
+  배포 완료. 실게임 확인 **미완료** — 캡슐 모양/좌우 배치가 의도한 대로 보이는지, 기존
+  `config.txt`에 두 항목이 실제로 자동 추가되는지 플레이해보고 확인 필요.
+- 자세한 내용: `02-systems/PLAY_OVERLAY.md`, `01-user-guide/INSTALL_AND_LAYOUT.md`
 
 ## 2026-07-27 추가: 노트 속도 카오스 (NoteSpeedChaos)
 

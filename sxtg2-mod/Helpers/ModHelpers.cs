@@ -203,6 +203,8 @@ namespace sxtg2.Helpers
         public static bool BlockSave { get; set; } = true;
         public static bool EnableJudgmentBar { get; set; } = true;
         public static bool JudgmentBarVertical { get; set; } = true;
+        public static bool JudgmentBarCapsule { get; set; } = false;
+        public static string JudgmentBarSide { get; set; } = "Center";
         public static bool EnableKeyViewer { get; set; } = true;
         public static float MaxScore { get; set; } = DefaultMaxScore;
 
@@ -269,6 +271,9 @@ namespace sxtg2.Helpers
             sb.AppendLine("# 판정바 형태 (1 = 세로 판정바, 0 = 가로 판정바)");
             sb.AppendLine("JudgmentBarVertical=1");
             sb.AppendLine();
+            AppendJudgmentBarCapsuleSection(sb);
+            AppendJudgmentBarSideSection(sb);
+            sb.AppendLine();
             sb.AppendLine("# 실시간 키뷰어 표시 (1 = 켜짐, 0 = 꺼짐)");
             sb.AppendLine("EnableKeyViewer=1");
             AppendMaxScoreSection(sb);
@@ -277,6 +282,21 @@ namespace sxtg2.Helpers
 
             File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
             MelonLogger.Msg($"[SaveCustomKey] 기본 설정 파일 생성 완료: {filePath}");
+        }
+
+        private static void AppendJudgmentBarCapsuleSection(StringBuilder sb)
+        {
+            sb.AppendLine();
+            sb.AppendLine("# 판정바 모양 (1 = 알약 캡슐 모양(양끝 둥글게), 0 = 사각 바)");
+            sb.AppendLine("JudgmentBarCapsule=0");
+        }
+
+        private static void AppendJudgmentBarSideSection(StringBuilder sb)
+        {
+            sb.AppendLine();
+            sb.AppendLine("# 판정바 위치 (Left = 화면 왼쪽, Right = 화면 오른쪽, Center = 기본 위치)");
+            sb.AppendLine("# 기본 위치는 세로 판정바는 왼쪽 고정, 가로 판정바는 화면 정중앙입니다.");
+            sb.AppendLine("JudgmentBarSide=Center");
         }
 
         private static void AppendMaxScoreSection(StringBuilder sb)
@@ -383,6 +403,14 @@ namespace sxtg2.Helpers
                     {
                         JudgmentBarVertical = ParseFlexibleBool(val, JudgmentBarVertical);
                     }
+                    else if (key.Equals("JudgmentBarCapsule", StringComparison.OrdinalIgnoreCase) || key.Equals("JudgmentBarShape", StringComparison.OrdinalIgnoreCase))
+                    {
+                        JudgmentBarCapsule = ParseFlexibleBool(val, JudgmentBarCapsule);
+                    }
+                    else if (key.Equals("JudgmentBarSide", StringComparison.OrdinalIgnoreCase) || key.Equals("JudgmentBarPosition", StringComparison.OrdinalIgnoreCase))
+                    {
+                        JudgmentBarSide = ParseSideSetting("JudgmentBarSide", val, JudgmentBarSide);
+                    }
                     else if (key.Equals("EnableKeyViewer", StringComparison.OrdinalIgnoreCase) || key.Equals("KeyViewer", StringComparison.OrdinalIgnoreCase))
                     {
                         EnableKeyViewer = ParseFlexibleBool(val, EnableKeyViewer);
@@ -439,7 +467,7 @@ namespace sxtg2.Helpers
 
                 AppendSectionsMissingFrom(filePath, seenKeys);
 
-                MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}, NoteSpeedChaos={(EnableNoteSpeedChaos ? $"켜짐(배율 {NoteSpeedChaosMin:0.##}~{NoteSpeedChaosMax:0.##}, {(NoteSpeedChaosPerLane ? "레인별" : "노트별")})" : "꺼짐(0)")}");
+                MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, Shape={(JudgmentBarCapsule ? "캡슐(1)" : "사각(0)")}, Side={JudgmentBarSide}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}, NoteSpeedChaos={(EnableNoteSpeedChaos ? $"켜짐(배율 {NoteSpeedChaosMin:0.##}~{NoteSpeedChaosMax:0.##}, {(NoteSpeedChaosPerLane ? "레인별" : "노트별")})" : "꺼짐(0)")}");
             }
             catch (Exception ex)
             {
@@ -453,6 +481,18 @@ namespace sxtg2.Helpers
         {
             var sections = new List<Action<StringBuilder>>();
             var names = new List<string>();
+
+            if (!seenKeys.Contains("JudgmentBarCapsule") && !seenKeys.Contains("JudgmentBarShape"))
+            {
+                sections.Add(AppendJudgmentBarCapsuleSection);
+                names.Add("JudgmentBarCapsule");
+            }
+
+            if (!seenKeys.Contains("JudgmentBarSide") && !seenKeys.Contains("JudgmentBarPosition"))
+            {
+                sections.Add(AppendJudgmentBarSideSection);
+                names.Add("JudgmentBarSide");
+            }
 
             if (!seenKeys.Contains("MaxScore") && !seenKeys.Contains("ScoreLimit"))
             {
@@ -494,6 +534,26 @@ namespace sxtg2.Helpers
             }
 
             return parsed;
+        }
+
+        public static string ParseSideSetting(string key, string val, string defaultValue)
+        {
+            if (string.IsNullOrEmpty(val))
+                return defaultValue;
+
+            var s = val.Trim().ToLowerInvariant();
+
+            if (s == "left" || s == "l" || s == "왼쪽" || s == "좌" || s == "-1")
+                return "Left";
+
+            if (s == "right" || s == "r" || s == "오른쪽" || s == "우" || s == "1")
+                return "Right";
+
+            if (s == "center" || s == "c" || s == "중앙" || s == "가운데" || s == "default" || s == "기본" || s == "0")
+                return "Center";
+
+            MelonLogger.Warning($"[SaveCustomKey] {key} 값을 알 수 없습니다: \"{val}\" (Left/Right/Center 중 하나) → 기본값 {defaultValue} 유지");
+            return defaultValue;
         }
 
         public static bool ParseFlexibleBool(string val, bool defaultValue)

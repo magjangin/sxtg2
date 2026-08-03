@@ -33,6 +33,7 @@ namespace sxtg2.Features
 
         private static Texture2D _whiteTex;
         private static GUIStyle _labelStyle;
+        private static readonly Dictionary<(int, int), Texture2D> CapsuleTexCache = new Dictionary<(int, int), Texture2D>();
 
         /// <summary>난이도별로 다른 실제 판정 범위를 게임에서 읽어온다.</summary>
         public static void RefreshJudgeRange()
@@ -122,10 +123,22 @@ namespace sxtg2.Features
                 float screenHeight = Screen.height;
 
                 bool isVertical = SaveCustomKeyConfig.JudgmentBarVertical;
+                bool isCapsule = SaveCustomKeyConfig.JudgmentBarCapsule;
+                string side = SaveCustomKeyConfig.JudgmentBarSide;
+                bool isLeft = side.Equals("Left", StringComparison.OrdinalIgnoreCase);
+                bool isRight = side.Equals("Right", StringComparison.OrdinalIgnoreCase);
                 float barW = isVertical ? 24f : 300f;
                 float barH = isVertical ? 300f : 24f;
 
-                float centerX = isVertical ? 60f : screenWidth / 2f;
+                const float edgeMargin = 60f;
+                float centerX;
+                if (isLeft)
+                    centerX = isVertical ? edgeMargin : edgeMargin + barW / 2f;
+                else if (isRight)
+                    centerX = isVertical ? (screenWidth - edgeMargin) : (screenWidth - edgeMargin - barW / 2f);
+                else // Center(기본값): 세로는 왼쪽 고정, 가로는 화면 정중앙 - 기존 동작 그대로
+                    centerX = isVertical ? edgeMargin : screenWidth / 2f;
+
                 float centerY = screenHeight / 2f;
 
                 // 눈금 범위는 게임의 최대 판정 폭(REDSTAR 경계)에 맞춘다.
@@ -133,9 +146,9 @@ namespace sxtg2.Features
                 float scale = (isVertical ? (barH / 2f) : (barW / 2f)) / maxMsRange;
 
                 // 1. 전체 배경 트랙 (±REDSTAR 범위)
-                DrawColorRect(new Rect(centerX - barW / 2f, centerY - barH / 2f, barW, barH), new Color(0.08f, 0.08f, 0.08f, 0.65f));
+                DrawBarShape(isCapsule, new Rect(centerX - barW / 2f, centerY - barH / 2f, barW, barH), new Color(0.08f, 0.08f, 0.08f, 0.65f));
 
-                // 2~4. 실제 판정 범위 박스 (넓은 등급부터 겹쳐 그림)
+                // 2~4. 실제 판정 범위 박스 (넓은 등급부터 겹쳐 그림) - 모양 설정과 무관하게 항상 사각형
                 DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[2] * 2f * scale, new Color(0.65f, 0.55f, 0.12f, 0.18f)); // YELLOWSTAR
                 DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[1] * 2f * scale, new Color(0.75f, 0.75f, 0.75f, 0.20f)); // WHITESTAR
                 DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[0] * 2f * scale, new Color(0.20f, 0.50f, 0.85f, 0.32f)); // BLUESTAR
@@ -189,9 +202,16 @@ namespace sxtg2.Features
                     }
                     _labelStyle.fontSize = 16;
 
+                    // 세로 바가 화면 오른쪽에 있으면 라벨이 화면 밖으로 나가므로 바 왼쪽에 붙인다.
+                    bool labelOnLeftOfBar = isVertical && isRight;
+                    _labelStyle.alignment = labelOnLeftOfBar ? TextAnchor.MiddleRight : TextAnchor.MiddleLeft;
+
+                    const float labelWidth = 260f;
                     Rect labelRect = isVertical
-                        ? new Rect(centerX + barW / 2f + 10f, centerY - 12f, 260f, 24f)
-                        : new Rect(centerX - 90f, centerY - barH / 2f - 28f, 260f, 24f);
+                        ? (labelOnLeftOfBar
+                            ? new Rect(centerX - barW / 2f - 10f - labelWidth, centerY - 12f, labelWidth, 24f)
+                            : new Rect(centerX + barW / 2f + 10f, centerY - 12f, labelWidth, 24f))
+                        : new Rect(centerX - 90f, centerY - barH / 2f - 28f, labelWidth, 24f);
 
                     // 그림자
                     _labelStyle.normal.textColor = new Color(0f, 0f, 0f, alpha * 0.8f);
@@ -225,6 +245,87 @@ namespace sxtg2.Features
             GUI.color = color;
             GUI.DrawTexture(rect, _whiteTex);
             GUI.color = Color.white;
+        }
+
+        /// <summary>isCapsule에 따라 사각 바 또는 양끝이 둥근 알약(캡슐) 바를 그린다.</summary>
+        private static void DrawBarShape(bool isCapsule, Rect rect, Color color)
+        {
+            if (!isCapsule)
+            {
+                DrawColorRect(rect, color);
+                return;
+            }
+
+            int w = Mathf.RoundToInt(rect.width);
+            int h = Mathf.RoundToInt(rect.height);
+            if (w < 2 || h < 2)
+            {
+                DrawColorRect(rect, color);
+                return;
+            }
+
+            GUI.color = color;
+            GUI.DrawTexture(rect, GetCapsuleTexture(w, h));
+            GUI.color = Color.white;
+        }
+
+        /// <summary>양끝이 반원인 알약(스타디움) 모양의 알파 마스크 텍스처를 생성/캐시한다.</summary>
+        private static Texture2D GetCapsuleTexture(int w, int h)
+        {
+            var key = (w, h);
+            if (CapsuleTexCache.TryGetValue(key, out var cached) && cached != null)
+                return cached;
+
+            // 판정 범위가 자잘하게 바뀔 때마다 캐시가 무한정 쌓이는 걸 막는 안전장치
+            if (CapsuleTexCache.Count > 64)
+                CapsuleTexCache.Clear();
+
+            var tex = new Texture2D(w, h, TextureFormat.ARGB32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
+
+            float radius = Mathf.Min(w, h) / 2f;
+            float ax, ay, bx, by;
+            if (w >= h)
+            {
+                ax = radius; ay = h / 2f;
+                bx = w - radius; by = h / 2f;
+            }
+            else
+            {
+                ax = w / 2f; ay = radius;
+                bx = w / 2f; by = h - radius;
+            }
+
+            var pixels = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                float py = y + 0.5f;
+                for (int x = 0; x < w; x++)
+                {
+                    float px = x + 0.5f;
+                    float signedDist = DistanceToSegment(px, py, ax, ay, bx, by) - radius;
+                    float alpha = Mathf.Clamp01(0.5f - signedDist);
+                    pixels[y * w + x] = new Color(1f, 1f, 1f, alpha);
+                }
+            }
+
+            tex.SetPixels32(pixels);
+            tex.Apply();
+            CapsuleTexCache[key] = tex;
+            return tex;
+        }
+
+        private static float DistanceToSegment(float px, float py, float ax, float ay, float bx, float by)
+        {
+            float dx = bx - ax, dy = by - ay;
+            float lenSq = dx * dx + dy * dy;
+            float t = lenSq > 0.0001f ? Mathf.Clamp01(((px - ax) * dx + (py - ay) * dy) / lenSq) : 0f;
+            float cx = ax + t * dx, cy = ay + t * dy;
+            float ddx = px - cx, ddy = py - cy;
+            return Mathf.Sqrt(ddx * ddx + ddy * ddy);
         }
     }
 

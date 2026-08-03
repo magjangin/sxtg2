@@ -96,6 +96,8 @@
 | `BlockSave` | `1` | 베스트 스코어/랭킹 저장 차단 |
 | `EnableJudgmentBar` | `1` | 실시간 판정바 표시 |
 | `JudgmentBarVertical` | `1` | 판정바 형태 (1 = 세로, 0 = 가로) |
+| `JudgmentBarCapsule` | `0` | 판정바 모양 (1 = 알약 캡슐, 0 = 사각 바). `JudgmentBarShape`도 같은 키로 인식 |
+| `JudgmentBarSide` | `Center` | 판정바 좌우 위치 (`Left`/`Right`/`Center`). `JudgmentBarPosition`도 같은 키로 인식 |
 | `EnableKeyViewer` | `1` | 실시간 키뷰어 표시 |
 | `MaxScore` | `1000000` | 점수 상한(만점 기준값). `ScoreLimit`도 같은 키로 인식 |
 | `NoteSway` | `0` | 노트가 눈송이처럼 좌우로 흔들리며 내려오는 연출 |
@@ -117,8 +119,10 @@
   시간만 보기 때문입니다(`NoteSpeedChaos`가 어렵게 느껴지는 것은 순전히 읽기 난이도 탓입니다).
   자세한 내용은 `02-systems/NOTE_SYSTEM.md`의 "노트 흔들림 연출" / "노트 속도 카오스" 절 참고.
 - 설정 파일에 항목이 아예 없으면 위 기본값이 그대로 적용됩니다(이전 버전에서 만들어진 파일이라
-  새 항목이 빠져 있어도 동작함). 단 `MaxScore`와 `NoteSway` 계열은 예외로, 항목이 없으면 모드가
-  파일 끝에 기본값 줄을 자동으로 덧붙여줍니다.
+  새 항목이 빠져 있어도 동작함). `JudgmentBarCapsule`/`JudgmentBarSide`, `MaxScore`,
+  `NoteSway`/`NoteSpeedChaos` 계열은 항목이 없으면 모드가 파일 끝에 기본값 줄을 자동으로
+  덧붙여줍니다(`SaveCustomKeyConfig.AppendSectionsMissingFrom`). 그 외 항목은 파일에 줄을
+  추가하지 않고 C# 기본값만 조용히 적용됩니다.
 - 판정바/키뷰어의 표시 규칙과 동작은 `02-systems/PLAY_OVERLAY.md`를 참고하세요.
 - 게임 자체의 커스텀 키 설정은 `UserAccountModule.Instance.userData.customKeySetting`(세이브 데이터 내부,
   `GameSetting/KeyPresetSetting.cs`)로 관리되며, 이 폴더와는 별개입니다. 키 프리셋을 파일로
