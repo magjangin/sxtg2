@@ -71,6 +71,24 @@ RG_PS_Judgement.TryJudgeShortNote(judgeTime, note)
   중 선택. 세로 바를 `Right`로 두면 히트 텍스트 라벨도 자동으로 바 왼쪽으로 붙어서 화면 밖으로
   나가지 않음.
 
+### 향후 계획: 등급별 누적 판정 카운터
+
+**계획 중**: BLUESTAR/WHITESTAR/YELLOWSTAR/REDSTAR 4개 등급의 누적 개수를 플레이 중
+실시간으로 보여주는 위젯을 추가할 예정 (판정바처럼 `EnableJudgmentBar`류 토글로 켜고 끌 수
+있게 만들 계획).
+
+- 데이터는 게임 원본에 이미 다 쌓이고 있음: `RG_PS_Judgement.JudgeCount`
+  (`sxtg2/RhythmGame.Play/RG_PS_Judgement.cs`)가 `JudgeCounter` 타입(`sxtg2/JudgeCounter.cs`,
+  `int[4]` 배열)이고, 노트 판정마다 `JudgeDivergence()`에서 `JudgeCount.AddJudge(j)`로 누적됨.
+  `JudgeCount[(int)EJudges.BLUESTAR]`처럼 등급별로 바로 읽을 수 있음.
+- 원본 게임에는 REDSTAR(미스)만 실시간으로 보여주는 `RedStarCounter`
+  (`sxtg2/RhythmGame.Play/RedStarCounter.cs`, `PlayWidget` 상속, `"Red : N"` 텍스트)가 있고
+  BLUESTAR/WHITESTAR/YELLOWSTAR용 라이브 위젯은 없음 — 새로 만들 위젯은 이 4개 등급을 전부
+  다루는 확장판 개념.
+- 구현 방향은 `JudgmentBar`처럼 `OnGUI`에서 직접 그리는 방식이 유력. 데이터 소스는
+  `FastSlowMeter_OnGetJudge_Patch`(같은 파일, `RG_PS_Judgement.JudgeDivergence` 후킹)를
+  그대로 재사용하거나, `RG_PS_Judgement.Instance.JudgeCount`를 매 프레임 직접 읽어도 됨.
+
 ### 정밀도 한계 (게임 원본 특성)
 
 `ManagerPlay.CurTime`은 오디오 클럭이 아니라 `Time.time` 기반으로 계산되고

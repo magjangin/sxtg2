@@ -38,6 +38,15 @@
   `config.txt`에 두 항목이 실제로 자동 추가되는지 플레이해보고 확인 필요.
 - 자세한 내용: `02-systems/PLAY_OVERLAY.md`, `01-user-guide/INSTALL_AND_LAYOUT.md`
 
+## 계획 중: 등급별 누적 판정 카운터 (BLUESTAR/WHITESTAR/YELLOWSTAR/REDSTAR)
+
+- 판정바(`JudgmentBar`)처럼 플레이 중 실시간으로 4개 등급 누적 개수를 보여주는 위젯을 추가할 예정.
+- 데이터는 원본 게임의 `RG_PS_Judgement.JudgeCount`(`JudgeCounter`, `int[4]`)에 이미 다 쌓이고
+  있고, 원본에는 REDSTAR(미스)만 실시간으로 보여주는 `RedStarCounter` 위젯이 있음 — 이걸
+  4개 등급 전부로 확장하는 개념.
+- 자세한 내용(코드 위치, 구현 방향): `02-systems/PLAY_OVERLAY.md`의 "향후 계획: 등급별 누적
+  판정 카운터" 절 참고.
+
 ## 2026-07-27 추가: 노트 속도 카오스 (NoteSpeedChaos)
 
 - **추가한 것**: 노트마다 낙하 속도 배율을 다르게 주는 챌린지 기능(`NoteSpeedChaosHook`).
