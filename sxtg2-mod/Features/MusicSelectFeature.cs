@@ -174,6 +174,9 @@ namespace sxtg2.Features
     {
         private static int _previewRequestVersion;
 
+        private static readonly AccessTools.FieldRef<ManagerMusicSelect, ConfirmWindow> ConfirmWindowField =
+            AccessTools.FieldRefAccess<ManagerMusicSelect, ConfirmWindow>("confirmWindow");
+
         [HarmonyPatch("Awake")]
         [HarmonyPostfix]
         private static void AwakePostfix(ManagerMusicSelect __instance)
@@ -185,6 +188,77 @@ namespace sxtg2.Features
             catch (Exception ex)
             {
                 MelonLogger.Error($"[ManagerMusicSelectHook] 커스텀 트랙 주입 실패: {ex}");
+            }
+        }
+
+        [HarmonyPatch("OpenConfirmWindow")]
+        [HarmonyPostfix]
+        private static void OpenConfirmWindowPostfix(ManagerMusicSelect __instance, bool willFetchKey)
+        {
+            try
+            {
+                TrackData track = __instance.trackDatas[__instance.TrackCursor];
+                MelonLogger.Msg(
+                    $"[ManagerMusicSelectHook] OpenConfirmWindow 호출: track={track?.DisplayName}, " +
+                    $"level={__instance.LevelCursor}, style={__instance.playStyle}, willFetchKey={willFetchKey}");
+
+                LogCharacterLayer(__instance);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[ManagerMusicSelectHook] OpenConfirmWindow 로깅 실패: {ex.Message}");
+            }
+        }
+
+        private static void LogCharacterLayer(ManagerMusicSelect instance)
+        {
+            ConfirmWindow confirmWindow = ConfirmWindowField(instance);
+            GameObject layer = confirmWindow?.characterLayer;
+            if (layer == null)
+            {
+                MelonLogger.Msg("[ManagerMusicSelectHook] characterLayer가 비어있습니다.");
+                return;
+            }
+
+            MelonLogger.Msg($"[ManagerMusicSelectHook] characterLayer 오브젝트: {layer.name} (active={layer.activeSelf})");
+            LogHierarchy(layer.transform, 1);
+
+            OperatorCharacter[] operators = layer.GetComponentsInChildren<OperatorCharacter>(includeInactive: true);
+            if (operators.Length == 0)
+            {
+                MelonLogger.Msg("[ManagerMusicSelectHook]   -> OperatorCharacter 컴포넌트를 찾지 못했습니다.");
+            }
+            foreach (OperatorCharacter op in operators)
+            {
+                MelonLogger.Msg(
+                    $"[ManagerMusicSelectHook]   -> Operator 발견: name={op.OperatorName} " +
+                    $"(type={op.GetType().Name}, object={op.gameObject.name}, active={op.gameObject.activeInHierarchy})");
+            }
+        }
+
+        private static void LogHierarchy(Transform t, int depth)
+        {
+            foreach (Transform child in t)
+            {
+                MelonLogger.Msg(
+                    $"[ManagerMusicSelectHook] {new string(' ', depth * 2)}- {child.name} (active={child.gameObject.activeSelf})");
+                LogHierarchy(child, depth + 1);
+            }
+        }
+
+        [HarmonyPatch("instantiateOperatorCharacter")]
+        [HarmonyPostfix]
+        private static void InstantiateOperatorCharacterPostfix(string opCharID, OperatorCharacter __result)
+        {
+            try
+            {
+                MelonLogger.Msg(
+                    $"[ManagerMusicSelectHook] instantiateOperatorCharacter 호출: opCharID={opCharID}, " +
+                    $"result={__result?.OperatorName ?? "null"} (object={__result?.gameObject.name ?? "null"})");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[ManagerMusicSelectHook] instantiateOperatorCharacter 로깅 실패: {ex.Message}");
             }
         }
 
@@ -309,6 +383,42 @@ namespace sxtg2.Features
             bgmSource.volume = Util.GetBGMVolume();
             if (!bgmSource.isPlaying)
                 bgmSource.Play();
+        }
+    }
+
+    [HarmonyPatch(typeof(OperatorCharacter))]
+    public static class OperatorCharacterHook
+    {
+        [HarmonyPatch("SetUp")]
+        [HarmonyPrefix]
+        private static void SetUpPrefix(OperatorCharacter __instance)
+        {
+            try
+            {
+                MelonLogger.Msg(
+                    $"[OperatorCharacterHook] SetUp 호출: name={__instance.OperatorName} " +
+                    $"(type={__instance.GetType().Name}, object={__instance.gameObject.name})");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[OperatorCharacterHook] SetUp 로깅 실패: {ex.Message}");
+            }
+        }
+
+        [HarmonyPatch("ShowDialogue")]
+        [HarmonyPrefix]
+        private static void ShowDialoguePrefix(OperatorCharacter __instance, EOperatorStatus os)
+        {
+            try
+            {
+                MelonLogger.Msg(
+                    $"[OperatorCharacterHook] ShowDialogue 호출: name={__instance.OperatorName}, " +
+                    $"status={os} (type={__instance.GetType().Name}, object={__instance.gameObject.name})");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[OperatorCharacterHook] ShowDialogue 로깅 실패: {ex.Message}");
+            }
         }
     }
 }

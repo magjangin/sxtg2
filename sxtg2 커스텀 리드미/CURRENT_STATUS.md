@@ -12,6 +12,55 @@
 - `sxtg2.LogicTests` 4개 통과
 - 실제 게임에서 커스텀 차트 흐름 정상 동작 확인
 
+## 2026-08-03 추가: MusicSelect 확인창 Enter 흐름 및 시이(Shii) 캐릭터 조사
+
+- **조사한 것**: 뮤직 셀렉트 화면에서 Enter(`SixtarInput.A`, 키보드 `KeyCode.Return`)를 눌렀을 때 실제로
+  호출되는 메서드 체인을, 진단용 Harmony 훅으로 실게임에서 추적함.
+- **확인된 호출 체인**:
+  ```text
+  InputListenerForPC.Update()
+   -> ManagerMusicSelect.<GetKeyMap>b__77_6() (키맵 델리게이트)
+   -> ManagerMusicSelect.OpenConfirmWindow(bool willFetchKey = true)
+   -> ConfirmWindow.ActiveCharacterLayer(willFetchKey)
+   -> characterLayer.SetActive(willFetchKey)
+  ```
+  `OpenConfirmWindow`의 `willFetchKey` 파라미터 하나가 `FetchKeyMap()` 호출 여부, `Startable`,
+  `ActiveCharacterLayer` 세 곳에 동시에 영향을 준다(튜토리얼 흐름에서 `false`로 호출되면 시이가 꺼진 채
+  확인창만 뜸 — `ManagerMusicSelect.cs:209`).
+- **시이(Shii) 캐릭터 확인**: `confirmWindow.characterLayer`("Operator Layer" 오브젝트) 하위에
+  `SHII_MODEL_211103`이라는 Live2D Cubism 모델이 항상 자식으로 존재함(에디터에서 미리 배치된 오브젝트이지,
+  런타임에 `Instantiate`되는 게 아님). `ActiveCharacterLayer`는 이 오브젝트를 `SetActive`로 껐다 켤
+  뿐이고, 켜진 뒤의 눈 깜빡임/물리 흔들림 등은 Live2D SDK의 `CubismUpdateController`가 `LateUpdate()`에서
+  `ICubismUpdatable` 컴포넌트(`CubismEyeBlinkController`, `CubismPhysicsController`,
+  `CubismExpressionController` 등)를 모아 자체적으로 구동함 — 게임 로직과는 무관.
+- **에셋 실제 위치**: AssetBundle이 아니라 Unity `Resources` 시스템에 있음.
+  `Assets/Resources/L2DCharacter/SHII_MODEL_211103/` 폴더에 `.moc3`/`.model3n`/텍스처와
+  `IDLE`/`CLEAR_1`/`CLEAR_1_JP_0~2`/`CLEAR_2_FC`/`CLEAR_2_PB`/`CLEAR_IDLE`/`FAILED`/`FAILED_IDLE`
+  모션 파일이 들어있음. 빌드 파일 기준으로 `resources.assets`에 컴파일되어 있고, `level8`(MusicSelect
+  씬)과 `level12`(Result 씬) 양쪽에 인스턴스가 있음 — 확인창뿐 아니라 결과 화면에서도 같은 모델로
+  클리어/실패 리액션을 보여주는 구조로 보임.
+  (참고: `ManagerMusicSelect.instantiateOperatorCharacter(opCharID, opCharLayer)`는
+  `Resources.Load<GameObject>("Rhythm Game Part/Operators/" + opCharID)` 경로를 쓰는데, 이는 시이의
+  실제 경로(`L2DCharacter/...`)와 다른 별개 로더로 보이며, 이번 조사에서 호출 로그가 한 번도 안 찍힘 —
+  시이는 이 경로를 타지 않음.)
+- **진단용으로 추가한 것(남아있음, 추후 정리 대상)**: `Features/MusicSelectFeature.cs`의
+  `ManagerMusicSelectHook.OpenConfirmWindowPostfix`(+`LogCharacterLayer`/`LogHierarchy`),
+  `InstantiateOperatorCharacterPostfix`, `OperatorCharacterHook`(`SetUp`/`ShowDialogue`)는 전부 이번
+  조사용으로 추가한 로깅 훅. 실제 게임 동작은 바꾸지 않지만, 기존 관례(`최근 정리 내역` 참고)대로
+  다음에 이 영역을 건드릴 때 제거 대상.
+- **검증**: `dotnet build` 성공(경고 0개), 게임 `Mods/`에 배포 완료, 실게임 로그로 위 내용 전부 확인.
+
+## 계획 중: 커스텀 시이(Shii) Live2D 모델 교체
+
+- 확인창/결과 화면에 나오는 시이(`SHII_MODEL_211103`, `Assets/Resources/L2DCharacter/SHII_MODEL_211103/`)를
+  다른 Live2D 모델로 교체하는 걸 계획 중.
+- 이 모델은 코드에서 `Resources.Load`로 동적 로드되는 게 아니라 `ConfirmWindow.characterLayer`
+  필드에 씬 단계에서 미리 배치되어 있으므로, 교체하려면 (a) 같은 폴더 구조/파일명으로 리소스 파일
+  자체를 치환하거나 (b) `ConfirmWindow.characterLayer`가 가리키는 오브젝트를 후킹으로 다른 프리팹으로
+  바꿔치기하는 방식 중 하나가 필요함. `.moc3`/텍스처/모션 파일 세트를 그대로 유지한 채 내용만 바꾸는
+  (a) 쪽이 코드 수정 없이 되는 가장 간단한 경로로 보임.
+- 아직 실제 착수 전 — 조사만 완료된 상태.
+
 ## 2026-08-03 추가: 판정바 모양(캡슐/사각) + 좌우 위치 설정, config.txt 마이그레이션 누락 수정
 
 - **추가한 것**:
