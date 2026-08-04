@@ -14,6 +14,7 @@ internal static class Program
             ("ParseBmsFromText_PairsOpenAndCloseNotes", ParseBmsFromText_PairsOpenAndCloseNotes),
             ("ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd", ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd),
             ("ParseBmsFileWithStatistics_UsesCacheForSamePath", ParseBmsFileWithStatistics_UsesCacheForSamePath),
+            ("ParseFlexibleBool_SupportsComprehensiveTrueFalseKeywords", ParseFlexibleBool_SupportsComprehensiveTrueFalseKeywords),
         };
 
         var failed = new List<string>();
@@ -171,6 +172,51 @@ internal static class Program
         {
             TryDelete(path);
         }
+    }
+
+    private static void ParseFlexibleBool_SupportsComprehensiveTrueFalseKeywords()
+    {
+        var trueCases = new[]
+        {
+            "true", "TRUE", "True", "트루", "참", "켜기", "켜짐", "활성화", "사용",
+            "on", "ON", "1", "enable", "enabled", "y", "yes", "t"
+        };
+
+        var falseCases = new[]
+        {
+            "false", "FALSE", "False", "폴스", "거짓", "비활성화", "끄기", "꺼짐", "미사용",
+            "off", "OFF", "0", "disable", "disabled", "n", "no", "f"
+        };
+
+        foreach (var tc in trueCases)
+        {
+            Assert.True(ParseFlexibleBool(tc, false), $"'{tc}'가 true로 해석되지 않았습니다.");
+        }
+
+        foreach (var fc in falseCases)
+        {
+            Assert.True(!ParseFlexibleBool(fc, true), $"'{fc}'가 false로 해석되지 않았습니다.");
+        }
+
+        Assert.True(ParseFlexibleBool(null, true), "null 입력 시 defaultValue(true)가 반환되어야 합니다.");
+        Assert.True(!ParseFlexibleBool("", false), "빈 입력 시 defaultValue(false)가 반환되어야 합니다.");
+        Assert.True(ParseFlexibleBool("unknown_value", true), "알 수 없는 입력 시 defaultValue(true)가 반환되어야 합니다.");
+    }
+
+    private static bool ParseFlexibleBool(string val, bool defaultValue)
+    {
+        if (string.IsNullOrEmpty(val))
+            return defaultValue;
+
+        var s = val.Trim().ToLowerInvariant();
+
+        if (s == "1" || s == "true" || s == "t" || s == "on" || s == "켜짐" || s == "사용" || s == "활성화" || s == "enable" || s == "enabled" || s == "yes" || s == "y" || s == "트루" || s == "참" || s == "켜기")
+            return true;
+
+        if (s == "0" || s == "false" || s == "f" || s == "off" || s == "꺼짐" || s == "미사용" || s == "비활성화" || s == "disable" || s == "disabled" || s == "no" || s == "n" || s == "폴스" || s == "거짓" || s == "끄기")
+            return false;
+
+        return defaultValue;
     }
 
     private static string WriteTempBms(string content)
