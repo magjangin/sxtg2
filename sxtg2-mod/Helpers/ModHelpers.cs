@@ -197,36 +197,74 @@ namespace sxtg2.Helpers
         public const float DefaultMaxScore = 1000000f;
 
         private static bool _initialized = false;
+        private static int _reloadCount = 0;
 
-        public static bool AutoPlay { get; set; } = false;
-        public static bool AllPerfect { get; set; } = false;
-        public static bool BlockSave { get; set; } = true;
-        public static bool EnableJudgmentBar { get; set; } = true;
-        public static bool JudgmentBarVertical { get; set; } = true;
-        public static int JudgmentBarShape { get; set; } = 0;
-        public static int JudgmentBarRangeShape { get; set; } = -1;
+        public static bool AutoPlay { get; set; }
+        public static bool AllPerfect { get; set; }
+        public static bool BlockSave { get; set; }
+        public static bool EnableJudgmentBar { get; set; }
+        public static bool JudgmentBarVertical { get; set; }
+        public static int JudgmentBarShape { get; set; }
+        public static int JudgmentBarRangeShape { get; set; }
         public static bool JudgmentBarCapsule
         {
             get => JudgmentBarShape == 1;
             set => JudgmentBarShape = value ? 1 : (JudgmentBarShape == 1 ? 0 : JudgmentBarShape);
         }
-        public static string JudgmentBarSide { get; set; } = "Center";
-        public static bool EnableKeyViewer { get; set; } = true;
-        public static Color KeyViewerPressedColor { get; set; } = new Color(0.15f, 0.75f, 0.85f, 0.85f);
-        public static Color KeyViewerNormalColor { get; set; } = new Color(0.08f, 0.08f, 0.08f, 0.65f);
-        public static Color KeyViewerGatePressedColor { get; set; } = new Color(1.0f, 0.25f, 0.5f, 0.9f);
-        public static float MaxScore { get; set; } = DefaultMaxScore;
+        public static string JudgmentBarSide { get; set; }
+        public static bool EnableKeyViewer { get; set; }
+        public static Color KeyViewerPressedColor { get; set; }
+        public static Color KeyViewerNormalColor { get; set; }
+        public static Color KeyViewerGatePressedColor { get; set; }
+        public static float MaxScore { get; set; }
 
-        public static bool EnableNoteSway { get; set; } = false;
-        public static float NoteSwayAmplitude { get; set; } = 12f;
-        public static float NoteSwaySpeed { get; set; } = 0.8f;
-        public static bool NoteSwayDamping { get; set; } = true;
-        public static float NoteSwayDampingTime { get; set; } = 0.4f;
+        public static bool EnableNoteSway { get; set; }
+        public static float NoteSwayAmplitude { get; set; }
+        public static float NoteSwaySpeed { get; set; }
+        public static bool NoteSwayDamping { get; set; }
+        public static float NoteSwayDampingTime { get; set; }
 
-        public static bool EnableNoteSpeedChaos { get; set; } = false;
-        public static float NoteSpeedChaosMin { get; set; } = 0.6f;
-        public static float NoteSpeedChaosMax { get; set; } = 1.8f;
-        public static bool NoteSpeedChaosPerLane { get; set; } = false;
+        public static bool EnableNoteSpeedChaos { get; set; }
+        public static float NoteSpeedChaosMin { get; set; }
+        public static float NoteSpeedChaosMax { get; set; }
+        public static bool NoteSpeedChaosPerLane { get; set; }
+
+        static SaveCustomKeyConfig()
+        {
+            ResetToDefaults();
+        }
+
+        /// <summary>
+        /// 모든 값을 기본값으로 되돌린다. 재로드 때 이걸 먼저 하지 않으면, 사용자가 설정 줄을
+        /// 지우거나 주석 처리해도 파서가 폴백으로 "현재 값"을 쓰기 때문에 직전 값이 그대로 살아남는다.
+        /// </summary>
+        public static void ResetToDefaults()
+        {
+            AutoPlay = false;
+            AllPerfect = false;
+            BlockSave = true;
+            EnableJudgmentBar = true;
+            JudgmentBarVertical = true;
+            JudgmentBarShape = 0;
+            JudgmentBarRangeShape = -1;
+            JudgmentBarSide = "Center";
+            EnableKeyViewer = true;
+            KeyViewerPressedColor = new Color(0.15f, 0.75f, 0.85f, 0.85f);
+            KeyViewerNormalColor = new Color(0.08f, 0.08f, 0.08f, 0.65f);
+            KeyViewerGatePressedColor = new Color(1.0f, 0.25f, 0.5f, 0.9f);
+            MaxScore = DefaultMaxScore;
+
+            EnableNoteSway = false;
+            NoteSwayAmplitude = 12f;
+            NoteSwaySpeed = 0.8f;
+            NoteSwayDamping = true;
+            NoteSwayDampingTime = 0.4f;
+
+            EnableNoteSpeedChaos = false;
+            NoteSpeedChaosMin = 0.6f;
+            NoteSpeedChaosMax = 1.8f;
+            NoteSpeedChaosPerLane = false;
+        }
 
         public static void EnsureInitialized()
         {
@@ -237,6 +275,35 @@ namespace sxtg2.Helpers
         public static void Initialize()
         {
             _initialized = true;
+            LoadFromDisk(isReload: false, reason: null);
+        }
+
+        /// <summary>
+        /// 설정 파일을 디스크에서 다시 읽는다. 플레이 씬으로 넘어가는 순간에만 호출되므로
+        /// 한 판이 진행되는 도중에 값이 바뀌는 일은 없다(= 수정한 설정은 다음 플레이부터 적용).
+        /// 게임을 재시작하지 않아도 되지만, 플레이 중 노트가 튀거나 굳는 부작용도 없다.
+        /// </summary>
+        public static void Reload(string reason)
+        {
+            // 씬 전환 콜백에서 불리므로 여기서 예외가 새어나가면 다른 구독자까지 끊긴다.
+            try
+            {
+                EnsureInitialized();
+
+                var before = Snapshot();
+                LoadFromDisk(isReload: true, reason: reason);
+                _reloadCount++;
+                LogDiff(before, Snapshot(), reason);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[SaveCustomKey] 설정 재로드 실패 ({reason}): {ex.Message}");
+            }
+        }
+
+        private static void LoadFromDisk(bool isReload, string reason)
+        {
+            string stage = isReload ? "재로드" : "초기화";
 
             try
             {
@@ -250,11 +317,14 @@ namespace sxtg2.Helpers
                     CreateDefaultConfigFile(configFilePath);
                 }
 
-                LoadConfigFile(configFilePath);
+                if (isReload)
+                    ModLog.Verbose($"[SaveCustomKey] 설정 재로드 시도 #{_reloadCount + 1} ({reason}) - {configFilePath}");
+
+                LoadConfigFile(configFilePath, isReload);
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"[SaveCustomKey] 설정 파일 초기화 중 오류: {ex.Message}");
+                MelonLogger.Error($"[SaveCustomKey] 설정 파일 {stage} 중 오류: {ex.Message}");
             }
         }
 
@@ -390,11 +460,28 @@ namespace sxtg2.Helpers
             }
         }
 
-        private static void LoadConfigFile(string filePath)
+        private static void LoadConfigFile(string filePath, bool isReload)
         {
+            string[] lines;
             try
             {
-                var lines = File.ReadAllLines(filePath, Encoding.UTF8);
+                lines = File.ReadAllLines(filePath, Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                // 에디터가 저장하는 중이면 파일이 잠겨 있을 수 있다. 여기서 값을 기본값으로 밀어버리면
+                // 멀쩡히 쓰던 설정이 통째로 날아가므로, 손대지 않고 물러난다(다음 플레이 때 다시 시도).
+                MelonLogger.Error($"[SaveCustomKey] 설정 파일 읽기 실패 - 기존 값을 유지합니다: {ex.Message}");
+                return;
+            }
+
+            try
+            {
+                // 반드시 읽기에 성공한 뒤에 리셋한다. 지워진 줄이 이전 값으로 남는 걸 막는 용도라
+                // 읽기 실패 시점에 먼저 리셋해버리면 설정이 날아간다.
+                if (isReload)
+                    ResetToDefaults();
+
                 var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var line in lines)
                 {
@@ -517,13 +604,87 @@ namespace sxtg2.Helpers
 
                 string shapeStr = JudgmentBarShape == 2 ? "삼각(2)" : (JudgmentBarShape == 1 ? "캡슐(1)" : "사각(0)");
                 string rangeShapeStr = JudgmentBarRangeShape == -1 ? "추종(-1)" : (JudgmentBarRangeShape == 2 ? "삼각(2)" : (JudgmentBarRangeShape == 1 ? "캡슐(1)" : "사각(0)"));
-                MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, Shape={shapeStr}(범위:{rangeShapeStr}), Side={JudgmentBarSide}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}, NoteSpeedChaos={(EnableNoteSpeedChaos ? $"켜짐(배율 {NoteSpeedChaosMin:0.##}~{NoteSpeedChaosMax:0.##}, {(NoteSpeedChaosPerLane ? "레인별" : "노트별")})" : "꺼짐(0)")}");
+                string summary = $"AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, Shape={shapeStr}(범위:{rangeShapeStr}), Side={JudgmentBarSide}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}, NoteSpeedChaos={(EnableNoteSpeedChaos ? $"켜짐(배율 {NoteSpeedChaosMin:0.##}~{NoteSpeedChaosMax:0.##}, {(NoteSpeedChaosPerLane ? "레인별" : "노트별")})" : "꺼짐(0)")}";
+
+                // 최초 로드는 전체를 남기고, 재로드는 바뀐 항목만 LogDiff가 남긴다.
+                // 플레이할 때마다 이 긴 줄이 찍히면 로그가 못 쓰게 되므로 재로드 시엔 상세 레벨로 내린다.
+                if (isReload)
+                    ModLog.Verbose($"[SaveCustomKey] 재로드 후 전체 설정 - {summary}");
+                else
+                    MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - {summary}");
             }
             catch (Exception ex)
             {
-                MelonLogger.Error($"[SaveCustomKey] 설정 파일 읽기 실패: {ex.Message}");
+                MelonLogger.Error($"[SaveCustomKey] 설정 파싱 실패: {ex.Message}");
             }
         }
+
+        /// <summary>재로드 전후를 비교해 실제로 바뀐 항목만 로그로 남기기 위한 스냅샷.</summary>
+        private static Dictionary<string, string> Snapshot()
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                { "AutoPlay", OnOffText(AutoPlay) },
+                { "AllPerfect", OnOffText(AllPerfect) },
+                { "BlockSave", OnOffText(BlockSave) },
+                { "EnableJudgmentBar", OnOffText(EnableJudgmentBar) },
+                { "JudgmentBarVertical", JudgmentBarVertical ? "세로(1)" : "가로(0)" },
+                { "JudgmentBarShape", ShapeText(JudgmentBarShape) },
+                { "JudgmentBarRangeShape", ShapeText(JudgmentBarRangeShape) },
+                { "JudgmentBarSide", JudgmentBarSide ?? "(null)" },
+                { "EnableKeyViewer", OnOffText(EnableKeyViewer) },
+                { "KeyViewerPressedColor", ColorText(KeyViewerPressedColor) },
+                { "KeyViewerNormalColor", ColorText(KeyViewerNormalColor) },
+                { "KeyViewerGatePressedColor", ColorText(KeyViewerGatePressedColor) },
+                { "MaxScore", NumText(MaxScore, "0.###") },
+                { "NoteSway", OnOffText(EnableNoteSway) },
+                { "NoteSwayAmplitude", NumText(NoteSwayAmplitude, "0.##") },
+                { "NoteSwaySpeed", NumText(NoteSwaySpeed, "0.##") },
+                { "NoteSwayDamping", OnOffText(NoteSwayDamping) },
+                { "NoteSwayDampingTime", NumText(NoteSwayDampingTime, "0.##") },
+                { "NoteSpeedChaos", OnOffText(EnableNoteSpeedChaos) },
+                { "NoteSpeedChaosMin", NumText(NoteSpeedChaosMin, "0.##") },
+                { "NoteSpeedChaosMax", NumText(NoteSpeedChaosMax, "0.##") },
+                { "NoteSpeedChaosPerLane", NoteSpeedChaosPerLane ? "레인별(1)" : "노트별(0)" }
+            };
+        }
+
+        private static void LogDiff(Dictionary<string, string> before, Dictionary<string, string> after, string reason)
+        {
+            var changes = new List<string>();
+            foreach (var entry in after)
+            {
+                if (before.TryGetValue(entry.Key, out string old) && !string.Equals(old, entry.Value, StringComparison.Ordinal))
+                    changes.Add($"{entry.Key}: {old} → {entry.Value}");
+            }
+
+            if (changes.Count == 0)
+            {
+                ModLog.Verbose($"[SaveCustomKey] 설정 재로드 #{_reloadCount} ({reason}) - 변경 없음");
+                return;
+            }
+
+            MelonLogger.Msg($"[SaveCustomKey] 설정 재로드 #{_reloadCount} ({reason}) - {changes.Count}개 항목이 이번 플레이부터 적용됩니다");
+            foreach (var change in changes)
+                MelonLogger.Msg($"[SaveCustomKey]   · {change}");
+        }
+
+        private static string OnOffText(bool value) => value ? "켜짐(1)" : "꺼짐(0)";
+
+        private static string ShapeText(int shape)
+        {
+            switch (shape)
+            {
+                case -1: return "추종(-1)";
+                case 1: return "캡슐(1)";
+                case 2: return "삼각(2)";
+                default: return $"사각({shape})";
+            }
+        }
+
+        private static string ColorText(Color color) => "#" + ColorUtility.ToHtmlStringRGBA(color);
+
+        private static string NumText(float value, string format) => value.ToString(format, CultureInfo.InvariantCulture);
 
         public static bool IsMaxScoreCustom => Math.Abs(MaxScore - DefaultMaxScore) > 0.001f;
 

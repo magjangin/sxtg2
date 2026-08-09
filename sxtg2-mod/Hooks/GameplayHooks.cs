@@ -585,14 +585,19 @@ namespace sxtg2.Hooks
             return SaveCustomKeyConfig.MaxScore;
         }
 
+        /// <summary>
+        /// 항상 패치한다. 예전에는 시작 시점에 MaxScore가 기본값이면 패치를 건너뛰었는데,
+        /// 그러면 설정을 재로드해 MaxScore를 바꿔도 훅 자체가 없어서 영영 반영되지 않는다.
+        /// GetMaxScore()가 실시간으로 읽으므로 기본값일 때 동작은 원본과 완전히 동일하다.
+        /// </summary>
         private static bool Prepare()
         {
             SaveCustomKeyConfig.EnsureInitialized();
 
-            if (!SaveCustomKeyConfig.IsMaxScoreCustom)
-                return false;
-
-            MelonLogger.Msg($"[JudgeScoreMax] 점수 상한을 {SaveCustomKeyConfig.MaxScore:0.###}(으)로 교체합니다 (원본 {OriginalMaxScore:0.###}).");
+            MelonLogger.Msg(
+                $"[JudgeScoreMax] 점수 상한 훅 적용 (현재 {SaveCustomKeyConfig.MaxScore:0.###}" +
+                $"{(SaveCustomKeyConfig.IsMaxScoreCustom ? " - 커스텀" : " - 기본값, 원본과 동일 동작")}, " +
+                $"원본 상수 {OriginalMaxScore:0.###}).");
             return true;
         }
 
