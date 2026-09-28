@@ -1,5 +1,9 @@
 # 구현 상세
 
+> **보관 문서 (2026-09-28 이동)** — 2026-07 리팩터링 이전 코드 기준이라 현재 코드와 다릅니다.
+> `TextHook`, `SXGTDataHook`, `SceneDetector`, Steam 업데이트 차단 등 지금은 없는 구현을 설명합니다 → [HOOK_SYSTEM.md](../02-systems/HOOK_SYSTEM.md), [DOCUMENTATION.md](../00-overview/DOCUMENTATION.md)
+
+
 이 문서는 **`sxtg2` 모드(현재 솔루션/빌드 대상)**의 구현 상세와 후킹 과정을 설명합니다.
 
 ## 목차

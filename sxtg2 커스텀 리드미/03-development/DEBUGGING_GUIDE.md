@@ -1,5 +1,7 @@
 # 🐛 디버깅 가이드
 
+기준일: 2026-09-28 (v1.1.0)
+
 **sxtg2 모드 디버깅 방법 및 도구**
 
 ---
@@ -12,19 +14,38 @@
 게임폴더/MelonLoader/Latest.log
 ```
 
-### 로그 레벨
+### 모드 로그 레벨 (`LogLevel`)
 
-```csharp
-MelonLogger.Msg("일반 메시지");
-MelonLogger.Warning("경고 메시지");
-MelonLogger.Error("에러 메시지");
+모드는 `ModLog`(`Helpers/ModHelpers.cs`)를 통해 로그를 남기고, MelonPreferences 값으로 양을 조절합니다.
+게임을 한 번 실행하면 `게임폴더/UserData/MelonPreferences.cfg`에 다음 항목이 생깁니다.
+
+```toml
+[sxtg2]
+LogLevel = 1   # 0 = 오류만, 1 = 보통(기본), 2 = 상세/대량 덤프
 ```
 
+| 메서드 | 출력 조건 |
+| --- | --- |
+| `ModLog.Error`, `ModLog.Exception` | 항상 |
+| `ModLog.Msg`, `ModLog.Warning` | `LogLevel >= 1` |
+| `ModLog.Verbose` | `LogLevel == 2` |
+| `MelonLogger.*` 직접 호출 | 항상 (레벨 무관) |
+
+`LogLevel = 2`에서만 나오는 대표 로그: 노트마다 `[NoteSpriteHook] 노트 생성: name=...`, 판정마다
+`[JudgmentBar] 히트 감지: ...`, `[BGABGMSyncHook]` 싱크 보정, 설정 재로드 `변경 없음`, 키뷰어 키 바인딩.
+대량으로 찍히므로 조사할 때만 켜세요.
+
+`ModLog.BeginCorrelation(operation, hint)`를 `using`으로 감싸면 그 안의 로그 앞에 `[cid:작업:힌트]`가 붙습니다
+(현재 코드에서 사용하는 곳은 없음).
+
 ### 로그 필터링
+
+MelonLoader는 모드 로그 앞에 `[sxtg2]`를 붙이고, 모드 코드는 그 뒤에 `[클래스명]` 접두어를 씁니다.
 
 ```bash
 # Windows PowerShell
 Get-Content "MelonLoader/Latest.log" | Select-String "sxtg2"
+Get-Content "MelonLoader/Latest.log" | Select-String "CustomChartInjector|ManagerPlayHook|BGMPlayerHook"
 
 # CMD
 findstr "sxtg2" MelonLoader\Latest.log
@@ -32,40 +53,27 @@ findstr "sxtg2" MelonLoader\Latest.log
 
 ---
 
-## Visual Studio 디버거
+## 먼저 확인할 로그 (정상 흐름)
 
-### 1. 프로젝트 설정
+| 시점 | 로그 |
+| --- | --- |
+| 게임 시작 | `[SaveCustomKey] 설정 로드 완료 - ...`, `[CustomNoteSpriteLoader] 총 N개 ...`, `[Main] sxtg2 모드 초기화 완료` |
+| 곡 선택 진입 | `[TrackDataAnalyzer] 커스텀 트랙 N개 추가 완료` |
+| 플레이 진입 | `[SaveCustomKey] 설정 재로드 #n ...`(바뀐 항목이 있을 때), `[CustomChartInjector] N개 주입, totalNotes=...`, `[BGMPlayerHook] BGM 교체 완료: ...` |
+| 결과 화면 | (저장 차단 시) `[차단] 하이스코어 및 랭킹 저장 차단: ...` |
 
-```xml
-<!-- sxtg2.csproj -->
-<PropertyGroup>
-  <DebugType>full</DebugType>
-  <DebugSymbols>true</DebugSymbols>
-</PropertyGroup>
-```
+증상별 확인 방법은 [../01-user-guide/TROUBLESHOOTING.md](../01-user-guide/TROUBLESHOOTING.md)에 모았습니다.
 
-### 2. 디버거 연결
+---
 
-```
-1. Visual Studio 열기
-2. 디버그 → 프로세스에 연결
-3. "Sixtar Gate STARTRAIL.exe" 선택
-4. 연결
-```
+## 디버거 연결
 
-### 3. 중단점 설정
+일반 배포용 Unity 게임은 Visual Studio의 "프로세스에 연결"로 관리 코드 중단점이 바로 잡히지 않는 경우가 많습니다
+(Unity 플레이어의 Mono 디버그 에이전트가 꺼져 있음). 이 프로젝트는 주로 **로그 + 디컴파일 소스 대조**로 디버깅합니다.
+디버거가 꼭 필요하면 dnSpy의 Unity 디버그용 Mono 교체 방식 등 별도 준비가 필요합니다.
 
-```csharp
-public static void InjectBmsNotesToLaneData(object sxgtData)
-{
-    // 여기에 중단점 설정
-    if (_parsedBmsNotes == null)
-        return;
-    
-    // 디버거가 여기서 멈춤
-    var laneData = GetLaneData(sxgtData);
-}
-```
+csproj는 Debug 빌드에서 `DebugType=portable` PDB를 만듭니다. 다만 현재 빌드 스크립트는 `Any CPU` 플랫폼으로 빌드해서
+csproj의 `Debug|x64` 블록(`DEBUG` 상수, `DebugSymbols`)이 적용되지 않는 문제가 있습니다(`CODE_STRUCTURE.md` 참고).
 
 ---
 
@@ -73,86 +81,40 @@ public static void InjectBmsNotesToLaneData(object sxgtData)
 
 ### 모드가 로드되지 않음
 
-```csharp
-// Main.cs에 로그 추가
-public override void OnInitializeMelon()
-{
-    MelonLogger.Msg("=== sxtg2 초기화 시작 ===");
-    
-    try
-    {
-        // 초기화 코드
-        MelonLogger.Msg("초기화 완료");
-    }
-    catch (Exception ex)
-    {
-        MelonLogger.Error($"초기화 실패: {ex.Message}");
-        MelonLogger.Error(ex.StackTrace);
-    }
-}
+- `Latest.log`에 `sxtg2` 모드 이름과 버전(`1.1.0`)이 나오는지 확인합니다.
+- `[Main] 초기화 실패: ...` 오류가 있으면 예외 전체가 함께 찍힙니다.
+- Harmony 패치 실패는 MelonLoader가 모드 로드 단계에서 오류로 남깁니다. 게임 업데이트로 대상 메서드가 사라졌을 가능성이 큽니다.
+
+### 커스텀 곡이 인식되지 않음
+
+`TrackDataAnalyzer`는 곡 선택 씬 `Awake` 때만 스캔합니다. 스캔 규칙을 코드 밖에서 확인하려면:
+
+```powershell
+# hwa 루트 + 1단계 하위 폴더의 BMS (모드와 같은 범위, 폴더마다 첫 파일이 등록됨)
+Get-ChildItem "게임폴더\hwa\*" -Include *.bms,*.bme,*.bml -File
+Get-ChildItem "게임폴더\hwa" -Directory | ForEach-Object { Get-ChildItem "$($_.FullName)\*" -Include *.bms,*.bme,*.bml -File }
 ```
 
-### BMS 파일이 인식되지 않음
+### 노트가 주입되지 않거나 이상함
+
+파서만 따로 돌려 보면 게임 없이 원인을 좁힐 수 있습니다. `sxtg2.LogicTests`처럼 `BmsParser.cs`를 링크한 콘솔 프로젝트에서:
 
 ```csharp
-public static void ScanAndParseBmsFiles()
-{
-    var hwaPath = Path.Combine(Application.dataPath, "..", "hwa");
-    
-    MelonLogger.Msg($"hwa 폴더 경로: {hwaPath}");
-    MelonLogger.Msg($"폴더 존재: {Directory.Exists(hwaPath)}");
-    
-    if (!Directory.Exists(hwaPath))
-    {
-        MelonLogger.Warning("hwa 폴더가 없습니다");
-        return;
-    }
-    
-    var bmsFiles = Directory.GetFiles(hwaPath, "*.bms", SearchOption.AllDirectories);
-    MelonLogger.Msg($"발견된 BMS 파일: {bmsFiles.Length}개");
-    
-    foreach (var file in bmsFiles)
-    {
-        MelonLogger.Msg($"  - {Path.GetFileName(file)}");
-    }
-}
+var result = BmsParser.ParseBmsFileWithStatistics(@"H:\...\hwa\Album_A\chart.bms");
+Console.WriteLine($"BPM={result.BaseBpm}, notes={result.Notes.Count}");
+foreach (var m in result.Statistics.MissingEndNotes)
+    Console.WriteLine($"끝 누락: lane={m.Lane} time={m.Time:F3} type={m.NoteType}");
+foreach (var n in result.Notes.OrderBy(n => n.Time).Take(20))
+    Console.WriteLine($"{n.Time:F3}s lane={n.Lane} {n.NoteType} len={n.Length:F3} val={n.OriginalNoteValue}");
 ```
 
-### 노트가 주입되지 않음
-
-```csharp
-public static void InjectBmsNotesToLaneData(object sxgtData)
-{
-    MelonLogger.Msg("=== 노트 주입 시작 ===");
-    
-    if (_parsedBmsNotes == null)
-    {
-        MelonLogger.Error("파싱된 노트가 없음");
-        return;
-    }
-    
-    MelonLogger.Msg($"주입할 노트: {_parsedBmsNotes.Count}개");
-    
-    var laneData = GetLaneData(sxgtData);
-    if (laneData == null)
-    {
-        MelonLogger.Error("laneData를 찾을 수 없음");
-        return;
-    }
-    
-    MelonLogger.Msg("laneData 접근 성공");
-    
-    // 레인별 주입
-    foreach (var kvp in notesByLane)
-    {
-        MelonLogger.Msg($"레인 {kvp.Key}: {kvp.Value.Count}개 노트 주입");
-    }
-    
-    MelonLogger.Msg("=== 노트 주입 완료 ===");
-}
-```
+`MissingEndNotes`가 비어 있지 않으면 게임에서 판정이 멈출 수 있습니다(`02-systems/BMS_FORMAT.md`).
 
 ---
+
+## 아래 코드 조각에 대해
+
+이하 절의 코드는 조사할 때 임시로 붙여 쓰는 **예시**입니다. 현재 모드 코드에 들어 있는 기능은 아닙니다.
 
 ## 타입 디버깅
 
@@ -333,34 +295,32 @@ public static void LogStackTrace()
 
 ---
 
-## dnSpy 사용
+## 게임 코드 읽기 (디컴파일)
 
-### 1. dnSpy 다운로드
-```
-https://github.com/dnSpy/dnSpy/releases
-```
+### 저장소의 디컴파일 소스
 
-### 2. 게임 어셈블리 열기
-```
-파일 → 열기 → Assembly-CSharp.dll
-(게임폴더/Sixtar Gate STARTRAIL_Data/Managed/)
-```
+저장소 루트의 `sxtg2/` 폴더에 `Assembly-CSharp.dll`을 ilspycmd로 디컴파일한 C# 소스가 있습니다(`.gitignore`로 제외,
+우리 코드가 아님). 게임 로직 확인은 여기서 검색하는 게 가장 빠릅니다.
 
-### 3. 타입 검색
-```
-Ctrl+Shift+K → 타입 이름 입력
-예: "SXGTData", "ManagerPlay"
+```bash
+# 예: 판정 루프, 노트 생성, 결과 저장
+grep -n "private void Update" sxtg2/RhythmGame.Play/RG_PS_Judgement.cs
+grep -rn "FinishHoldNote" sxtg2 --include=*.cs
 ```
 
-### 4. 디컴파일된 코드 확인
-```csharp
-// 게임의 실제 코드를 볼 수 있음
-public class SXGTData
-{
-    public Dictionary<int, List<Note>> laneData;
-    // ...
-}
+게임이 업데이트되면 다시 디컴파일해서 덮어쓰세요.
+
+```bash
+ilspycmd -p -o sxtg2 "게임폴더/Sixtar Gate STARTRAIL_Data/Managed/Assembly-CSharp.dll"
 ```
+
+### dnSpy
+
+GUI로 보고 싶으면 dnSpy(https://github.com/dnSpy/dnSpy/releases)로 같은 DLL을 엽니다.
+`Ctrl+Shift+K`로 `SXGTData`, `ManagerPlay`, `RG_PS_Judgement` 같은 타입을 검색할 수 있습니다.
+
+값을 바꾸는 훅을 만들기 전에는 **그 값이 필드에서 읽히는지, 메서드 안에 리터럴로 박혀 있는지**부터 확인하세요.
+예: `SXGTData.maxScore` 필드는 점수 계산에 쓰이지 않고, 실제 계산식은 `1000000f` 리터럴을 씁니다(그래서 `JudgeScoreMaxHook`은 Transpiler).
 
 ---
 

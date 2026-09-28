@@ -10,6 +10,11 @@
 
 두 오버레이 모두 `AutoPlayHook.IsPlayScene`이 참일 때만 갱신/렌더링됩니다. 이 플래그는
 `Main.UpdatePlaySceneState()`가 씬 이름(`play` / `rhythm` / `game` 포함 여부)으로 판별합니다.
+게임의 로딩 씬 이름이 `PlayLoading`이라 **로딩 화면에서도 참이 됩니다**(알려진 문제 — 로딩 화면에 빈 판정바/키뷰어가
+보일 수 있음. 정확히 `Play`와 비교하도록 고치면 해결).
+
+설정(`EnableJudgmentBar` 등)은 플레이 씬에 들어갈 때마다 `config.txt`를 다시 읽어 반영됩니다(v1.1.0). 한 판이
+진행되는 동안에는 바뀌지 않습니다.
 
 ---
 
@@ -80,7 +85,7 @@ RG_PS_Judgement.TryJudgeShortNote(judgeTime, note)
   BLUESTAR/WHITESTAR/YELLOWSTAR용 라이브 위젯은 없음 — 새로 만들 위젯은 이 4개 등급을 전부
   다루는 확장판 개념.
 - 구현 방향은 `JudgmentBar`처럼 `OnGUI`에서 직접 그리는 방식이 유력. 데이터 소스는
-  `FastSlowMeter_OnGetJudge_Patch`(같은 파일, `RG_PS_Judgement.JudgeDivergence` 후킹)를
+  `FastSlowMeter_OnGetJudge_Patch`(같은 파일, `OnGetJudge(EJudges, float)` 후킹 — 아래 "알려진 주의점"의 중복 문제가 있음)를
   그대로 재사용하거나, `RG_PS_Judgement.Instance.JudgeCount`를 매 프레임 직접 읽어도 됨.
 
 ### 정밀도 한계 (게임 원본 특성)
@@ -94,10 +99,11 @@ RG_PS_Judgement.TryJudgeShortNote(judgeTime, note)
 
 `OnGetJudge`는 `WidgeInvoke`를 통해 **모든 `PlayWidget`에 브로드캐스트**됩니다. 또한
 `JudgeTextViewer`는 2-인자 버전을 오버라이드하지 않아, 후킹 대상 탐색 시 상속된
-`PlayWidget.OnGetJudge(EJudges, float)` 베이스 메서드가 잡힐 수 있습니다. 이 경우 히트 1회가
-여러 번 등록될 수 있습니다.
+`PlayWidget.OnGetJudge(EJudges, float)` 베이스 메서드가 잡힙니다. 그래서 히트 1회가
+**장착한 위젯 수만큼**(최대 5번) 등록됩니다. 반대로 게임에서 위젯을 **하나도 장착하지 않으면**
+`OnGetJudge`가 호출되지 않아 판정바에 틱과 텍스트가 전혀 나오지 않습니다(배경 바만 보임).
 
-판정바는 같은 값이 같은 위치에 겹쳐 그려지므로 표시상 문제가 없지만, 앞으로 이 데이터를
+판정바는 같은 값이 같은 위치에 겹쳐 그려지므로(틱이 조금 더 진하게 보일 뿐) 표시상 큰 문제는 없지만, 앞으로 이 데이터를
 **통계(예: 결과 화면 평균 오차/표준편차)** 로 집계한다면 노트 수가 배수로 부풀 수 있습니다.
 그때는 후킹 지점을 `RG_PS_Judgement.TryJudgeShortNote`(노트당 1회 실행) 쪽으로 옮겨야 합니다.
 
@@ -119,7 +125,8 @@ RG_PS_Judgement.TryJudgeShortNote(judgeTime, note)
 `KeyViewer.Reset()`으로 캐시를 비우고, 다음 폴링에서 다시 읽습니다.
 
 라벨은 `Alpha1` → `1`, `Space` → `SPC`, `LeftShift` → `LSFT`처럼 축약해서 표시하고,
-바인딩이 `KeyCode.None`인 레인(예: 사용하지 않는 GATESUB)은 `-`로 흐리게 표시합니다.
+바인딩이 `KeyCode.None`인 레인은 `-`로 흐리게 표시합니다. (보조 게이트 키 `GATESUB` 등 7개 레인 외의 입력은
+키뷰어에 표시되지 않습니다.)
 
 ### 입력 감지
 
@@ -139,6 +146,10 @@ RG_PS_Judgement.TryJudgeShortNote(judgeTime, note)
   - HEX 헥스코드: `#00FFCC`, `#26BFD9D9`
   - RGBA 수치: `255,128,0`, `0.15,0.75,0.85,0.85`
   - **한글 색상명 지원**: `시안`, `마젠타`, `노랑`, `빨강`, `파랑`, `초록`, `흰색`, `검정`, `주황`, `보라`, `분홍`, `하늘색`, `민트` 등
+    (전체 목록은 `Helpers/ModHelpers.cs`의 `ParseColorSetting`. `민트`는 시안과, `분홍`/`pink`는 마젠타와 같은 색입니다.
+    `핑크`는 목록에 없어 인식되지 않으니 `분홍`이나 `pink`를 쓰세요.)
+  - 영문/한글 색상명은 알파값이 0.85~0.9로 고정입니다. 투명도를 정하려면 `#RRGGBBAA`나 `R,G,B,A`를 쓰세요.
+  - `R,G,B[,A]`는 값 중 하나라도 1보다 크면 0~255 범위로 보고, 모두 1 이하면 0~1 범위로 봅니다(`1,1,1`은 흰색).
 - 렌더링 순서상 판정바보다 나중에 그려지므로, 겹칠 경우 키뷰어가 위에 옵니다.
   (기본 좌표에서는 겹치지 않습니다 — 세로 판정바와는 창이 868×500 미만,
   가로 판정바와는 창 높이 224px 미만일 때만 겹칩니다.)

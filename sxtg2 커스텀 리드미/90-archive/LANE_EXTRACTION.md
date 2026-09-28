@@ -1,5 +1,9 @@
 # 레인별 추출(laneData) 상세 - sxtg2 기준
 
+> **보관 문서 (2026-09-28 이동)** — 2026-07 리팩터링 이전 코드 기준이라 현재 코드와 다릅니다.
+> `NoteDataExtractor`/`SXGTDataHook`으로 laneData를 리플렉션으로 읽고 지우던 옛 구조를 설명합니다. 지금은 `CustomChartInjector`가 `SXGTData.laneData`를 직접 비우고 채웁니다 → [NOTE_SYSTEM.md](../02-systems/NOTE_SYSTEM.md), [GAME_LOGIC.md](../02-systems/GAME_LOGIC.md)
+
+
 이 문서는 `SXGTData.laneData`에서 **레인(0~9)별로 노트를 추출/분석/제거**하는 로직을 "코드 그대로" 이해할 수 있게 정리한 문서입니다.
 
 ---

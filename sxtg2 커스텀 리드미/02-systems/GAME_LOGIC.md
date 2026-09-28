@@ -1,541 +1,262 @@
 # 게임 로직 분석
 
-이 문서는 **Sixtar Gate STARTRAIL** 게임의 실제 로직을 분석한 것입니다. 실제 게임 타입 구조, 노트 생성 과정, 타입 추출 방법, 실행 시점 등을 상세히 설명합니다.
+기준일: 2026-09-28 (디컴파일 원본 `sxtg2/` 폴더 기준, 모드 v1.1.0)
+
+이 문서는 **Sixtar Gate STARTRAIL** 원본 게임이 차트를 읽고, 노트를 만들고, 판정하고, 결과를 저장하는 과정을
+정리합니다. 모드가 어디에 끼어드는지는 각 절 끝의 "모드 개입"과 마지막 표에 모았습니다.
+
+> 디컴파일 원본은 저장소 루트의 `sxtg2/` 폴더(ilspycmd 산출물, `.gitignore`로 제외)에 있습니다.
+> 게임이 업데이트되면 아래 내용도 바뀔 수 있습니다.
 
 ## 목차
 
-1. [게임 타입 구조](#게임-타입-구조)
-2. [laneData 구조](#lanedata-구조)
-3. [노트 생성 과정](#노트-생성-과정)
-4. [타입 추출 과정](#타입-추출-과정)
-5. [실행 시점](#실행-시점)
-6. [주요 메서드 호출 순서](#주요-메서드-호출-순서)
+1. [데이터 타입](#데이터-타입)
+2. [씬 흐름](#씬-흐름)
+3. [차트 로드](#차트-로드)
+4. [노트 생성과 이동](#노트-생성과-이동)
+5. [판정](#판정)
+6. [점수와 곡 종료](#점수와-곡-종료)
+7. [결과 저장](#결과-저장)
+8. [모드 개입 지점 요약](#모드-개입-지점-요약)
 
 ---
 
-## 게임 타입 구조
+## 데이터 타입
 
-### Note 타입 계층
+### 노트
 
-게임은 다음과 같은 노트 타입 계층 구조를 사용합니다:
-
+```text
+RhythmGame.Note            timing, nType, nColor(기본 BLUE), targetLane(기본 -1), referObject, luckyScore, nAction
+├── RhythmGame.ShortNote   생성자 (float, int) → nType = SHORT
+└── RhythmGame.HoldNote    생성자 (float, int) → nType = HOLD
+                           duration, isFinished, isHeadJudged, elapsedTick, tickTime[], tickJudge[], tickLength
+                           FinishHoldNote(float dur, float bpm) 로 duration과 틱을 채움
 ```
-RhythmGame.Note (base 클래스)
-├── RhythmGame.ShortNote (일반 노트)
-└── RhythmGame.HoldNote (홀드 노트)
+
+`HoldNote`의 생성자는 `(float, int)` 하나뿐입니다. 예전 문서의 5인자 생성자(`duration`/`tickTime`을 받는 버전)는
+현재 빌드에 없습니다.
+
+`FinishHoldNote`의 틱 규칙 (`unit = 60 / bpm / 4`, 16분음표):
+
+- `tickLength = (int)((dur - 3·unit) / unit)`, 1보다 작으면 1
+- `tickLength == 1`: `tickTime = [timing + unit]`
+- 그 외: `tickTime[i] = timing + 2·unit + i·unit`
+
+### 레인 (`LaneIndex`)
+
+| 값 | 이름 | 비고 |
+| --- | --- | --- |
+| 0 | `LL` | |
+| 1 | `L` | |
+| 2 | `R` | |
+| 3 | `RR` | |
+| 4 | `LT` | 빨간 노트 레인 |
+| 5 | `RT` | 빨간 노트 레인 |
+| 6 | `GATE` | |
+| 7 | `LSHIFT` | |
+| 8 | `RSHIFT` | |
+| 9 | `OPEN` | 오픈 노트 |
+| 10 | `ACTION` | 액션 노트 |
+
+### 기타 열거형
+
+- `NoteColor`: `NONE`, `OPEN`, `BLUE`, `RED`, `SHIFT`, `ACTION`
+- `EJudges`: `BLUESTAR`(0), `WHITESTAR`(1), `YELLOWSTAR`(2), `REDSTAR`(3, 미스)
+
+### 차트 (`SXGTData`)
+
+```csharp
+public Dictionary<int, List<Note>> laneData;   // 생성자에서 레인 수만큼 빈 리스트 생성
+public Dictionary<int, HoldNote> unfinished;
+public float trackStartTiming, cruiseBeginTime = -1f, cruiseFinishTime;
+public List<float> bpm;
+public float scorePerNote;
+public readonly float maxScore = 1000000f;    // 점수 계산식은 이 필드가 아니라 리터럴 1000000f를 씀
+public int totalNotes, totalNoteWithTicks, totalTicks;
 ```
 
-### ShortNote 클래스
-
-**용도**: 일반 노트 (BMS 값 01)
-
-**주요 필드**:
-- `timing` (float): 노트 타이밍 (초)
-- `nType` (NoteType): SHORT
-- `nColor` (NoteColor): BLUE 또는 RED  
-  - **코드 기준 규칙**: 레인 4, 5 → `RED`, 그 외 → `BLUE`
-- `targetLane` (int): 레인 번호 (0-9)
-- `referObject` (GameObject): 참조 게임 오브젝트
-- `luckyScore` (int): 행운 점수
-- `nAction` (NoteAction): 노트 액션
-
-**생성자**:
-- `ShortNote(float timing, int targetLane)`: 기본 생성자
-- 생성 후 `nType`, `nColor` 필드를 설정
-
-### HoldNote 클래스
-
-**용도**: 홀드 노트 (BMS 값 02-03, 04-05)
-
-**주요 필드**:
-- `timing` (float): 노트 타이밍 (초)
-- `nType` (NoteType): HOLD
-- `nColor` (NoteColor): BLUE, RED, 또는 OPEN  
-  - **코드 기준 규칙**:
-    - OPEN/CLOSE(레인 9) → `OPEN`
-    - 레인 4, 5 → `RED`
-    - 그 외 → `BLUE`
-- `targetLane` (int): 레인 번호 (0-9)
-- `duration` (float): 홀드 지속 시간 (초) ⭐ **중요**
-- `tickTime` (float[]): 틱 시간 배열 ⭐ **중요**
-- `tickLength` (int): 틱 개수
-- `tickJudge` (bool[]): 틱 판정 배열
-- `isFinished` (bool): 완료 여부
-- `isHeadJudged` (bool): 헤드 판정 여부
-- `elapsedTick` (int): 경과 틱 수
-- `referObject` (GameObject): 참조 게임 오브젝트
-- `luckyScore` (int): 행운 점수
-- `nAction` (NoteAction): 노트 액션
-
-**생성자 옵션**:
-1. `HoldNote(float timing, int targetLane)` + 필드 설정
-2. `HoldNote(float timing, NoteType nType, NoteColor nColor, int targetLane, float duration)`
-3. `HoldNote(float timing, NoteType nType, NoteColor nColor, int targetLane, float[] tickTime)`
-
-**중요**: 홀드 노트 생성 시 **생성자에 duration 또는 tickTime을 전달**해야 합니다!
+`List<Note>`라서 `ShortNote`/`HoldNote`를 그대로 넣을 수 있습니다.
 
 ---
 
-## laneData 구조
+## 씬 흐름
 
-### 타입 정의
+게임은 `RG_SceneManager.MoveScene(이름, 콜백)`으로 씬을 바꿉니다. 사용되는 씬 이름:
+`Warning`, `MainTitle`, `ModeSelect_…`, `MusicSelect`, `PlayLoading`, `Play`, `Result`, `Setting`,
+`MissionSelect`/`MissionLobby`/`MissionResult`, `ExplorerLobby`/`ExplorerResult`, `LessonSelect`.
 
-```csharp
-laneData: Dictionary<int, List<RhythmGame.Note>>
-```
+일반 플레이는 `MusicSelect` → `PlayLoading` → `Play` → `Result` 순서입니다. 리트라이는
+`ManagerPlay.RestartGame()`이 `Play` 씬을 **다시 로드**하고 콜백에서 `Set(playTrack, lv, ps)`를 다시 호출합니다.
 
-- **키**: 레인 번호 (0-9)
-- **값**: 해당 레인의 노트 리스트
-- **제네릭 타입**: `List<Note>` (base 타입)
-
-### 타입 호환성
-
-**중요**: `List<Note>`에 파생 타입(`ShortNote`, `HoldNote`)을 추가할 수 있습니다!
-
-```csharp
-// 가능: 파생 타입을 base 타입으로 자동 캐스팅
-List<Note> noteList = ...;
-noteList.Add(new ShortNote(...));  // ✅ 가능
-noteList.Add(new HoldNote(...));    // ✅ 가능
-```
-
-### 실제 타입 확인
-
-laneData에서 실제 노트 타입을 확인하려면:
-
-```csharp
-var noteList = laneData[0];  // List<Note>
-var firstNote = noteList[0];
-var actualType = firstNote.GetType();  // 실제 타입: ShortNote 또는 HoldNote
-```
+**모드 개입**: `Main`이 `activeSceneChanged`로 씬 이름을 보고 플레이 씬 여부를 판단합니다(이름에 `play`/`rhythm`/`game`
+포함). 이 규칙은 `PlayLoading`도 플레이 씬으로 봅니다(`HOOK_SYSTEM.md` 참고).
 
 ---
 
-## 노트 생성 과정
+## 차트 로드
 
-### ShortNote 생성
+```text
+PlayLoadingManager  → MoveScene("Play", 콜백)
+  콜백: ManagerPlay.Set(track, lv, ps)
+          ├─ dir = track.GetSixtarPatternDirectory(lv, ps, willUseSXGT: true)
+          ├─ bms = GetPatternFromDir(dir, isEncrypted: true)
+          │        = new SXGTReader(...).ReadBMSFile(dir, isEncrypted)   // 암호화된 패턴 파일 → SXGTData
+          ├─ SetBGM(track)   // track.GetAudioClip()
+          ├─ SetBGA(track)
+          └─ judgeModule.SetJudgeRange(JudgeBalancer.BalanceList[(int)lv])
 
-**1단계: 생성자 호출**
-```csharp
-var note = new ShortNote(timing, targetLane);
+ManagerPlay 초기화 (씬 모드별 처리 후)
+  ├─ InitializeWidgets(ud.widgets)       // 유저가 장착한 PlayWidget 최대 5개
+  ├─ FetchUserDataToPlayScene(ud)
+  └─ FetchBMSToModules(bms)
+        ├─ noteGenerator.FetchBMS(bms)
+        └─ judgeModule.FetchBMS(bms)
 ```
 
-**2단계: 필드 설정**
-```csharp
-note.nType = NoteType.SHORT;
-note.nColor = NoteColor.BLUE;  // 또는 RED
-```
-
-**참고(코드 기준 색상 규칙):**
-- 레인 4, 5 → `RED`
-- 레인 9(OPEN/CLOSE) → `OPEN` (HoldNote)
-- 그 외 → `BLUE`
-
-**3단계: laneData에 추가**
-```csharp
-laneData[lane].Add(note);
-```
-
-### HoldNote 생성
-
-**방법 1: 생성자에 duration 전달 (권장)**
-```csharp
-var note = new HoldNote(timing, NoteType.HOLD, NoteColor.BLUE, targetLane, duration);
-// tickTime은 생성자 내부에서 자동 생성됨
-```
-
-**방법 2: 생성자에 tickTime 전달**
-```csharp
-var tickTimeArray = GenerateTickTimeArray(timing, duration);
-var note = new HoldNote(timing, NoteType.HOLD, NoteColor.BLUE, targetLane, tickTimeArray);
-```
-
-**방법 3: 기본 생성자 + 필드 설정**
-```csharp
-var note = new HoldNote(timing, targetLane);
-note.nType = NoteType.HOLD;
-note.nColor = NoteColor.BLUE;
-note.duration = duration;
-note.tickTime = GenerateTickTimeArray(timing, duration);
-note.tickLength = note.tickTime.Length;
-note.tickJudge = new bool[note.tickLength];
-note.isFinished = false;
-note.isHeadJudged = false;
-note.elapsedTick = 0;
-```
-
-### tickTime 배열 생성
-
-**규칙**:
-- 첫 틱 시작: `timing + 0.188초`
-- 틱 간격: `0.094초`
-- 마지막 틱: `timing + duration` 이전
-
-**예시**:
-```
-timing = 91.500초
-duration = 1.500초
-
-첫 틱: 91.688초 (91.500 + 0.188)
-틱 간격: 0.094초
-틱들: 91.688, 91.782, 91.876, ..., 92.813
-마지막 틱: 92.813초 (91.500 + 1.500 = 93.000 이전)
-```
+**모드 개입**
+- 커스텀 트랙이면 `TrackDataMediaHook`이 `GetSixtarPatternDirectory`/`GetAudioClip`을 도너 트랙 값으로 돌려주므로,
+  `Set`까지는 **도너 곡**이 로드됩니다.
+- `ManagerPlayHook.FetchBMSToModulesPrefix`가 모듈에 넘어가기 직전에 같은 `SXGTData`의 레인을 비우고 커스텀 노트를 채우며,
+  BGM/BGA도 이때 교체를 시작합니다.
 
 ---
 
-## 타입 추출 과정
+## 노트 생성과 이동
 
-### laneData에서 실제 타입 추출
+### 생성 (`NoteGenerator`)
 
-**1단계: SXGTData 생성자 호출 시점에 접근**
+- `Start()` → `DelayedInitialize()` 코루틴: 기어 준비를 기다린 뒤 레인 수만큼 커서를 만들고, 노트 스킨 프리팹을
+  `Resources.Load("Rhythm Game Part/PlayScene/NoteSkin/{스킨}/_Blue")`(`_Red`, `_White`, `_Gate`)로 불러옵니다.
+  `_White`/`_Gate`가 없으면 Blue로 대체.
+- `Update()`: 레인마다 `curTime + notePreGenerateTime(3초, private readonly) >= 다음 노트 timing`이면 `Generate`.
+- `Generate(lane, note)`: 색이 기본(BLUE 등)이면 `targetLane` 0/3 → Blue, 1/2 → White, 6 → Gate 프리팹,
+  `RED` → Red, `SHIFT` → Shift(오른쪽이면 x 스케일 −1), `OPEN`/`ACTION` → Blue. `Instantiate` 후
+  `SetTiming(timing, 홀드면 duration 아니면 0)`, `note.referObject`에 GameObject 저장.
+  - 색이 기본인데 `targetLane`이 4/5 등이면 프리팹이 선택되지 않아 `null`이 됩니다(모드는 레인 4/5를 `RED`로 만들어 피함).
+
+### 이동 (`RG_NoteObject`)
+
+- `SetTiming`: `Timing` 저장, 게임 설정의 노트 크기(`userData.noteSize / 100`)를 `shortNote`/`holdTexture`/`tailNote`
+  크기에 곱함, 홀드면 `holdMask`/`tailNote` 활성화.
+- 매 프레임 `CalculatePosition(ManagerPlay.Instance.CurTime)`:
+
 ```csharp
-// SXGTData 생성자 후킹
-private static void SXGTDataConstructorPostfix(ref object __instance)
-{
-    var laneData = __instance.laneData;
-    // 이 시점에 laneData에 원본 노트가 있음
+float num  = Math.Max((Timing - curTime) * noteSpeed * 2.5f, 0f);
+shortNote.anchoredPosition = (0, num);
+if (Duration != 0f) {
+    float num2 = Math.Max((Timing - curTime + Duration) * noteSpeed * 2.5f, 0f);
+    holdMask.sizeDelta        = (x, num2 - num);
+    holdMask.anchoredPosition = (0, num + (num2 - num) / 2);
+    holdTexture.anchoredPosition = (0, -holdMask.y + holdTextureYOffset(450));
+    tailNote.anchoredPosition = (0, num2);
 }
 ```
 
-**2단계: 각 레인의 노트 확인**
-```csharp
-for (int lane = 0; lane <= 9; lane++)
-{
-    var noteList = laneData[lane];
-    for (int i = 0; i < noteList.Count; i++)
-    {
-        var note = noteList[i];
-        var actualType = note.GetType();  // 실제 타입 추출
-        
-        // 타입별로 저장
-        if (actualType.Name.Contains("ShortNote"))
-        {
-            _shortNoteType = actualType;
-        }
-        else if (actualType.Name.Contains("HoldNote"))
-        {
-            _holdNoteType = actualType;
-        }
-    }
-}
-```
+루트 `RectTransform`은 건드리지 않습니다(`ForceSetPosition`만 루트를 움직이는데 호출하는 곳이 없음).
 
-**3단계: 타입별 생성자 찾기**
-```csharp
-// ShortNote 생성자
-var shortNoteConstructors = _shortNoteType.GetConstructors();
-
-// HoldNote 생성자
-var holdNoteConstructors = _holdNoteType.GetConstructors();
-```
-
-### 타입별 노트 생성
-
-**일반 노트 (Normal) → ShortNote**
-```csharp
-var noteType = Hooks.SXGT.SXGTDataHook.GetShortNoteType();
-var note = CreateGameNote(parsedNote, noteType);
-```
-
-**홀드 노트 (Long, Open) → HoldNote**
-```csharp
-var noteType = Hooks.SXGT.SXGTDataHook.GetHoldNoteType();
-var note = CreateGameNote(parsedNote, noteType);
-```
+**모드 개입**: `NoteSpriteHook`(Generate 후 스프라이트 교체), `NoteSwayHook`(루트 x), `NoteSpeedChaosHook`
+(자식 y 배율, `notePreGenerateTime` 연장). 자세한 내용은 `NOTE_SYSTEM.md`.
 
 ---
 
-## 실행 시점
+## 판정
 
-### BMS 파일 주입 타이밍
+### 매 프레임 (`RG_PS_Judgement.Update`)
 
-**✅ 올바른 시점: 플레이 로딩 씬에서 "커스텀 차트" 텍스트 감지 시**
-```csharp
-// TextHook.TextSetterPrefix에서 자동 감지
-private static bool TextSetterPrefix(ref object __instance, ref string __0)
-{
-    // 플레이 로딩 씬에서만 처리
-    if (currentScene.Contains("Play") || currentScene.Contains("Loading"))
-    {
-        if (__0.Contains("커스텀 차트"))
-        {
-            // Track ID 기반으로 BMS 파일 찾기 및 주입
-            LoadAndInjectBmsForTrack(trackId);
-        }
-    }
-}
+```text
+if (!judgeInputEnabled || !ManagerPlay.Instance.initialized) return
+if (tickInterval < 0) SetTickInterval(bms.bpm[0])
+for 레인 i in 0..numLanes-1:
+    오토플레이가 아니면 CheckMissBreak(curTime, i), 오토플레이면 AutoPlayJudge(curTime, i)
+    CheckShiftWarning, CheckHoldTick, (크루즈 미종료 시) CheckCruiseMode
+CheckOpenState, CheckActionLane
+JudgeRatio 합산 → JudgeScore = Lerp(0, 1000000, JudgeRatio / totalNotes) → 점수 위젯 갱신
 ```
 
-**중복 주입 방지(코드 기준):**
-- `TextHook`에는 `_bmsInjected` 플래그가 있어, 같은 씬에서 `"커스텀 차트"` 텍스트가 여러 번 세팅되어도 **BMS 파싱/세팅을 1회로 제한**합니다.
-- 이 플래그는 `SceneDetector`가 씬 변경 시 `TextHook.ResetInjectionFlag()`로 리셋합니다.
+이 메서드 안에서 예외가 나면 그 프레임의 뒤쪽 처리가 전부 건너뛰어집니다. 예를 들어 `CheckHoldTick`은 헤드가
+판정된 홀드의 `tickTime.Length`를 읽으므로, `tickTime`이 null인 홀드가 있으면 매 프레임 여기서 멈춥니다
+(모드의 "홀드 끝 누락" 알려진 문제의 원인).
 
-### 원본 노트 제거 타이밍
+### 입력 판정 (`TryJudgeShortNote(judgeTime, note)`)
 
-**❌ 잘못된 시점: SXGTData 생성자 직후**
-```csharp
-// 문제: 노트가 아직 완전히 초기화되지 않음
-private static void SXGTDataConstructorPostfix(ref object __instance)
-{
-    ClearAllNotes(__instance);  // ❌ 너무 이르다!
-}
+```text
+judgeTime -= userData.adjustSync / 1000
+오차 = |note.timing - judgeTime|
+EJudges 0..3 중 오차 <= JudgeRange[i] 인 첫 등급으로
+    JudgeDivergence(등급, note)
+    WidgeInvoke(pw => pw.OnGetJudge(등급, note.timing - judgeTime))   // 양수 = FAST
 ```
 
-**✅ 올바른 시점: ManagerPlayHook 메서드 호출 시**
-```csharp
-// ManagerPlayHook.set_bms 호출 시
-private static void SetBmsPostfix()
-{
-    SXGTDataHook.ProcessPendingNoteRemovalAndInjection();  // ✅ 올바른 시점
-}
+`JudgeRange`는 난이도별 `JudgeBalancer.BalanceList`에서 옵니다(BLUESTAR 기준 Comet 72ms, Nova 54ms,
+SuperNova/Quasar 36ms — 전체 표는 `PLAY_OVERLAY.md`).
 
-// ManagerPlayHook.FetchBMSToModules 호출 시
-private static void FetchBMSToModulesPostfix()
-{
-    SXGTDataHook.ProcessPendingNoteRemovalAndInjection();  // ✅ 올바른 시점
-}
+### 홀드 틱 (`CheckHoldTick`)
 
-// ManagerPlayHook.GetPatternFromDir 호출 시
-private static void GetPatternFromDirPostfix()
-{
-    SXGTDataHook.ProcessPendingNoteRemovalAndInjection();  // ✅ 올바른 시점
-}
-```
+헤드가 판정된 홀드는 `tickTime[elapsedTick]` 시각마다 레인을 누르고 있는지(또는 오토플레이인지) 보고
+`BLUESTAR`/`REDSTAR`(모드에 따라 `WHITESTAR`)로 `JudgeDivergence`를 호출합니다. 틱을 다 쓰고 `timing + duration`이
+지나면 노트 오브젝트를 지우고 커서를 넘깁니다.
 
-### 썸네일 및 데모 주입 타이밍
+### 판정 기록 (`JudgeDivergence`)
 
-**✅ 올바른 시점: MusicSelect 씬에서 트랙 선택 변경 시**
-```csharp
-// ManagerMusicSelectHook.ChangeTrackCursorPostfix
-private static void ChangeTrackCursorPostfix(object __instance, int delta)
-{
-    // 커스텀 트랙인 경우 썸네일 및 demo.ogg 주입
-    InjectThumbnailAndDemo(__instance);
-}
-```
+미스면 `JudgeAction_Miss`, 아니면 `JudgeAction`을 호출하고 `elapsedNote++`, `JudgeCount.AddJudge(등급)`.
 
-### 실행 순서
-
-```
-1. SXGTData 생성자 호출
-   └─ SXGTDataHook.SXGTDataConstructorPostfix
-      └─ 인스턴스만 저장 (제거는 하지 않음)
-
-2. ManagerPlay.set_bms 호출
-   └─ ManagerPlayHook.SetBmsPostfix
-      ├─ (커스텀 트랙인 경우) TextHook.LoadAndInjectBmsForTrack(...)로 BMS 재탐색/재파싱
-      ├─ BGAPlayerHook / BGMPlayerHook로 미디어 교체 1회 시도
-      └─ SXGTDataHook.ProcessPendingNoteRemovalAndInjection
-         ├─ 원본 노트 제거 (ClearAllNotes) + 타입/생성자 캐시
-         ├─ 커스텀 차트 주입 (InjectBmsNotesToLaneData)
-         └─ totalNotes/totalNoteWithTicks 갱신
-```
+**모드 개입**: `AutoPlayHook`(Update Postfix에서 `AutoPlayJudge` 호출), `AllPerfectJudgeHook`(등급을 BLUESTAR로),
+`FastSlowMeter_OnGetJudge_Patch`(판정바 데이터).
 
 ---
 
-## 주요 메서드 호출 순서
+## 점수와 곡 종료
 
-### MusicSelect 씬 → 트랙 주입
+| 항목 | 원본 식 | 쓰는 값 |
+| --- | --- | --- |
+| 점수 | `JudgeScore = Lerp(0, 1000000, JudgeRatio / totalNotes)` (`Update`), `Min(JudgeScore, 1000000)` (`CalculateJudgeScore`) | `bms.totalNotes` |
+| 클리어 효과음 | `elapsedNote >= totalNoteWithTicks`가 되는 순간: REDSTAR 0개면 `Clear_FullCombo`, 아니면 점수 ≥ 700000일 때 `Clear_Normal` | `bms.totalNoteWithTicks` |
+| 곡 종료 | `ManagerPlay.CheckGameFinished(curTime)`: `curTime >= bgmLength - 0.05`면 종료 → 1.5초 뒤 결과 화면 | `bgm.clip.length` |
 
-```
-1. MusicSelect 씬 로드
-   ↓
-2. SceneDetector.OnSceneLoaded (씬 변경 감지)
-   └─ MusicSelectAnalyzer.AnalyzeMusicSelectScene (짧은 지연)
-      ├─ ManagerMusicSelect 인스턴스 찾기
-      ├─ trackDatas 리스트에서 첫 번째 TrackData 복사
-      ├─ TrackInfoParser.ParseTrackInfo() (txt 파일 파싱)
-      │  ├─ 제목 파싱
-      │  ├─ 아티스트 파싱
-      │  └─ 난이도 파싱
-      ├─ TrackData 필드 설정
-      │  ├─ DisplayName 설정 (인스턴스 필드 `DisplayName`에 SetValue, `TrackDataAnalyzer.Inject`)
-      │  ├─ Artist 설정
-      │  └─ Level/Level_LITE 배열 설정
-      └─ trackDatas 리스트에 추가
-   ↓
-3. 트랙 선택 변경 (ManagerMusicSelectHook.ChangeTrackCursorPostfix)
-   ├─ 현재 선택된 트랙 정보 확인
-   └─ 커스텀 트랙인 경우 썸네일 주입
-   ↓
-4. PlayPreview 호출 (게임 내부)
-   └─ ManagerMusicSelectHook.PlayPreviewPrefix (후킹)
-      ├─ 커스텀 트랙 확인
-      ├─ 원래 preview 재생 차단 (return false)
-      └─ 커스텀 음악 재생
-         ├─ BGM 소스 찾기 및 뮤트
-         ├─ 앨범 폴더에서 음악 파일 찾기
-         │  ├─ 1순위: demo.ogg, demo.mp3, demo.wav
-         │  └─ 2순위: music.ogg, music.mp3, music.wav
-         └─ 코루틴으로 비동기 로드 및 재생
-```
+곡 종료는 노트 수가 아니라 **BGM 길이** 기준입니다. 커스텀 BGM 로드에 실패하면 도너 곡 길이로 끝납니다.
 
-### 게임 시작 → 노트 생성
-
-```
-4. 플레이 로딩 씬
-   ↓
-5. TextHook.TextSetterPrefix (텍스트 설정 감지)
-   └─ "커스텀 차트" 텍스트 감지 시
-      ├─ ManagerMusicSelect.currentSelectedTrack.ID 가져오기
-      ├─ hwa 폴더에서 BMS 파일 찾기 (Track ID 기반)
-      ├─ BmsParser.ParseBmsFile() 호출
-      └─ CustomChartInjector.SetParsedBmsNotes() 설정
-   ↓
-6. ManagerPlay.FetchBMSToModules() 또는 GetPatternFromDir()
-   ↓
-7. SXGTReader.ReadBMSFile()
-   ↓
-8. SXGTData 생성자 호출
-   ├─ laneData 초기화
-   ├─ 원본 노트 추가
-   └─ SXGTDataHook.SXGTDataConstructorPostfix (후킹)
-      └─ 인스턴스 저장 (제거는 하지 않음)
-   ↓
-9. ManagerPlay.set_bms(SXGTData)
-   └─ ManagerPlayHook.SetBmsPostfix (후킹)
-      └─ SXGTDataHook.ProcessPendingNoteRemovalAndInjection
-         ├─ 원본 노트 제거
-         │  ├─ laneData에서 실제 타입 추출
-         │  └─ ShortNote/HoldNote 타입 저장
-         └─ 커스텀 차트 주입
-            ├─ 타입별 노트 생성
-            │  ├─ ShortNote: GetShortNoteType() 사용
-            │  └─ HoldNote: GetHoldNoteType() 사용
-            └─ laneData에 추가
-```
-
-### 노트 생성 상세 과정
-
-```
-CreateGameNote(parsedNote, noteDataType)
-├─ 노트 타입 확인 (Normal vs Long/Open)
-├─ 타입 선택
-│  ├─ Normal → ShortNote 타입
-│  └─ Long/Open → HoldNote 타입
-├─ 생성자 찾기
-│  ├─ 홀드 노트: duration/tickTime 받는 생성자 우선
-│  └─ 일반 노트: 기본 생성자
-├─ 생성자 호출
-│  ├─ ShortNote: (timing, targetLane)
-│  └─ HoldNote: (timing, nType, nColor, targetLane, duration) 또는 (timing, targetLane)
-├─ 필드 설정
-│  ├─ nType, nColor
-│  └─ 홀드 노트: duration, tickTime, tickLength, tickJudge 등
-└─ 반환
-```
+**모드 개입**: `CustomChartInjector`가 `totalNotes`/`totalNoteWithTicks`를 커스텀 차트 기준으로 다시 계산,
+`JudgeScoreMaxHook`이 두 `1000000f` 리터럴을 설정값으로 교체. 자세한 내용은 `SCORE_SYSTEM.md`.
 
 ---
 
-## 핵심 포인트 요약
+## 결과 저장
 
-### 1. 타입 구조
-- **base 타입**: `RhythmGame.Note`
-- **파생 타입**: `RhythmGame.ShortNote`, `RhythmGame.HoldNote`
-- **laneData**: `Dictionary<int, List<Note>>` (base 타입 사용)
+`ManagerResult.Start` 흐름 끝부분:
 
-### 2. 타입 추출
-- **시점**: SXGTData 생성자 호출 후, 원본 노트 제거 전
-- **방법**: `note.GetType()`으로 실제 타입 확인
-- **저장**: 타입별로 정적 변수에 저장
-
-### 3. 노트 생성
-- **일반 노트**: `ShortNote` 타입 사용
-- **홀드 노트**: `HoldNote` 타입 사용
-- **생성자**: 홀드 노트는 duration 또는 tickTime을 생성자에 전달
-
-### 3-1. 노트 색상 규칙(코드 기준)
-- 레인 9(OPEN/CLOSE) → `OPEN`
-- 레인 4, 5 → `RED`
-- 그 외 → `BLUE`
-
-### 4. 실행 시점
-- **원본 노트 제거**: ManagerPlayHook 메서드 호출 시점
-- **커스텀 차트 주입**: 원본 노트 제거 직후
-
-### 4-1. 스코어/종료 판정 값 갱신(현재 코드 기준)
-- `CustomChartInjector`가 주입된 노트 수를 집계합니다.
-- `SXGTData.totalNotes`와 `totalNoteWithTicks`를 갱신합니다.
-- `MaxScore`, `targetBestScore` 직접 보정은 사용하지 않습니다.
-
-> 참고: `NumberInterpolatorHook`은 현재 코드에서 비활성화되어 있습니다.
-
-### 5. tickTime 생성 규칙
-- 첫 틱: `timing + 0.188초`
-- 간격: `0.094초`
-- 마지막 틱: `timing + duration` 이전
-
-### 6. BGA/BGM 동기화(현재 코드 기준)
-- 교체 이후 `BGABGMSyncHook`이 짧은 내부 주기로 BGA/BGM 시간 차이를 측정하고, 오차 범위에 따라 Soft Sync(속도 조절) 또는 Hard Sync(강제 이동)를 적용합니다.
-
----
-
-## 기술 스택 및 DLL 참조
-
-### 프로젝트 설정
-
-- **타겟 프레임워크**: .NET Framework 4.7.2
-- **프로젝트 파일**: `sxtg2-mod/sxtg2.csproj`
-
-### 어셈블리 어트리뷰트
-
-```csharp
-[assembly: MelonInfo(typeof(sxtg2.Main), "sxtg2", "1.0.0", "Meowzter")]
-[assembly: MelonGame("Lyrebird Studio", "Sixtar Gate STARTRAIL")]
-[assembly: MelonColor(128, 0, 255, 255)] // Purple (R, G, B, A)
+```text
+ComparePlayResultHighScore(playResult)   // 로컬 최고 기록 갱신
+CheckResultSceneAchievements()
+StartCoroutine(SetBackable(2.5f))
+PostRequestPlayResult()                  // 서버 전송
 ```
 
-**위치**: `sxtg2-mod/Main/` (엔트리: `Main.cs`)
-
-### DLL 참조
-
-#### MelonLoader 관련
-- **MelonLoader.dll**: MelonLoader 프레임워크
-  - 경로: `{게임 설치 폴더}\MelonLoader\net35\MelonLoader.dll`
-- **0Harmony.dll**: Harmony 패칭 라이브러리
-  - 경로: `{게임 설치 폴더}\MelonLoader\net35\0Harmony.dll`
-
-#### Unity Engine 관련
-모든 Unity DLL은 `{게임 설치 폴더}\Sixtar Gate STARTRAIL_Data\Managed\` 경로에 있습니다.
-
-- **UnityEngine.dll**: Unity 엔진 핵심
-- **UnityEngine.CoreModule.dll**: Unity 코어 모듈
-- **UnityEngine.AudioModule.dll**: 오디오 모듈
-- **UnityEngine.VideoModule.dll**: 비디오 모듈
-- **UnityEngine.UnityWebRequestModule.dll**: 웹 요청 모듈
-- **UnityEngine.UnityWebRequestAudioModule.dll**: 오디오 웹 요청 모듈
-- **UnityEngine.UnityWebRequestTextureModule.dll**: 텍스처 웹 요청 모듈
-- **UnityEngine.InputLegacyModule.dll**: 입력 모듈
-- **UnityEngine.ImageConversionModule.dll**: 이미지 변환 모듈
-- **UnityEngine.UI.dll**: Unity UI 모듈
-
-**프로젝트 파일 참조**: `sxtg2-mod/sxtg2.csproj`
+**모드 개입**: `ResultSaveBlockHook`이 조건에 따라 `ComparePlayResultHighScore`와 `PostRequestPlayResult`를 건너뜁니다.
+`ManagerResultHook`(진단 로깅)은 `Start` Postfix입니다.
 
 ---
+
+## 모드 개입 지점 요약
+
+| 게임 쪽 지점 | 모드 코드 | 목적 |
+| --- | --- | --- |
+| `ManagerMusicSelect.Awake` | `ManagerMusicSelectHook.AwakePostfix` | 커스텀 트랙 등록 |
+| `ManagerMusicSelect.PlayPreview` | `ManagerMusicSelectHook.PlayPreviewPrefix` | 커스텀 미리듣기 |
+| `TrackData.Get*` | `TrackDataMediaHook` | 도너 리소스/커스텀 자켓 |
+| `ManagerPlay.FetchBMSToModules` | `ManagerPlayHook.FetchBMSToModulesPrefix` | 노트 주입, BGM/BGA 교체 |
+| `ManagerPlay.CheckBGMStart` | `ManagerPlayHook.CheckBGMStartPrefix` | 커스텀 BGM 로드 대기 |
+| `NoteGenerator.Generate` / `Start` | `NoteSpriteHook`, `NoteSpeedChaosHook` | 스킨, 선행 생성 시간 |
+| `RG_NoteObject.CalculatePosition` | `NoteSwayHook`, `NoteSpeedChaosHook` | 노트 연출 |
+| `RG_PS_Judgement.Update` | `AutoPlayHook`(Postfix), `JudgeScoreMaxHook`(Transpiler) | 오토플레이, 점수 상한 |
+| `ManagerPlay.CheckGameFinished` | `AutoPlayHook`(Prefix) | 현재 시간 기록 |
+| 판정 관련 메서드들 | `AllPerfectJudgeHook` | 등급 조작 |
+| `PlayWidget.OnGetJudge(EJudges, float)` | `FastSlowMeter_OnGetJudge_Patch` | 판정바 |
+| `ManagerResult.ComparePlayResultHighScore` / `PostRequestPlayResult` | `ResultSaveBlockHook` | 저장 차단 |
 
 ## 관련 문서
 
-- [BMS_PARSING.md](BMS_PARSING.md): BMS 파일 파싱 상세
-- [IMPLEMENTATION.md](IMPLEMENTATION.md): 구현 상세 및 후킹 과정
-- [DOCUMENTATION.md](DOCUMENTATION.md): 종합 참조 문서
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+- [HOOK_SYSTEM.md](HOOK_SYSTEM.md): 훅 상세
+- [NOTE_SYSTEM.md](NOTE_SYSTEM.md): 노트 주입과 연출
+- [SCORE_SYSTEM.md](SCORE_SYSTEM.md): 점수 보정
+- [BMS_PARSING.md](BMS_PARSING.md): BMS 파싱
+- [../00-overview/DOCUMENTATION.md](../00-overview/DOCUMENTATION.md): 전체 흐름

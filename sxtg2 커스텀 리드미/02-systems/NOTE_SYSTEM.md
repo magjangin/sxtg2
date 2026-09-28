@@ -1,402 +1,163 @@
 # 🎵 노트 시스템
 
-**노트 생성, 변환 및 주입 시스템**
+기준일: 2026-09-28 (v1.1.0)
+
+**파싱된 노트를 게임 노트로 바꿔 주입하는 과정, 노트 스킨, 노트 연출(흔들림/속도 카오스)**
 
 ---
 
 ## 노트 타입
 
 ```csharp
-// ParsedNote (BMS → 중간 형식)
+// 파서 결과 (Loaders/BmsParser.cs)
 public class ParsedNote
 {
-    public float Time { get; set; }        // 초 단위
-    public int Lane { get; set; }          // 0-9
-    public NoteType NoteType { get; set; } // Normal, Long, Open
-    public float Length { get; set; }      // 홀드 길이
+    public float Time { get; set; }        // 초
+    public int Lane { get; set; }          // 0~6, 오픈은 9
+    public NoteType NoteType { get; set; } // Normal, Long, Open (끝 노트는 파싱 단계에서 제거됨)
+    public float Length { get; set; }      // 홀드 길이(초)
+    public string OriginalNoteValue { get; set; }
 }
 
-// 게임 노트
-RhythmGame.ShortNote  // 일반 노트
-RhythmGame.HoldNote   // 홀드 노트
+// 게임 노트 (Assembly-CSharp, 직접 참조)
+RhythmGame.Note        // timing, nType, nColor, targetLane, referObject, luckyScore, nAction
+├── RhythmGame.ShortNote   // 생성자 (float timing, int lane) → nType = SHORT
+└── RhythmGame.HoldNote    // 생성자 (float timing, int lane) → nType = HOLD
+                           // duration, tickTime[], tickJudge[], tickLength, isFinished, isHeadJudged, elapsedTick
 ```
+
+`HoldNote`의 생성자는 `(float, int)` 하나뿐입니다(디컴파일 기준). 길이와 틱은 생성 후
+`FinishHoldNote(duration, bpm)`을 호출해야 채워집니다.
 
 ---
 
-## 노트 생성
+## 노트 생성과 주입 (`Processors/CustomChartInjector.cs`)
 
-### ShortNote 생성
+`ManagerPlayHook.FetchBMSToModulesPrefix`가 `SetParsedChart(result)` 후 `InjectBmsNotesToLaneData(_bms)`를 호출합니다.
 
-```csharp
-public static object CreateShortNote(ParsedNote parsed)
-{
-    var type = TypeCache.ShortNoteType;
-    var constructor = type.GetConstructor(new[] { typeof(float), typeof(int) });
-    
-    // 생성
-    var note = constructor.Invoke(new object[] { 
-        parsed.Time, 
-        parsed.Lane 
-    });
-    
-    // 필드 설정
-    SetField(note, "nType", GetEnumValue("NoteType", "SHORT"));
-    SetField(note, "nColor", GetNoteColor(parsed.Lane));
-    SetField(note, "targetLane", parsed.Lane);
-    SetField(note, "timing", parsed.Time);
-    
-    return note;
-}
+```text
+InjectBmsNotesToLaneData(SXGTData data)
+  ├─ data 또는 파싱 결과가 비었으면 경고 후 종료
+  ├─ ClearLaneData: laneData의 모든 리스트 Clear, unfinished[레인] = null
+  ├─ bpm = 파싱 결과 BaseBpm (0 이하면 150)
+  ├─ 각 ParsedNote마다
+  │    ├─ CreateNote → ShortNote / HoldNote (끝 노트 종류면 null → 건너뜀)
+  │    ├─ data.laneData[Lane]에 추가 (그 레인이 없으면 건너뜀)
+  │    └─ 레인 9/10이 아니면 totalNotes += 1,
+  │         BLUE/RED 홀드면 totalNoteWithTicks += 1 + tickLength (아니면 += 1)
+  ├─ 레인별로 timing 기준 정렬
+  ├─ data.bpm = [bpm]
+  ├─ data.totalNotes, data.totalNoteWithTicks 덮어쓰기
+  ├─ data.scorePerNote = maxScore(1000000) / totalNotes   // 게임 판정식에서는 쓰이지 않음
+  └─ 로그: [CustomChartInjector] N개 주입, totalNotes=..., totalNoteWithTicks=..., BPM=...
 ```
 
-### HoldNote 생성
+`SXGTData` 인스턴스는 게임이 도너 패턴을 읽어 만든 것을 그대로 쓰고, 내용만 바꿉니다. 게임은 이 직후
+`NoteGenerator.FetchBMS`/`RG_PS_Judgement.FetchBMS`로 같은 인스턴스를 받아 갑니다.
 
-```csharp
-public static object CreateHoldNote(ParsedNote parsed)
-{
-    var type = TypeCache.HoldNoteType;
-    
-    // 생성자 찾기 (duration 받는 버전)
-    var constructor = type.GetConstructor(new[] { 
-        typeof(float),  // timing
-        typeof(object), // nType
-        typeof(object), // nColor
-        typeof(int),    // targetLane
-        typeof(float)   // duration
-    });
-    
-    // 생성
-    var note = constructor.Invoke(new object[] { 
-        parsed.Time,
-        GetEnumValue("NoteType", "HOLD"),
-        GetNoteColor(parsed.Lane),
-        parsed.Lane,
-        parsed.Length
-    });
-    
-    // tickTime 생성
-    var tickTime = GenerateTickTimeArray(parsed.Time, parsed.Length);
-    SetField(note, "tickTime", tickTime);
-    SetField(note, "tickLength", tickTime.Length);
-    SetField(note, "tickJudge", new bool[tickTime.Length]);
-    SetField(note, "isFinished", false);
-    SetField(note, "isHeadJudged", false);
-    SetField(note, "elapsedTick", 0);
-    
-    return note;
-}
+### 노트 만들기 (`CreateNote`)
+
+| `ParsedNote.NoteType` | 게임 노트 | 색 (`ResolveColor`) | 추가 처리 |
+| --- | --- | --- | --- |
+| `Normal` | `new ShortNote(Time, Lane)` | 레인 4/5 → `RED`, 그 외 → `BLUE` | — |
+| `Long` | `new HoldNote(Time, Lane)` | 레인 4/5 → `RED`, 그 외 → `BLUE` | `nAction = NONE`, `Length > 0`이면 `FinishHoldNote(Length, bpm)` |
+| `Open` | `new HoldNote(Time, 9)` | `OPEN` | 위와 같음 |
+| 그 외 | 만들지 않음 | — | — |
+
+> ⚠️ **알려진 문제 (확인 필요)**: 끝(`03`/`05`)이 없는 홀드 시작은 `Length = 0`이라 `FinishHoldNote`가 호출되지 않고
+> `tickTime = null`인 `HoldNote`로 들어갑니다. 게임의 `RG_PS_Judgement.CheckHoldTick`은 헤드가 판정된 뒤
+> `holdNote.tickTime.Length`를 읽으므로, 그 순간부터 매 프레임 `NullReferenceException`이 나고 `Update`의 나머지 처리가 멈춥니다.
+> 짝 없는 시작을 `ShortNote`로 바꾸거나 버리고 경고를 남기도록 고치는 것이 좋습니다.
+
+### 홀드 틱 (게임 원본 `HoldNote.FinishHoldNote`)
+
+틱 간격은 16분음표 길이입니다.
+
+```text
+unit = 60 / bpm / 4                       // 16분음표(초)
+tickLength = (int)((duration - 3 × unit) / unit)   // 1보다 작으면 1
+tickLength == 1 인 짧은 홀드: tickTime = [timing + unit]
+그 외: tickTime[i] = timing + 2 × unit + i × unit   (i = 0 .. tickLength-1)
 ```
+
+예: `bpm = 160`이면 `unit = 0.09375초`라 첫 틱이 `timing + 0.1875초`, 간격 `0.09375초`입니다. 예전 문서의
+"첫 틱 0.188초, 간격 0.094초"는 **160 BPM일 때만** 맞는 값이었습니다.
+
+### 노트 수와 곡 종료
+
+게임의 점수(`JudgeScore = Lerp(0, 1000000, JudgeRatio / totalNotes)`)와 곡 종료(`elapsedNote >= totalNoteWithTicks`)가
+이 두 값을 쓰기 때문에, 주입 후 반드시 다시 계산합니다. 자세한 배경은 `SCORE_SYSTEM.md`.
 
 ---
 
-## tickTime 생성
+## 노트가 화면에 나오는 과정 (게임 원본)
 
-```csharp
-public static float[] GenerateTickTimeArray(float timing, float duration)
-{
-    const float FIRST_TICK_OFFSET = 0.188f;
-    const float TICK_INTERVAL = 0.094f;
-    
-    var tickList = new List<float>();
-    var endTime = timing + duration;
-    var currentTime = timing + FIRST_TICK_OFFSET;
-    
-    while (currentTime < endTime)
-    {
-        tickList.Add(currentTime);
-        currentTime += TICK_INTERVAL;
-    }
-    
-    return tickList.ToArray();
-}
+1. `NoteGenerator.Update`가 레인마다 `curTime + notePreGenerateTime(3초) >= 다음 노트 timing`이면 `Generate`
+2. `Generate`가 `targetLane`/색으로 프리팹(Blue/White/Red/Gate/Shift)을 골라 `Instantiate` → `SetTiming(timing, duration)`
+   (`SetTiming` 안에서 게임 설정의 노트 크기 `noteSize`를 적용)
+3. 각 `RG_NoteObject.Update`가 매 프레임 `CalculatePosition(curTime)`으로 자식 y를 계산:
+   `y = Max((Timing - curTime) × noteSpeed × 2.5, 0)`
 
-// 예시
-// timing = 91.5, duration = 1.5
-// tickTime = [91.688, 91.782, 91.876, ..., 92.813]
-```
-
----
-
-## 노트 색상 규칙
-
-```csharp
-public static object GetNoteColor(int lane)
-{
-    // OPEN/CLOSE (레인 9)
-    if (lane == 9)
-        return GetEnumValue("NoteColor", "OPEN");
-    
-    // RED (레인 4, 5)
-    if (lane == 4 || lane == 5)
-        return GetEnumValue("NoteColor", "RED");
-    
-    // BLUE (나머지)
-    return GetEnumValue("NoteColor", "BLUE");
-}
-```
-
----
-
-## 노트 주입
-
-```csharp
-public static void InjectBmsNotesToLaneData(object sxgtData)
-{
-    if (_parsedBmsNotes == null || _parsedBmsNotes.Count == 0)
-        return;
-    
-    var laneDataField = sxgtData.GetType().GetField("laneData");
-    var laneData = laneDataField.GetValue(sxgtData);
-    
-    // 레인별 그룹화
-    var notesByLane = _parsedBmsNotes
-        .GroupBy(n => n.Lane)
-        .ToDictionary(g => g.Key, g => g.OrderBy(n => n.Time).ToList());
-    
-    // 각 레인에 주입
-    foreach (var kvp in notesByLane)
-    {
-        int lane = kvp.Key;
-        var notes = kvp.Value;
-        
-        var laneList = laneData[lane];
-        laneList.Clear();
-        
-        foreach (var parsed in notes)
-        {
-            object gameNote;
-            
-            if (parsed.NoteType == NoteType.Normal)
-                gameNote = CreateShortNote(parsed);
-            else
-                gameNote = CreateHoldNote(parsed);
-            
-            laneList.Add(gameNote);
-        }
-        
-        MelonLogger.Msg($"레인 {lane}: {notes.Count}개 노트 주입");
-    }
-}
-```
-
----
-
-## 노트 매칭 (홀드)
-
-```csharp
-public static void MatchHoldNotes(List<ParsedNote> notes)
-{
-    var notesByLane = notes.GroupBy(n => n.Lane);
-    
-    foreach (var laneGroup in notesByLane)
-    {
-        var laneNotes = laneGroup.OrderBy(n => n.Time).ToList();
-        
-        for (int i = 0; i < laneNotes.Count; i++)
-        {
-            var note = laneNotes[i];
-            
-            // 홀드 시작 (02)
-            if (note.NoteType == NoteType.Long)
-            {
-                // 다음 HoldEnd (03) 찾기
-                for (int j = i + 1; j < laneNotes.Count; j++)
-                {
-                    var endNote = laneNotes[j];
-                    
-                    if (endNote.NoteType == NoteType.HoldEnd)
-                    {
-                        // 길이 계산
-                        note.Length = endNote.Time - note.Time;
-                        
-                        // 끝 노트 제거
-                        laneNotes.RemoveAt(j);
-                        break;
-                    }
-                }
-            }
-            
-            // OPEN (04)
-            else if (note.NoteType == NoteType.Open)
-            {
-                // 다음 CLOSE (05) 찾기
-                for (int j = i + 1; j < laneNotes.Count; j++)
-                {
-                    var closeNote = laneNotes[j];
-                    
-                    if (closeNote.NoteType == NoteType.Close)
-                    {
-                        note.Length = closeNote.Time - note.Time;
-                        laneNotes.RemoveAt(j);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    
-    // HoldEnd, Close 노트 제거
-    notes.RemoveAll(n => 
-        n.NoteType == NoteType.HoldEnd || 
-        n.NoteType == NoteType.Close
-    );
-}
-```
-
----
-
-## 노트 검증
-
-```csharp
-public static bool ValidateNote(ParsedNote note)
-{
-    // 시간 검증
-    if (note.Time < 0)
-    {
-        MelonLogger.Warning($"잘못된 시간: {note.Time}");
-        return false;
-    }
-    
-    // 레인 검증
-    if (note.Lane < 0 || note.Lane > 9)
-    {
-        MelonLogger.Warning($"잘못된 레인: {note.Lane}");
-        return false;
-    }
-    
-    // 홀드 길이 검증
-    if ((note.NoteType == NoteType.Long || note.NoteType == NoteType.Open) 
-        && note.Length <= 0)
-    {
-        MelonLogger.Warning($"잘못된 홀드 길이: {note.Length}");
-        return false;
-    }
-    
-    return true;
-}
-```
-
----
-
-## 노트 정렬
-
-```csharp
-public static void SortNotes(List<ParsedNote> notes)
-{
-    // 시간 → 레인 순으로 정렬
-    notes.Sort((a, b) =>
-    {
-        int timeCompare = a.Time.CompareTo(b.Time);
-        if (timeCompare != 0)
-            return timeCompare;
-        
-        return a.Lane.CompareTo(b.Lane);
-    });
-}
-```
-
----
-
-## 노트 통계
-
-```csharp
-public static void LogNoteStatistics(List<ParsedNote> notes)
-{
-    var total = notes.Count;
-    var normal = notes.Count(n => n.NoteType == NoteType.Normal);
-    var hold = notes.Count(n => n.NoteType == NoteType.Long);
-    var open = notes.Count(n => n.NoteType == NoteType.Open);
-    
-    MelonLogger.Msg($"=== 노트 통계 ===");
-    MelonLogger.Msg($"총 노트: {total}");
-    MelonLogger.Msg($"일반: {normal}");
-    MelonLogger.Msg($"홀드: {hold}");
-    MelonLogger.Msg($"오픈: {open}");
-    
-    // 레인별 통계
-    var byLane = notes.GroupBy(n => n.Lane);
-    foreach (var group in byLane.OrderBy(g => g.Key))
-    {
-        MelonLogger.Msg($"레인 {group.Key}: {group.Count()}개");
-    }
-}
-```
-
----
-
-## 노트 디버깅
-
-```csharp
-public static void LogNoteDetails(object note)
-{
-    var type = note.GetType();
-    
-    MelonLogger.Msg($"=== {type.Name} ===");
-    
-    // 주요 필드
-    var timing = GetField(note, "timing");
-    var lane = GetField(note, "targetLane");
-    var nType = GetField(note, "nType");
-    var nColor = GetField(note, "nColor");
-    
-    MelonLogger.Msg($"Timing: {timing}");
-    MelonLogger.Msg($"Lane: {lane}");
-    MelonLogger.Msg($"Type: {nType}");
-    MelonLogger.Msg($"Color: {nColor}");
-    
-    // 홀드 노트 추가 정보
-    if (type.Name.Contains("HoldNote"))
-    {
-        var duration = GetField(note, "duration");
-        var tickTime = GetField(note, "tickTime") as float[];
-        
-        MelonLogger.Msg($"Duration: {duration}");
-        MelonLogger.Msg($"TickTime Length: {tickTime?.Length}");
-        
-        if (tickTime != null && tickTime.Length > 0)
-        {
-            MelonLogger.Msg($"First Tick: {tickTime[0]}");
-            MelonLogger.Msg($"Last Tick: {tickTime[tickTime.Length - 1]}");
-        }
-    }
-}
-```
+모드는 2단계 직후(`NoteSpriteHook`)와 3단계 직후(`NoteSwayHook`, `NoteSpeedChaosHook`)에 개입합니다.
+게임 쪽 구조는 `GAME_LOGIC.md` 참고.
 
 ---
 
 ## 노트 스킨(커스텀 스프라이트)
 
-위의 내용이 BMS 데이터를 게임 노트 객체로 변환/주입하는 흐름이라면, 이 절은 이미 생성된 노트의
-**시각적 스킨**을 교체하는 별도 기능입니다(원래 `InventoryPopup` 모드에서 이식됨, `H:\source\repos\InventoryPopup`).
+이미 생성된 노트의 **시각적 스킨**만 바꾸는 기능입니다(2026-07-18 `InventoryPopup` 모드에서 이식).
 
-### 후킹 지점
+### 후킹 지점 (`Hooks/GameplayHooks.cs` `NoteSpriteHook`)
 
-`RhythmGame.NoteGenerator.Generate(LaneIndex, Note)`의 Postfix에서 반환된 `RG_NoteObject`를 받아
-처리합니다. `Assembly-CSharp`를 프로젝트에서 직접 참조하지 않으므로 `object`로 받고 리플렉션으로
-`RectTransform` 필드에 접근합니다.
+`RhythmGame.NoteGenerator.Generate(LaneIndex, Note)` Postfix에서 반환된 `RG_NoteObject`의 private 필드를
+`AccessTools.FieldRefAccess`로 읽습니다.
 
 ```csharp
-// RhythmGame.RG_NoteObject의 실제 필드 (디컴파일 기준)
-[SerializeField] private RectTransform shortNote;    // 메인 노트 본체
-[SerializeField] private RectTransform holdTexture;   // 홀드 몸통
-[SerializeField] private RectTransform tailNote;      // 홀드 끝부분
+// RhythmGame.RG_NoteObject (디컴파일 기준)
+[SerializeField] private RectTransform shortNote;    // 노트 본체(헤드)
+[SerializeField] private RectTransform holdMask;     // 홀드 몸통 마스크
+[SerializeField] private RectTransform holdTexture;  // 홀드 몸통 무늬 (holdMask 안쪽)
+[SerializeField] private RectTransform tailNote;     // 홀드 끝
 ```
 
-### 처리 순서 (`Hooks/Note/NoteSpriteHook.cs`)
+### 처리 순서
 
-1. `Generate` 반환값(`RG_NoteObject`)에서 `gameObject` 이름(예: `Default_Blue(Clone)`)을 읽어
-   노트 타입(`Blue`/`Red`/`Gate`)을 추출한다 (`CustomNoteSpriteLoader.ExtractNoteType`).
-2. `shortNote`/`tailNote`/`holdTexture` 필드를 리플렉션으로 가져와 `Image.sprite`를 교체한다.
-   - `shortNote`: 폴백 없음(Gate만 Blue로 폴백)
-   - `tailNote`/`holdTexture`: `[Type][Suffix]` → `[Suffix][Type]` → `[Suffix]` → 공용 이름 순으로 탐색, 없으면 적용하지 않음
-3. `NoteRendererRecovery.RecoverNoteRenderer`로 `Image.SetNativeSize()` + `SetAllDirty()`를 호출해
-   스프라이트 교체 직후 UI가 갱신되지 않는 문제를 해소한다.
+1. 노트 GameObject 이름에서 타입 문자열을 뽑습니다(`CustomNoteSpriteLoader.ExtractNoteType`):
+   **첫 `_` 뒤부터 두 번째 `_` 앞까지**, 두 번째 `_`가 없으면 첫 `_` 뒤 전부.
+2. 각 자식의 `Image.sprite`를 교체합니다(스프라이트를 못 찾으면 그 자식은 그대로).
+   - `shortNote`: `{타입}` → 노트 이름 전체
+   - `tailNote`: `{타입}_tail` → `tailNote` → (없으면 `shortNote`와 같은 규칙)
+   - `holdTexture`: `{타입}_hold` → `holdTexture` → (없으면 `shortNote`와 같은 규칙)
+3. `NoteRendererRecovery.RecoverNoteRenderer`가 노트 루트와 **직계 자식**의 `Image`마다
+   `SetNativeSize()` + `SetAllDirty()`를 호출합니다. 커스텀 스프라이트가 없어도 **모든 노트**에 대해 실행됩니다.
 
 ### 스프라이트 소스
 
-`CustomNoteSpriteLoader`가 `{게임 설치 폴더}\CustomNotes\*.png`를 읽어 `Sprite.Create`로 변환하고
-파일명(첫 글자만 대문자로 표준화) 기준으로 캐싱한다. 폴더 규칙은 `01-user-guide/INSTALL_AND_LAYOUT.md`
-5절 참고.
+`CustomNoteSpriteLoader.Initialize()`(모드 초기화 시 1회)가 `{게임 설치 폴더}\CustomNotes\*.png`를 읽어
+`Sprite.Create`로 변환하고 **파일명(확장자 제외) 그대로**를 키로 저장합니다(대소문자 무시). 폴더가 없으면 만듭니다.
+게임 실행 중에 PNG를 추가/수정하면 재시작해야 반영됩니다.
+
+### ⚠️ 알려진 문제 — 현재 파일명 규칙이 실제 노트 이름과 맞지 않음 (확인 필요)
+
+게임은 노트 프리팹을 `Resources.Load("Rhythm Game Part/PlayScene/NoteSkin/{스킨}/_Blue")`처럼 불러와 `Instantiate`하므로,
+생성된 노트 이름은 `_Blue(Clone)` 형태가 됩니다(Unity는 복제본 이름 뒤에 `(Clone)`을 붙임). 여기서 1번 규칙으로 뽑히는
+타입은 `Blue`가 아니라 **`Blue(Clone)`**입니다. 그래서:
+
+- `Blue.png`, `Red.png`, `Gate.png` 같은 이름은 **매칭되지 않습니다**.
+- 현재 코드에서 실제로 매칭되는 이름은 `Blue(Clone).png`(또는 전체 이름 `_Blue(Clone).png`), 끝/몸통은
+  `Blue(Clone)_tail.png`/`Blue(Clone)_hold.png` 또는 공용 `tailNote.png`/`holdTexture.png`입니다.
+  노트 종류: `_Blue`, `_White`(레인 L/R), `_Red`, `_Gate` (스킨에 없으면 게임이 Blue로 대체).
+- 끝/몸통 스프라이트가 없으면 **헤드 스프라이트가 끝과 몸통에도 들어갑니다**.
+
+2026-07-18에 처음 이식했을 때의 로더는 이름에 `_blue`/`_red`/`_gate`가 들어 있는지로 판별하고(`Blue.png` 방식),
+Gate가 없으면 Blue로 대체하고, 끝/몸통은 `BlueTail`/`TailBlue`/`Tail`/`TailNote` 순서로 찾고 없으면 적용하지 않았습니다.
+2026-07-26 파일 통합(`12348f5`) 때 로더가 단순화되면서 이 규칙이 사라졌습니다. 이식 당시에도 실게임 확인은 되지 않았습니다.
+
+### ⚠️ 확인 필요 — 게임 노트 크기 옵션
+
+게임은 `SetTiming`에서 노트 크기 설정(`userData.noteSize`)을 `sizeDelta`에 곱해 둡니다. 그 뒤 모드의
+`SetNativeSize()`가 `Image` 크기를 스프라이트 원본 크기로 되돌리므로, 노트 크기를 100%가 아닌 값으로 설정한 경우
+설정이 무시될 수 있습니다. 게임에서 노트 크기를 바꿔 모드 유무로 비교해 보세요.
 
 ---
 
@@ -503,11 +264,13 @@ if (_curTime + notePreGenerateTime >= note.timing) { Generate(...); }
 ### 배율 결정
 
 - `NoteSpeedChaosPerLane=0`: `Timing`을 시드로 노트마다 다른 배율(완전 카오스)
-- `NoteSpeedChaosPerLane=1`: 부모 `NoteGroup`(레인)의 인스턴스 ID를 시드로 레인마다 다른 배율.
+- `NoteSpeedChaosPerLane=1`: 부모 `NoteGroup`(레인)의 인스턴스 ID(`% 1000`)를 시드로 레인마다 다른 배율.
   같은 레인 안에서는 순서가 유지되므로 읽을 수는 있습니다.
 
-시드 기반이라 결정론적이고, 리트라이해도 같은 패턴이 나옵니다. `Min > Max`로 적어두면 설정
-로드 시 두 값을 맞바꿉니다.
+노트별 모드는 `Timing`이 시드라 결정론적이고, 리트라이해도 같은 패턴이 나옵니다. 레인별 모드는 Unity 인스턴스 ID가
+씬을 다시 불러올 때마다 달라지므로 **리트라이할 때마다 레인 배율이 바뀔 수 있습니다**.
+배율은 노트 인스턴스 ID로 캐시하고 씬 전환 때 `NoteSpeedChaosHook.Reset()`으로 비웁니다.
+`Min > Max`로 적어두면 설정 로드 시 두 값을 맞바꿉니다.
 
 ### 판정과의 관계
 

@@ -1,62 +1,115 @@
 # 트러블슈팅(모음) - sxtg2 기준
 
-`DOCUMENTATION.md`에도 트러블슈팅이 있지만, 실제로는 케이스가 빠르게 늘어나기 때문에 별도 문서로 분리합니다.
+기준일: 2026-09-28 (v1.1.0)
 
-## 1) 커스텀 차트가 주입되지 않음
+로그는 `{게임 설치 폴더}\MelonLoader\Latest.log`에 남습니다. 자세히 보고 싶으면 `UserData\MelonPreferences.cfg`의
+`[sxtg2]`에서 `LogLevel = 2`로 바꾸세요(설명은 `03-development/DEBUGGING_GUIDE.md`).
 
-### 체크 1: `hwa` 폴더가 존재하나요?
+## 1) 커스텀 곡이 곡 목록에 안 보임
 
-- 현재 `sxtg2`는 `hwa` 폴더를 자동 생성하지 않습니다.
-- `{게임 설치 폴더}\hwa\`가 없으면 BMS/미디어 탐색이 실패합니다.
+- 로그에서 `[TrackDataAnalyzer] 커스텀 트랙 N개 추가 완료`를 찾으세요. 곡 선택 화면에 들어갈 때마다 찍힙니다.
+- N이 0이거나 기대보다 적으면:
+  - BMS가 `hwa\{앨범}\` 바로 아래에 있는지 확인(2단계 이상 아래는 안 찾음)
+  - 확장자가 `.bms`/`.bme`/`.bml`인지 확인
+  - 한 폴더에 BMS가 여러 개면 하나만 등록됨 — 폴더를 나누세요
+- `[TrackDataAnalyzer] 앨범 추가 실패 (...)` 경고가 있으면 그 폴더의 곡 정보 txt를 확인하세요.
+- `hwa` 폴더는 모드가 자동으로 만듭니다. 폴더 위치는 `sxtg2.dll`이 들어간 `Mods` 폴더와 같은 게임 설치 폴더입니다.
 
-### 체크 2: 플레이 로딩에서 “커스텀 차트” 텍스트가 감지되나요?
+## 2) 커스텀 차트가 아니라 원래 곡 패턴이 나옴
 
-- `TextHook`는 Play/Loading 씬에서 `"커스텀 차트"` 문자열을 감지하면 트랙 기반 BMS 파싱을 시도합니다.
-- 로그에 `[TextHook] '커스텀 차트' 텍스트 감지!`가 나오는지 확인하세요.
+- `[ManagerPlayHook] 차트를 읽지 못해 원본 패턴을 유지합니다: ...` → BMS에서 노트를 하나도 읽지 못했습니다.
+  - 채널/값 규칙이 sxtg2 방식인지 확인(`02-systems/BMS_FORMAT.md`). 일반 키음 BMS는 값이 `01`~`05`가 아니라 무시됩니다.
+- `[ManagerPlayHook] 커스텀 차트 주입 실패` 오류 → 예외 내용을 확인하세요.
+- 정상이면 `[CustomChartInjector] N개 주입, totalNotes=..., totalNoteWithTicks=..., BPM=...`이 찍힙니다.
+  `totalNotes`가 BMS의 노트 수와 비슷한지 확인하세요.
 
-### 체크 3: 플레이 시작 훅에서 최종 주입이 호출되나요?
+## 3) 플레이 도중 판정이 멈춤 / 점수가 안 오름 / 노트가 안 사라짐
 
-- `ManagerPlayHook` 로그에서 `set_bms`/`FetchBMSToModules`/`GetPatternFromDir` 호출을 확인하세요.
-- 이후 `[SXGTDataHook] ProcessPendingNoteRemovalAndInjection 호출됨`이 나와야 실제 주입이 진행됩니다.
+- 로그에 `NullReferenceException`이 `RG_PS_Judgement.CheckHoldTick` 근처에서 반복되면, **끝(`03`/`05`)이 없는 홀드**가
+  원인일 가능성이 큽니다(알려진 문제). 해당 홀드의 헤드를 치는 순간부터 판정 루프가 매 프레임 중단됩니다.
+  - BMS에서 모든 `02`/`04` 뒤에 같은 레인의 `03`/`05`가 있는지 확인하세요.
+  - 파서는 짝 없는 노트를 통계(`MissingEndNotes`)로만 모으고 현재는 로그로 알려주지 않습니다.
 
-## 2) 홀드 노트가 이상함(길이 0, tickTime 없음)
+## 4) 이상한 위치에 노트가 생김 (곡 시작 직후)
 
-- 원인 후보
-  - BMS에서 02-03(또는 04-05) 끝노트가 누락됨
-  - HoldNote 생성자 선택이 실패하여 duration/tickTime이 제대로 들어가지 않음
-- 확인 포인트
-  - 초기화 시 출력되는 “끝노트 누락 통계” 확인 (`Main.ScanAndParseBmsFiles`)
-  - `CustomChartInjector` 로그에서 HoldNote duration/tickTime 생성자 사용 성공 여부 확인
+- BMS 헤더 값에 콜론이 있으면(`#TITLE Remix 2011:0101` 등) 마디 0에 가짜 노트가 생깁니다(알려진 문제).
+  헤더에서 콜론을 지우고 제목은 `trackinfo.txt`에 쓰세요.
+- 채널 `02`(마디 길이)나 BPM 변화 채널을 쓴 BMS는 지원하지 않아 타이밍이 어긋납니다.
 
-## 3) BGA/BGM이 교체되지 않음
+## 5) BGM이 교체되지 않음 / 이상한 소리가 BGM으로 나옴
 
-- 플레이 시작 훅에서 `BGAPlayerHook/BGMPlayerHook`가 1회 교체를 시도합니다.
-- 교체가 늦거나 실패하면:
-  - BGA: `VideoPlayer`를 아직 못 찾은 상태일 수 있음(나중에 다시 호출되지 않으므로, 플레이 시작 시점에서 찾기 실패하면 교체가 안 될 수 있음)
-  - BGM: 대상 `AudioSource` 선택에 실패했거나 로드 실패(`UnityWebRequest` 오류)
+- `[BGMPlayerHook] 앨범 폴더에서 BGM 파일 발견: ...` → 어떤 파일이 골라졌는지 확인
+  - `music.*`가 없으면 폴더의 첫 `.ogg`/`.mp3`/`.wav`를 고릅니다. 키음 파일이 골라졌다면 곡 음원 이름을 `music.ogg`로 바꾸세요.
+- `[BGMPlayerHook] BGM 대상 또는 파일을 찾을 수 없습니다.` → 오디오 파일이 없음
+- `[BGMPlayerHook] BGM 로드 실패: ...` → `UnityWebRequest` 오류. 경로에 `#`/`%`가 있거나 파일이 손상됐을 수 있음
+- 정상이면 `[BGMPlayerHook] BGM 교체 완료: music.ogg`
+- 교체에 실패하면 도너 곡(곡 목록 첫 곡)의 BGM이 나오고, 곡 종료 시점도 그 BGM 길이로 정해집니다.
 
-## 4) BGA와 BGM 싱크가 계속 어긋남
+## 6) BGA가 교체되지 않음
 
-- `BGABGMSyncHook`는 **짧은 기준 간격**으로 체크하며, 오차 범위에 따라 두 가지 방식으로 보정합니다.
-  - **소-중간 오차 구간**: 재생 속도를 조절하는 **Soft Sync** (튀지 않고 부드럽게)
-  - **큰 오차 구간**: 시간을 강제로 맞추는 **Hard Sync**
-- BGA 또는 BGM 중 하나가 재생 중이 아니면 동기화가 작동하지 않습니다.
+- 게임 설정에서 BGA가 켜져 있는지 확인(꺼져 있으면 시도하지 않음)
+- `.mp4`만 찾습니다. `[BGAPlayerHook] 앨범 폴더에서 BGA 파일 발견`/`BGA 교체 완료` 로그를 확인하세요.
+- `[BGAPlayerHook] VideoPlayer.Prepare 실패` → 코덱 문제일 수 있음. H.264 mp4로 다시 인코딩해 보세요.
 
-## 5) Score/클리어 사운드가 이상함
+## 7) BGA와 BGM 싱크가 계속 어긋남
 
-- 커스텀 차트의 스코어/종료 판정은 주입된 노트 수를 `SXGTData.totalNotes`/
-  `totalNoteWithTicks`에 반영하는 방식으로 동작합니다. `MaxScore` 보정 훅은 사용하지 않습니다.
-- 클리어 사운드는 모드가 교체하지 않고 게임 원본을 그대로 재생합니다.
-- **(2026-07-18 수정됨) 곡 중간에 클리어 사운드가 튀어나오던 문제**: 원인은 `totalNotes`/`totalNoteWithTicks`가
-  커스텀 차트가 아니라 도너 트랙의 노트 개수로 남아있던 것이었습니다. `CustomChartInjector`가 노트 주입 직후
-  이 값을 실제 주입된 노트 수로 재계산하도록 고쳤습니다. 자세한 내용은 `02-systems/SCORE_SYSTEM.md`를 참고하세요.
-  - 확인 포인트: 로그에 `[CustomChartInjector] 노트 개수 재계산 완료: totalNotes=..., totalNoteWithTicks=...`가
-    찍히는지, 그 값이 도너 트랙이 아니라 실제 커스텀 BMS 파일의 노트 개수와 비슷한지 확인하세요.
-  - `totalNotes/totalNoteWithTicks 필드를 찾지 못해...` 경고가 뜨면 게임 빌드가 바뀌어 필드 이름이
-    달라졌을 가능성이 있습니다 (`ReflectionMemberNames.SXGTDataMembers`).
-- **(2026-07-18) 클리어 사운드 교체 코드 제거**: 위 근본 원인 수정 후 실게임에서
-  `Clear_FullCombo`/`Clear_Normal`이 정상 타이밍에 재생되는 것을 확인했습니다. 이에 따라
-  `KeyBlue_Tam` 교체와 `SoundObject.Play`/`PlayAndDestroy` 후킹을 삭제했습니다.
+- `BGABGMSyncHook`은 0.1초마다 비교해서
+  - 0.05초(보정 중이면 0.01초) 넘게 차이 나면 **소프트 싱크**(재생 속도 ±2~5%)
+  - 0.5초 넘게 차이 나면 **하드 싱크**(BGA 시간을 BGM 위치로 이동)
+- 영상이 `canSetPlaybackSpeed`를 지원하지 않으면 소프트 싱크가 안 되고 하드 싱크만 동작합니다.
+- 상세 로그는 `LogLevel = 2`일 때만 나옵니다(`[BGABGMSyncHook] ...`).
 
+## 8) 자켓이 안 나옴 / 같은 경고가 계속 찍힘
 
+- `[TrackDataMediaHook] 커스텀 자켓을 찾지 못해 기본 자켓을 사용합니다: ...`
+  - 앨범 폴더에 `thumb.png`(또는 `thumbnail.png`, `jacket.png`, `cover.png`, `image.png`)를 넣으세요.
+  - 자켓이 없으면 게임이 자켓을 요청할 때마다 이 경고가 반복됩니다(알려진 문제). PNG를 넣으면 사라집니다.
+- `[ThumbnailLoader] 자켓 로드: thumb.png (WxH)`가 찍히면 정상입니다.
 
+## 9) config.txt를 고쳤는데 반영이 안 됨
+
+- v1.1.0부터 **플레이 씬에 들어갈 때** 다시 읽습니다. 곡 선택 화면에서 저장하고 다음 곡을 시작하면 됩니다.
+  (한 판 도중에는 바뀌지 않음)
+- 로그에서 `[SaveCustomKey] 설정 재로드 #n (...) - N개 항목이 이번 플레이부터 적용됩니다`와 바뀐 항목을 확인하세요.
+  `변경 없음`은 `LogLevel = 2`일 때만 찍힙니다.
+- `[SaveCustomKey] ... 값을 숫자로 읽지 못했습니다` / `범위여야 합니다` → 숫자 형식/범위 오류, 기본값 유지
+- 켜기/끄기 항목은 모르는 단어를 쓰면 **경고 없이** 기본값이 유지됩니다. 허용 단어는 `INSTALL_AND_LAYOUT.md` 6절.
+- `[SaveCustomKey] 설정 파일 읽기 실패 - 기존 값을 유지합니다` → 편집기가 파일을 잠그고 있음. 저장 후 다시 시작하세요.
+
+## 10) BlockSave=0인데 기록이 저장되지 않음
+
+- 알려진 문제입니다. `BlockSave`는 MelonPreferences의 `BlockSaveBestRanking`(기본 `true`)과 OR로 합쳐집니다.
+  `UserData\MelonPreferences.cfg`의 `[sxtg2]`에서 `BlockSaveBestRanking = false`도 함께 바꾸세요.
+- 오토플레이나 올퍼펙트가 켜져 있으면 항상 차단됩니다(의도된 동작).
+- 차단될 때마다 `[차단] 하이스코어 및 랭킹 저장 차단: ManagerResult.PostRequestPlayResult` 같은 로그가 남습니다.
+
+## 11) 커스텀 노트 스킨이 적용되지 않음
+
+- 알려진 문제입니다. 현재 코드는 `Blue.png` 같은 이름을 매칭하지 못합니다.
+  현재 동작하는 이름(`Blue(Clone).png` 등)은 `INSTALL_AND_LAYOUT.md` 5절 표를 보세요.
+- `[CustomNoteSpriteLoader] 총 N개의 커스텀 노트 스프라이트 로드 완료` → 로드된 파일 수
+- `LogLevel = 2`면 노트마다 `[NoteSpriteHook] 노트 생성: name=..., 추출된 타입=...`이 찍혀 실제 노트 이름을 확인할 수 있습니다.
+- PNG는 게임 시작 시 한 번만 읽으므로, 추가/수정 후에는 게임을 다시 켜야 합니다.
+
+## 12) 판정바에 틱이 안 나옴 / 로딩 화면에 판정바가 보임
+
+- 판정바 데이터는 게임의 **플레이 위젯**을 통해 들어옵니다. 게임 설정에서 위젯을 하나도 장착하지 않으면 틱과 오차
+  텍스트가 나오지 않습니다(알려진 문제). 위젯을 아무거나 하나 장착하세요.
+- 로딩 화면(`PlayLoading`)도 플레이 씬으로 판정되어 빈 판정바/키뷰어가 보일 수 있습니다(알려진 문제).
+- `EnableJudgmentBar`/`EnableKeyViewer`가 `1`인지 확인하세요.
+
+## 13) Score/클리어 사운드가 이상함
+
+- 커스텀 차트의 점수/클리어 효과음은 주입된 노트 수를 `SXGTData.totalNotes`/`totalNoteWithTicks`에 반영하는 방식으로
+  동작합니다. `[CustomChartInjector] ... totalNotes=..., totalNoteWithTicks=...` 값이 실제 BMS 노트 수와 비슷한지 확인하세요.
+- `MaxScore`를 바꿨다면 `[JudgeScoreMax] Update: 만점 상수 1곳 교체 완료`, `CalculateJudgeScore: ... 1곳` 로그를 확인하세요.
+  `만점 상수(1000000)를 찾지 못했습니다` 경고는 게임 업데이트로 코드가 바뀌었다는 뜻입니다.
+- `MaxScore`를 700000 이하로 낮추면 풀콤보가 아닐 때 `Clear_Normal`이 나오지 않습니다(게임의 고정 기준값).
+- **(2026-07-18 수정됨) 곡 중간에 클리어 사운드가 나오던 문제**: `totalNotes`/`totalNoteWithTicks`가 도너 곡 기준으로 남아
+  있던 것이 원인이었고, `CustomChartInjector`가 주입 직후 다시 계산하도록 고쳤습니다. 자세한 내용은 `02-systems/SCORE_SYSTEM.md`.
+
+## 14) 로그가 너무 많음
+
+- 곡 선택 확인창을 열 때와 결과 화면에 들어갈 때마다 `[ManagerMusicSelectHook] characterLayer ...`,
+  `[OperatorCharacterHook] ...`, `[ManagerResultHook] ...` 줄이 많이 찍히는 것은 2026-08-03 조사용 진단 훅 때문입니다.
+  로그 레벨과 관계없이 출력되며, 코드에서 제거해야 사라집니다(`CURRENT_STATUS.md`의 정리 대상).

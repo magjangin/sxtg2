@@ -1,45 +1,62 @@
 # sxtg2
 
 `sxtg2`는 Sixtar Gate STARTRAIL에서 로컬 `hwa` 폴더의 BMS 차트와 미디어 파일을 불러오는 MelonLoader 모드입니다.
+현재 버전: **v1.1.0**
 
 ## 주요 기능
 
-- BMS 차트를 파싱하고 커스텀 노트를 플레이에 주입
-- 음악 선택 흐름에 커스텀 TrackData 추가
-- 커스텀 트랙의 BGA, BGM, 미리듣기, 썸네일 교체
-- BGA와 BGM 재생 동기화
-- 커스텀 차트 노트 수 기반 스코어/종료 판정 보정
-- 원본 일시정지 진입점 후 커스텀 자켓 썸네일 적용
+- `hwa` 폴더의 BMS 차트를 곡 목록에 커스텀 트랙으로 추가하고 플레이에 노트 주입
+- 커스텀 트랙의 BGM, BGA, 미리듣기, 자켓 교체 및 BGA↔BGM 재생 동기화
+- 커스텀 차트 노트 수 기반 스코어/클리어 판정 보정
+- 플레이 오버레이: 실시간 판정바(난이도별 실제 판정 범위), 키뷰어(색상 커스터마이징)
+- 연출/챌린지: 노트 흔들림(NoteSway), 노트별 속도 카오스(NoteSpeedChaos)
+- 오토플레이, 올퍼펙트, 점수 상한 변경(MaxScore), 기록/랭킹 저장 차단(BlockSave)
+- `CustomNotes` 폴더 PNG로 노트 스킨 교체 (현재 파일명 매칭에 알려진 문제 있음)
+- 모든 옵션은 `SaveCustomKey/config.txt` 하나로 설정하며, 플레이를 시작할 때마다 다시 읽어 게임 재시작 없이 반영
 
 ## 저장소 구조
 
 ```text
-sxtg2-mod/              # 메인 MelonLoader 모드 프로젝트
-sxtg2.LogicTests/       # 로직 테스트 실행 프로젝트
+sxtg2-mod/              # 메인 MelonLoader 모드 프로젝트 (C# 13개 파일)
+sxtg2.LogicTests/       # BMS 파서 로직 테스트 (.NET 8 콘솔)
 sxtg2 커스텀 리드미/    # 프로젝트, 시스템, 사용자 문서
-sxtg2.sln               # Visual Studio 솔루션
+tools/                  # 코드 분석/정리용 파이썬 스크립트
+release/                # 예전 배포 파일 (v0.1.x zip, v1.0.0 dll)
+sxtg2.sln               # Visual Studio 솔루션 (메인 모드 프로젝트만 포함)
 build.bat               # Debug 빌드 및 로컬 Mods 복사 스크립트
 build-release.bat       # Release 빌드 및 로컬 Mods 복사 스크립트
+run-logic-tests.bat     # 로직 테스트 실행
 ```
+
+저장소 루트의 `sxtg2/` 폴더(게임 어셈블리 디컴파일 결과)는 `.gitignore`로 제외되어 있으며, 로컬에서 게임 코드를 확인할 때 씁니다.
 
 ## 필요 환경
 
 - Windows
 - Sixtar Gate STARTRAIL
-- 게임에 설치된 MelonLoader
+- 게임에 설치된 MelonLoader (개발 환경: 0.7.3)
 - 메인 모드 프로젝트 빌드용 Visual Studio/MSBuild
-- `sxtg2.LogicTests` 실행용 .NET 도구
+- `sxtg2.LogicTests` 실행용 .NET SDK (대상 프레임워크 .NET 8)
 
-메인 프로젝트는 .NET Framework 4.7.2를 대상으로 하며, 로컬 게임 설치 경로의 MelonLoader, Harmony, Unity 어셈블리를 참조합니다.
+메인 프로젝트는 .NET Framework 4.7.2를 대상으로 하며, 로컬 게임 설치 경로의 MelonLoader, Harmony, Unity 어셈블리와
+게임 어셈블리(`Assembly-CSharp.dll`)를 참조합니다.
+
+### 다운그레이드 버전 (DepotDownloader)
+
+특정 버전의 게임 클라이언트가 필요한 경우 아래 DepotDownloader 명령어를 사용할 수 있습니다.
+
+```cmd
+depotdownloader -app 1802720 -depot 1802721 -manifest 8524424218577615553
+```
 
 ## 빌드
 
-빌드 스크립트는 현재 각 파일 상단의 로컬 경로 설정을 사용합니다.
+빌드는 로컬 경로가 하드코딩된 세 곳을 자기 환경에 맞게 고친 뒤 실행하세요.
 
-- `GAME_PATH`
-- `SOURCE_ROOT`
-
-자기 환경에 맞게 값을 수정한 뒤 실행하세요.
+- `build.bat` / `build-release.bat` 상단의 `GAME_PATH`
+- 같은 파일의 `SOURCE_ROOT` (복사할 DLL 경로 계산에 사용)
+- `sxtg2-mod/sxtg2.csproj`의 게임 DLL 참조 경로 (`H:\Sixtar Gate STARTRAIL custom mode\...`)
+  — 스크립트가 넘기는 `GamePath` 속성은 csproj에서 쓰이지 않으므로 직접 고쳐야 합니다.
 
 ```bat
 build.bat
@@ -53,26 +70,31 @@ build-release.bat
 
 경로 설정이 올바르면 스크립트가 솔루션을 빌드하고 `sxtg2.dll`을 게임의 `Mods` 폴더로 복사합니다.
 
+> 알려진 문제: 스크립트가 `Any CPU` 플랫폼으로 빌드해서 csproj의 `x64` 구성 블록이 적용되지 않습니다
+> (Release 최적화 미적용). 자세한 내용은 `sxtg2 커스텀 리드미/03-development/CODE_STRUCTURE.md`.
+
 ## 커스텀 콘텐츠 배치
 
-게임 설치 폴더 아래에 `hwa` 폴더를 만들고, 그 아래 1단계 폴더를 앨범 폴더로 사용할 수 있습니다.
+모드가 게임 설치 폴더 아래에 `hwa` 폴더를 자동으로 만듭니다. 그 아래 1단계 폴더 하나가 커스텀 트랙 하나입니다.
 
 ```text
 {게임 폴더}\hwa\
   Album_A\
-    trackinfo.txt
-    chart.bms
-    demo.ogg
-    music.ogg
-    thumb.png
-    bg.mp4
+    chart.bms        # 폴더의 첫 BMS 하나만 사용
+    trackinfo.txt    # 제목: / 아티스트: / 난이도:
+    music.ogg        # 플레이 BGM (이름을 music으로 두는 것을 권장)
+    demo.ogg         # 곡 선택 미리듣기 (없으면 music 전체 재생)
+    thumb.png        # 자켓
+    bg.mp4           # BGA (게임 설정에서 BGA가 켜져 있을 때)
 ```
 
-차트 확장자는 `.bms`, `.bme`, `.bml`을 지원합니다. BGM 탐색은 `.ogg`, `.mp3`, `.wav`를 지원하고, BGA 탐색은 `.mp4`를 사용합니다.
+차트 확장자는 `.bms`, `.bme`, `.bml`을 지원하며, 채널/값은 sxtg2 전용 규칙을 따릅니다
+([BMS 포맷](sxtg2%20커스텀%20리드미/02-systems/BMS_FORMAT.md)). BGM/미리듣기는 `.ogg`, `.mp3`, `.wav`,
+BGA는 `.mp4`만 찾습니다. 자세한 규칙과 `config.txt` 전체 항목은 [설치와 폴더 구조](sxtg2%20커스텀%20리드미/01-user-guide/INSTALL_AND_LAYOUT.md)를 보세요.
 
 ## 테스트
 
-저장소 루트에서 로직 테스트 스크립트를 실행합니다.
+저장소 루트에서 로직 테스트 스크립트를 실행합니다(현재 7개).
 
 ```bat
 run-logic-tests.bat
@@ -83,6 +105,7 @@ run-logic-tests.bat
 자세한 문서는 아래에서 시작하세요.
 
 - [문서 목차](sxtg2%20커스텀%20리드미/README.md)
+- [현재 상태 / 알려진 문제](sxtg2%20커스텀%20리드미/CURRENT_STATUS.md)
 - [프로젝트 개요](sxtg2%20커스텀%20리드미/00-overview/PROJECT_OVERVIEW.md)
 - [설치와 폴더 구조](sxtg2%20커스텀%20리드미/01-user-guide/INSTALL_AND_LAYOUT.md)
-- [현재 상태](sxtg2%20커스텀%20리드미/CURRENT_STATUS.md)
+- [트러블슈팅](sxtg2%20커스텀%20리드미/01-user-guide/TROUBLESHOOTING.md)

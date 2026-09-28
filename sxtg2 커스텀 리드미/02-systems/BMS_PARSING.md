@@ -1,391 +1,142 @@
 # BMS 파일 파싱 상세
 
-이 문서는 BMS 파일 파싱 과정을 상세히 설명합니다.
+기준일: 2026-09-28 (v1.1.0, `Loaders/BmsParser.cs` 기준)
+
+입력 형식(채널/값 규칙)은 [BMS_FORMAT.md](BMS_FORMAT.md)에 있고, 이 문서는 **파서가 그걸 어떻게 읽는지**를 설명합니다.
+예전 문서(옛 `PARSING_ALGORITHM.md`)의 `#BPMxx`/BPM 변화 처리, "모르는 값은 일반 노트" 규칙, `Main.ScanAndParseBmsFiles`
+초기 스캔은 현재 코드에 없습니다.
 
 ## 목차
 
-1. [초기화 및 파일 스캔](#초기화-및-파일-스캔)
-2. [BMS 파일 파싱 상세](#bms-파일-파싱-상세)
-3. [Tick 계산](#tick-계산)
-4. [시간 계산 로직](#시간-계산-로직)
-5. [홀드 노트 길이 계산](#홀드-노트-길이-계산)
-6. [파싱 결과 저장](#파싱-결과-저장)
+1. [언제 파싱되나](#언제-파싱되나)
+2. [공개 API](#공개-api)
+3. [파싱 단계](#파싱-단계)
+4. [결과 구조](#결과-구조)
+5. [캐시](#캐시)
+6. [테스트](#테스트)
 7. [현재 구현의 제한사항](#현재-구현의-제한사항)
 
 ---
 
-## 초기화 및 파일 스캔
+## 언제 파싱되나
 
-**위치:** `sxtg2-mod/Main/Main.BmsBootstrap.cs`, `sxtg2-mod/Hooks/Text/TextHook.BmsLoader.cs`
+**플레이 시작 시 한 번**입니다. 게임 시작 시 `hwa` 전체를 미리 파싱하지 않습니다.
 
-### 1. hwa 폴더 준비 (중요)
+```text
+ManagerPlay.FetchBMSToModules (원본)
+  -> ManagerPlayHook.FetchBMSToModulesPrefix
+     -> BmsParser.ParseBmsFileWithStatistics(customTrack.BmsPath)
+     -> CustomChartInjector.SetParsedChart(result)
+     -> CustomChartInjector.InjectBmsNotesToLaneData(_bms)
+```
 
-현재 `sxtg2` 구현은 **`hwa` 폴더를 자동 생성하지 않습니다.**  
-따라서 사용자가 게임 설치 폴더에 직접 `hwa` 폴더를 만들어야 합니다.
+결과가 `null`이거나 노트가 0개면 `[ManagerPlayHook] 차트를 읽지 못해 원본 패턴을 유지합니다` 경고를 남기고
+도너 트랙의 원래 패턴으로 플레이됩니다.
 
-- **경로**: `{게임_설치_폴더}/hwa`
-- 폴더가 없으면 `Main.ScanAndParseBmsFiles()`는 조용히 종료합니다(로그만 출력).
+## 공개 API
 
-### 2. BMS 파일 스캔(+ 기본 차트 선택)
+| 메서드 | 설명 |
+| --- | --- |
+| `ParseBmsFileWithStatistics(string filePath)` | 파일을 읽어 `ParseResult` 반환. 경로가 비었거나 파일이 없으면 `null`. 캐시 사용 |
+| `ParseBmsFile(string filePath)` | 위 결과의 `Notes`만 반환(실패 시 빈 리스트) |
+| `ParseBmsFromText(string text, string sourceName = "inline")` | 문자열을 줄 단위로 나눠 파싱. `sourceName`은 현재 쓰이지 않음 |
+| `ParseBmsFromLines(string[] lines)` | 실제 파싱 본체. 예외가 나면 `[BmsParser] 파싱 오류` 로그 후 `null` |
 
-`Main.ScanAndParseBmsFiles()`는 아래 위치에서 BMS 파일을 찾습니다.
+## 파싱 단계
 
-- **지원 확장자**: `*.bms`, `*.bme`, `*.bml`
-- **검색 범위(중요)**:
-  - `hwa` **루트 폴더**: `TopDirectoryOnly`
-  - `hwa` 아래의 **1단계 앨범 폴더들**: 각 폴더에서 `TopDirectoryOnly`
-- **재귀 검색은 하지 않습니다.** (단, `TextHook`의 TrackId 기반 검색은 별도 로직을 가집니다)
+`ParseBmsFromLines`는 줄 배열을 세 번 훑습니다.
 
-### 3. BMS 파일 파싱(통계) 및 적용 대상
+### 1) 기본 BPM 찾기 (`FindBaseBpm`)
 
-`Main.ScanAndParseBmsFiles()`는 발견된 모든 BMS에 대해 아래를 수행합니다.
+`#BPM`으로 시작하는 줄을 공백/탭으로 나눠, 키가 정확히 `BPM`이고 값이 0보다 큰 숫자인 **첫 줄**의 값을 씁니다
+(`CultureInfo.InvariantCulture`). 없으면 `150`. 줄 순서와 무관하므로 `#BPM`이 데이터 줄 뒤에 있어도 됩니다.
 
-- 각 BMS 파일을 `BmsParser.ParseBmsFileWithStatistics(...)`로 파싱
-- 노트 통계(총 노트/일반/홀드/오픈 및 끝노트 누락)를 로그로 출력
-- **기본 차트**로는 “발견된 첫 번째 파일”의 파싱 결과를 `CustomChartInjector.SetParsedBmsNotes(...)`에 세팅
+### 2) 값 너비 판별 (`DetectNoteValueWidth`)
 
-그리고 플레이 진입 시점에는 다음이 추가로 발생할 수 있습니다.
+`#WAV`로 시작하는 줄의 키(첫 공백 전까지, `#` 제외)가 6글자(`WAV001`)면 3, 아니면 2.
+파일에 그런 줄이 하나라도 있으면 **모든 데이터 줄을 3글자 단위**로 읽습니다.
 
-- `TextHook.LoadAndInjectBmsForTrack(trackId, displayName)`가 현재 트랙에 맞는 BMS를 다시 찾아 파싱하고, `CustomChartInjector.SetParsedBmsNotes(...)`를 **덮어쓸 수 있습니다.**
+### 3) 데이터 줄 파싱 (`ParseNoteData`)
 
----
+`#`로 시작하고 두 번째 글자 이후에 `:`가 있는 줄마다:
 
-## BMS 파일 파싱 상세
+1. `채널부 = # 다음 ~ : 앞`, `데이터 = : 뒤`
+2. 채널 번호 = 채널부의 **마지막 두 글자**. 레인 채널(`11`~`16`, `18`)이나 `04`/`05`가 아니면 건너뜀
+3. 마디 = 채널부의 앞부분을 `int.TryParse` (실패하면 0)
+4. 데이터를 값 너비로 나눠 각 칸마다
+   - 전부 `0`이면 건너뜀
+   - 3글자 모드에서 첫 글자가 `0`이면 떼어낸 값으로 종류 판별
+   - `01`~`05`가 아니면 건너뜀
+   - `04`/`05`면 레인 9, 아니면 채널로 레인 결정(`04`/`05` 채널에 `01`~`03`이 있으면 건너뜀)
+   - `Time = (마디 + 칸/칸수) × 240 / BPM` 으로 `ParsedNote` 추가
 
-**위치:** `sxtg2-mod/Loaders/BmsParser.cs`
+> 채널부 형식을 검사하지 않기 때문에, `#TITLE Remix 2011:0101`처럼 헤더 값에 콜론이 있고 그 앞 두 글자가
+> 레인 채널 번호면 가짜 노트가 생깁니다(알려진 문제, `BMS_FORMAT.md` 참고).
 
-파싱 과정은 한 줄씩 읽으면서 두 가지 타입의 라인을 처리합니다.
+### 4) 통계와 홀드 짝 맞추기
 
-### 헤더 라인 파싱 (공백 포함 라인)
+1. `BuildStatistics`: 종류별 개수(`NormalNotes`, `LongNotes`, `HoldEndNotes`, `OpenNotes`, `CloseNotes`)
+2. `PairHoldNotes`: 레인별로 시간순 정렬 → 시작 뒤 첫 끝과 짝 → 시작 노트의 `Length` 설정.
+   짝 없는 시작은 `MissingEndNotes`, 짝 없는 끝은 `OrphanEndNotes`에 레인/시간/종류를 기록
+3. 끝 노트(`HoldEnd`, `Close`)를 리스트에서 제거
+4. `TotalNotes = 남은 노트 수`
 
-**형식:** `#KEY VALUE` (예: `#BPM 120`, `#BPM01 180`)
+결과 노트 리스트는 **정렬되어 있지 않습니다**(파일에 나온 순서). 레인별 정렬은 `CustomChartInjector`가 주입 후에 합니다.
+
+## 결과 구조
 
 ```csharp
-if (line.Contains(' '))
+public class ParseResult
 {
-    var split = line.Substring(1).Split(new[] { ' ' }, 2);
-    if (split.Length >= 2)
-    {
-        var key = split[0];
-        var value = split[1];
-        
-        if (key.Contains("BPM"))
-        {
-            // BPM 정보 추출
-        }
-    }
+    public float BaseBpm { get; set; }
+    public List<ParsedNote> Notes { get; set; }
+    public ParseStatistics Statistics { get; set; }
 }
-```
 
-**처리 내용:**
-
-- `#BPM`: 기본 BPM 설정
-  - `bpmDict["00"]`에 저장
-  - `dataList`에 `BpmData` 객체 추가 (Tick=0, Freq=60/BPM)
-- `#BPMXX`: 특정 BPM 인덱스 정의 (현재는 저장만 하고 사용하지 않음)
-  - `bpmDict[XX]`에 저장
-
-**참고:** 현재 구현에서는 **BPM 변화 채널(03, 04, 08)을 감지하지 않습니다**. 헤더의 `#BPMXX`만 파싱하며, 실제 BPM 변화는 노트 데이터 채널에서 처리되지 않습니다.
-
-### 노트 데이터 라인 파싱 (콜론 포함 라인)
-
-**형식:** `#MMMCC:데이터` 또는 `#CC:데이터`
-- `MMM`: Measure(마디) 번호 (3자리, 선택적)
-- `CC`: Channel(채널) 번호 (2자리)
-- `데이터`: 16진수 노트 데이터 (2자리씩 쌍으로 읽음)
-
-**파싱 과정:**
-
-1. **Measure와 Channel 추출**
-   ```csharp
-   // 5자리 이상: measure + channel (예: 00116)
-   if (channel.Length >= 5)
-   {
-       var measureStr = channel.Substring(0, channel.Length - 2);
-       var channelNum = channel.Substring(channel.Length - 2);
-       if (int.TryParse(measureStr, out int m))
-       {
-           measure = m;
-       }
-   }
-   // 2자리: channel만 (measure 없음, measure=0으로 처리)
-   else if (channel.Length >= 2)
-   {
-       var channelNum = channel.Substring(channel.Length - 2);
-       measure = 0;
-   }
-   ```
-
-2. **채널 필터링(중요)**
-   - 지원 채널: 11, 12, 13, 14, 15, 16, 18
-   - **예외적으로 채널 04, 05 라인도 처리**합니다.
-   - 그 외 채널(03, 08 등 BPM 변화 채널 포함)은 현재 구현에서 무시됩니다.
-   - 노트 값 04, 05는 **(처리 대상 라인 안에서)** OPEN/CLOSE 노트로 인식되어 레인 9로 변환됩니다.
-
-3. **노트 데이터 파싱** (`ParseNoteData()`)
-   - 데이터를 2자리씩 읽어서 노트 값 추출
-   - `00`은 빈 슬롯으로 무시
-   - 각 노트에 대해:
-     - **Tick 계산**: `tick = measure + (i / objLength)`
-     - **시간 계산**: `CalculateTime(tick, dataList)` 호출
-     - **노트 타입 확인**: `NoteTypeMapping`에서 노트 값(01, 02, 03, 04, 05)을 `NoteType`으로 변환
-     - **레인 매핑**: `LaneMapping`을 사용하여 BMS 채널을 게임 레인으로 변환
-     - **OPEN/CLOSE 노트**: 레인 9로 강제 설정
-
-**레인 매핑:**
-```
-BMS 채널 → 게임 레인
-16 → 0
-11 → 1
-12 → 2
-13 → 3
-14 → 4
-15 → 5
-18 → 6
-노트 값 04/05 → 9 (오픈/클로즈 노트: “처리 대상 채널”에서만)
-```
-
-**노트 타입 매핑:**
-```
-BMS 노트 값 → NoteType
-01 → Normal (일반 노트)
-02 → Long (홀드 시작)
-03 → HoldEnd (홀드 끝)
-04 → Open (오픈 노트)
-05 → Close (클로즈 노트)
-```
-
----
-
-## Tick 계산
-
-**위치:** `BmsParser.ParseNoteData()`
-
-```csharp
-// tick 계산: measure + measure 내 위치 (0.0 ~ 1.0)
-var tick = (float)measure + ((float)(i / 2) / objLength);
-```
-
-**설명:**
-- `measure`: 마디 번호 (정수)
-- `i`: 데이터 문자열 내 인덱스 (2자리씩 읽으므로 `i / 2`가 슬롯 인덱스)
-- `objLength`: measure의 총 슬롯 수 (데이터 길이 / 2)
-- `tick`: measure 단위의 실수 값
-  - 예: measure 1의 첫 번째 슬롯 = 1.0
-  - 예: measure 1의 중간 슬롯 = 1.5
-  - 예: measure 2의 마지막 슬롯 = 2.999...
-
----
-
-## 시간 계산 로직
-
-**위치:** `BmsParser.CalculateTime()`
-
-BMS 파일의 노트 위치(tick)를 실제 시간(초)으로 변환하는 핵심 로직입니다.
-
-### 기본 개념
-
-- BMS에서 노트 위치는 `measure`(마디)와 `measure 내 위치`로 표현됩니다
-- `tick = measure + (measure 내 위치 / measure 길이)`
-- 예: measure 1의 중간 지점 = 1.5 tick
-- **1 measure = 4 beats** (4/4 박자 기준)
-
-### BPM 처리
-
-```csharp
-// 기본 BPM 설정 (#BPM 헤더)
-var bpm = float.Parse(value);
-var freq = 60f / bpm; // 1분음표 기준 (4분음표가 아님)
-// freq = 1분음표의 길이(초)
-```
-
-**중요:** `freq`는 **1분음표(whole note)**의 길이입니다. 4분음표가 아닙니다.
-
-### 시간 계산 알고리즘
-
-**1. BPM 데이터가 없는 경우:**
-```csharp
-if (dataList.Count == 0)
-{
-    return tick * 0.4f; // 기본 시간 계산 (1 measure = 4 beats)
-}
-```
-
-**2. BPM 변화가 없는 경우:**
-```csharp
-var data = dataList.FindAll(d => d.Tick < tick);
-if (data.Count == 0)
-{
-    // BPM 변화가 없으면 첫 번째 BPM 사용
-    var firstBpm = dataList[0];
-    time = tick * 4f * firstBpm.Freq; // 1 measure = 4 beats
-    return time;
-}
-```
-
-**3. BPM 변화가 있는 경우:**
-
-현재 구현은 복잡한 알고리즘을 사용합니다:
-
-```csharp
-// 현재 tick보다 작은 BPM 변화들 찾기
-var data = dataList.FindAll(d => d.Tick < tick);
-
-// 역순으로 순회하면서 각 BPM 구간별 시간 누적
-for (var j = data.Count - 1; j >= 0; j--)
-{
-    var obj = data[j];
-    var offset = 0f;
-    var freq = obj.Freq;
-    
-    // 이전 BPM 변화 지점과의 offset 계산
-    if (j - 1 >= 0)
-    {
-        var prevObj = data[j - 1];
-        offset = prevObj.Tick - obj.Tick;
-    }
-    
-    // 마지막 구간은 현재 tick까지
-    else
-    {
-        offset = tick - obj.Tick;
-    }
-    
-    // offset을 beat 단위로 변환하여 시간 계산
-    time += offset * 4f * freq;
-}
-```
-
-**구체적인 예시(기준값):**
-```
-기본 BPM: BASE_BPM (freq = 60/BASE_BPM)
-중간 BPM: FAST_BPM (freq = 60/FAST_BPM)
-
-노트가 measure 3.5에 있다면:
-- 초반 구간: base BPM 구간 누적 시간
-- 이후 구간: 변경된 BPM 구간 누적 시간
-- 총 시간: 각 구간 시간을 합산
-```
-
-**참고:** 현재 구현에서는 BPM 변화가 measure 단위로만 처리됩니다. 노트 데이터 채널(03, 04, 08)에서의 BPM 변화는 감지하지 않습니다.
-
----
-
-## 홀드 노트 길이 계산
-
-**위치:** `BmsParser.CalculateHoldNoteLengths()`
-
-파싱이 완료된 후, 홀드 노트의 길이를 계산합니다.
-
-### 일반 홀드 노트 (02-03 쌍)
-
-1. 레인별로 노트를 그룹화
-2. 시간 순으로 정렬
-3. 각 레인에서:
-   - `02`(홀드 시작) 노트를 찾으면
-   - 같은 레인에서 다음 `03`(홀드 끝) 노트를 찾음
-   - 길이 = `endNote.Time - note.Time`
-   - `note.Length`에 저장
-   - `03` 노트는 나중에 제거됨
-
-**중요:** `09` 노트는 지원하지 않습니다. `02-03` 쌍만 홀드로 처리됩니다.
-
-### 이벤트 홀드 노트 (04-05 쌍)
-
-1. 레인 9에서만 처리 (OPEN/CLOSE 노트는 모두 레인 9)
-2. `04`(OPEN) 노트를 찾으면
-3. 같은 레인에서 다음 `05`(CLOSE) 노트를 찾음
-4. 길이 = `closeNote.Time - openNote.Time`
-5. `openNote.Length`에 저장
-6. `05` 노트는 나중에 제거됨
-
-### 끝 노트 제거
-
-```csharp
-// 길이 계산 후 HoldEnd와 Close 노트 제거 (게임에 표시되지 않도록)
-notes.RemoveAll(n => n.NoteType == NoteType.HoldEnd || n.NoteType == NoteType.Close);
-```
-
-홀드 끝 노트(`03`, `05`)는 길이 계산에만 사용되고, 실제 게임에는 표시되지 않습니다.
-
----
-
-## 파싱 결과 저장
-
-**위치:** `sxtg2-mod/Main/Main.BmsBootstrap.cs` → `ScanAndParseBmsFiles()`, `sxtg2-mod/Hooks/Text/TextHook.BmsLoader.cs` → `ParseAndInjectBms(...)`
-
-```csharp
-// 커스텀 차트 주입을 위해 파싱된 노트 저장
-sxtg2.Processors.CustomChartInjector.SetParsedBmsNotes(parsedNotes);
-```
-
-파싱된 노트 리스트는 `CustomChartInjector`에 저장되어, 나중에 게임의 `SXGTData`에 주입됩니다.
-
-**ParsedNote 구조:**
-```csharp
 public class ParsedNote
 {
-    public float Time { get; set; }        // 시간(초)
-    public int Lane { get; set; }          // 게임 레인 (0-6, 9)
-    public NoteType NoteType { get; set; } // 노트 타입
-    public float Length { get; set; }      // 홀드 노트 길이(초)
-    public string OriginalNoteValue { get; set; } // 원본 노트 값 (01, 02, 03 등)
+    public float Time { get; set; }               // 초
+    public int Lane { get; set; }                 // 0~6, 오픈은 9
+    public NoteType NoteType { get; set; }        // Normal / Long / Open (끝 노트는 제거됨)
+    public float Length { get; set; }             // 홀드 길이(초), 짝이 없으면 0
+    public string OriginalNoteValue { get; set; } // 원본 값 ("01", "002" 등)
 }
 ```
 
----
+`ParseStatistics`의 `MissingEndNotes`/`OrphanEndNotes`는 현재 **아무 곳에서도 로그로 출력하지 않습니다**.
+길이 0인 홀드가 게임 판정을 멈추게 할 수 있으므로(아래 제한사항) 출력하도록 고치는 것이 좋습니다.
+
+## 캐시
+
+- 키: `Path.GetFullPath(filePath)` (대소문자 무시), 버전: `File.GetLastWriteTimeUtc(...).Ticks`
+- 같은 파일·같은 수정 시각이면 **같은 `ParseResult` 인스턴스**를 돌려줍니다. 리트라이 때 다시 파싱하지 않습니다.
+- 결과 객체는 공유되므로 호출하는 쪽에서 `Notes`를 수정하면 안 됩니다(현재 `CustomChartInjector`는 읽기만 함).
+- 파싱 실패(`null`)는 캐시하지 않습니다.
+
+## 테스트
+
+`sxtg2.LogicTests`가 `BmsParser.cs`를 링크해서 검증합니다(`run-logic-tests.bat`).
+
+- 기본 노트와 홀드 길이, 첫 노트 시각(마디 1 = 1.6초 @150BPM)
+- 3글자 값 모드(`#WAV001`)
+- `#BPM`이 데이터 줄 뒤에 있어도 인식
+- 오픈/클로즈 짝(레인 9)
+- 끝 누락/고아 끝 통계
+- 같은 경로 캐시(동일 참조)
 
 ## 현재 구현의 제한사항
 
-### 1. BPM 변화 채널 미지원
-- 채널 03, 04, 08 (BPM 변화 채널)을 감지하지 않음
-- 헤더의 `#BPMXX`만 파싱하지만, 실제 사용은 기본 BPM만 사용
-- measure 단위의 BPM 변화는 지원하지 않음
-
-### 2. 단일 BMS 파일만 사용
-- 초기화 시점(`Main.ScanAndParseBmsFiles`)에는 **첫 번째로 발견된 BMS가 “기본 차트”**로 세팅됩니다.
-- 하지만 실제 플레이에서는 `TextHook/ManagerPlayHook` 경로로 **트랙 기반 BMS를 재탐색/재파싱하여 덮어쓸 수 있습니다.**
-  - 즉 “항상 첫 파일만”은 아니고, **최종적으로는 플레이 진입 시 선택된 트랙에 의해 바뀔 수 있습니다.**
-
-### 3. 스캔 범위가 제한됨
-- 초기화 시점의 스캔은 `hwa` 루트 + 1단계 앨범 폴더까지만 `TopDirectoryOnly`로 찾습니다(재귀 아님).
-- TrackId 기반 검색(`TextHook`)은 별도의 방식으로 더 넓게 찾을 수 있으나, 이것도 “정확한 파일명(trackId.*) 우선 + 폴백” 로직입니다.
-
-### 4. BMS 확장 기능 미지원
-- STOP 채널, BGA 채널 등은 처리하지 않음
-- 노트 채널만 처리
-
-### 5. 파일 인코딩
-- 특별한 인코딩 처리를 하지 않음
-- UTF-8 또는 Shift-JIS 권장
-- 한글 파일명이나 주석이 있는 경우 인코딩 문제가 발생할 수 있음
-
----
+1. **BPM 하나만 사용** — BPM 변화(`03`/`08`), `#BPMxx`, STOP(`09`) 미지원.
+2. **마디 길이(`02`) 무시** — 쓰면 이후 타이밍이 전부 어긋남.
+3. **폴더당 BMS 하나** — `BMS_SELECTION.md` 참고.
+4. **홀드 끝 누락 시 판정 중단 위험** — 짝 없는 시작도 `Length=0`으로 남아 `HoldNote`로 주입되고, `FinishHoldNote`가
+   호출되지 않아 게임의 `CheckHoldTick`에서 `NullReferenceException`이 납니다(`BMS_FORMAT.md`의 경고 참고).
+5. **헤더 콜론 오인식** — 위 3)단계 참고.
+6. **인코딩** — UTF-8(BOM 인식)로 읽습니다. 데이터 줄은 ASCII라 문제없지만, 헤더는 어차피 `#BPM`/`#WAV` 외에는 쓰지 않습니다.
 
 ## 관련 문서
 
-- [GAME_LOGIC.md](GAME_LOGIC.md): 게임 로직 분석 및 노트 생성 과정
-- [IMPLEMENTATION.md](IMPLEMENTATION.md): 구현 상세 및 후킹 과정
-- [DOCUMENTATION.md](DOCUMENTATION.md): 종합 참조 문서
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+- [BMS_FORMAT.md](BMS_FORMAT.md): 입력 형식
+- [BMS_SELECTION.md](BMS_SELECTION.md): 어떤 BMS가 선택되는지
+- [NOTE_SYSTEM.md](NOTE_SYSTEM.md): 파싱 결과를 게임 노트로 바꾸는 과정
+- [GAME_LOGIC.md](GAME_LOGIC.md): 게임 쪽 노트/판정 구조
