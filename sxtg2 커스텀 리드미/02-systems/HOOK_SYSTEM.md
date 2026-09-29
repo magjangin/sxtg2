@@ -106,6 +106,11 @@ private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstructi
 "진단 로깅" 훅 4개는 2026-08-03 시이(Shii) 조사용으로 추가한 것으로, 게임 동작은 바꾸지 않지만 로그 레벨과
 무관하게 `MelonLogger.Msg`로 많은 줄을 남깁니다. `CURRENT_STATUS.md`에 정리 대상으로 기록되어 있습니다.
 
+주의: 진단 훅 중 `OpenConfirmWindow`/`instantiateOperatorCharacter`는 핵심 훅(`Awake`, `PlayPreview`)과 **같은 클래스**
+(`ManagerMusicSelectHook`)에 있고, 진단 전용 `confirmWindow` 필드 접근자도 그 클래스의 정적 필드입니다. 게임 업데이트로
+진단용 필드/메서드 이름이 바뀌면 핵심 훅까지 영향받을 수 있습니다(`CURRENT_STATUS.md` 알려진 문제 #16, 확인 필요).
+같은 이유로 `NoteSpriteHook`의 정적 `FieldRefAccess`가 실패하면 `Main.OnInitializeMelon`이 씬 이벤트 구독을 건너뜁니다(#15).
+
 ---
 
 ## 주요 훅 상세
@@ -159,6 +164,14 @@ FetchBMSToModulesPrefix(__instance, _bms, ___playTrack, ___bgaPlayer, ___default
   세 값은 모두 **`config.txt` 값 OR MelonPreferences 값**입니다(`ModHelpers.cs`). MelonPreferences의
   `BlockSaveBestRanking` 기본값이 `true`라서, `config.txt`에 `BlockSave=0`을 써도 차단이 풀리지 않습니다
   (알려진 문제 — `01-user-guide/TROUBLESHOOTING.md` 참고).
+- **차단 범위**: 막는 것은 위 두 메서드뿐입니다. `ManagerResult.Start`의 나머지(`playCount++`, `failCount++`,
+  `CheckResultSceneAchievements`의 `lastPlayedTrackID` 저장과 Steam 업적, 초반의 `PUREBLUE_FIRST`/`FULLCOMBO_FIRST`)와
+  `MoveToPlayLoadingScene`의 `LyrebirdServer.IncreaseTrackPlayCount`는 그대로 실행됩니다
+  (`CURRENT_STATUS.md` 알려진 문제 #13, #14). 두 대상 메서드는 `void`라 Prefix로 건너뛰어도 반환값 문제는 없습니다.
+- **오토플레이의 시간 캐시**: `CurrentTimeSeconds`는 플레이가 아닌 씬으로 갈 때만 -1로 리셋되므로, 씬 이름이 그대로인
+  리트라이에서는 이전 판의 값이 남습니다(알려진 문제 #19, 확인 필요). 게임에는 `ManagerPlay.autoPlay`(public bool)가
+  이미 있어 `RG_PS_Judgement.Update`가 그 값으로 `AutoPlayJudge`를 부르는데, 모드는 이 플래그를 쓰지 않고 Postfix에서
+  private 메서드를 직접 호출합니다.
 
 ### JudgeScoreMaxHook — 점수 상한
 

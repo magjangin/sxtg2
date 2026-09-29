@@ -812,6 +812,6 @@ public static void Lock()
 
 ## 관련 문서
 
-- [GAME_LOGIC.md](GAME_LOGIC.md): 게임 로직 분석 및 노트 생성 과정
-- [BMS_PARSING.md](BMS_PARSING.md): BMS 파일 파싱 상세
-- [DOCUMENTATION.md](DOCUMENTATION.md): 종합 참조 문서
+- [GAME_LOGIC.md](../02-systems/GAME_LOGIC.md): 게임 로직 분석 및 노트 생성 과정
+- [BMS_PARSING.md](../02-systems/BMS_PARSING.md): BMS 파일 파싱 상세
+- [DOCUMENTATION.md](../00-overview/DOCUMENTATION.md): 종합 참조 문서

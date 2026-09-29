@@ -234,6 +234,14 @@ PostRequestPlayResult()                  // 서버 전송
 **모드 개입**: `ResultSaveBlockHook`이 조건에 따라 `ComparePlayResultHighScore`와 `PostRequestPlayResult`를 건너뜁니다.
 `ManagerResultHook`(진단 로깅)은 `Start` Postfix입니다.
 
+**모드가 막지 않는 것**: `ManagerResult.Start`는 위 흐름 앞뒤로 `userData.playCount++`(113행), 점수 1,000,000 이상/풀콤보일 때
+`RequestAchievementUnlock("PUREBLUE_FIRST"/"FULLCOMBO_FIRST")`(150~161행), 실패 시 `failCount++`(182행)을 실행하고,
+`CheckResultSceneAchievements()`는 플레이 횟수/난이도/실패 횟수 업적과 `lastPlayedTrackID`/`sameTrackPlayCount` 갱신을
+합니다(236~253행). 모두 `ResultSaveBlockHook` 밖입니다. 곡을 시작할 때는 `ManagerMusicSelect.MoveToPlayLoadingScene`이
+`lastSelectedSongIndex = 트랙 ID`를 저장하고 `LyrebirdServer.IncreaseTrackPlayCount`로 서버에 곡 ID를 보냅니다(540~544행).
+저장은 전부 `UserAccountModule.SaveRequest` → `FSForSteam.SaveData` → `SteamRemoteStorage.FileWrite`(Steam 클라우드)입니다.
+자세한 영향은 `CURRENT_STATUS.md` 알려진 문제 #13, #14.
+
 ---
 
 ## 모드 개입 지점 요약

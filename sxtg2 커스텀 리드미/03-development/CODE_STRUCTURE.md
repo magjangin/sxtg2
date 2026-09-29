@@ -79,6 +79,17 @@ sxtg2-mod/
   `tools/merge_partial_classes.py`: 2026-07-21 partial 클래스 병합(`95674e8`)에 쓴 일회성 스크립트로,
   대상 파일이 이미 없어 지금은 쓸 일이 없습니다.
 
+### 그 밖의 프로젝트 파일 정리 후보 (2026-09-29)
+
+- `sxtg2.sln`의 프로젝트 GUID(`{3B0C2BC5-…}`)와 csproj의 `ProjectGuid`(`{222E1C89-…}`)가 다릅니다.
+- `AssemblyInfo.cs`의 `AssemblyTitle`/`AssemblyProduct`가 옛 이름 `sixgtar3`입니다. 버전은 `Main.cs`의 `MelonInfo`,
+  `AssemblyInfo.cs`, README에 따로 적혀 있어 올릴 때 세 곳을 함께 고쳐야 합니다.
+- csproj에 쓰지 않는 참조(`System.Data`, `System.Xml.Linq`, `System.Net.Http`)와 `RuntimeIdentifiers`가 남아 있습니다.
+- 두 빌드 스크립트는 156줄짜리 거의 같은 파일이고, 끝의 `pause`가 자동 실행을 막습니다. `taskkill /IM VBCSCompiler.exe`는
+  다른 빌드의 컴파일러 서버까지 죽이는데 `UseSharedCompilation=false`가 이미 있어 겹칩니다. `.gitattributes`가 없어 작업 트리
+  줄바꿈이 파일마다 다릅니다(`build.bat`은 LF, `build-release.bat`은 CRLF).
+- `sxtg2.LogicTests`는 `sxtg2.sln`에 포함되어 있지 않아 Visual Studio 테스트 탐색기에 안 보입니다.
+
 ### 알려진 빌드 설정 문제 (확인 필요)
 
 `build.bat`/`build-release.bat`는 `/p:Platform="Any CPU"`로 솔루션을 빌드하고, 솔루션은 이를 프로젝트의

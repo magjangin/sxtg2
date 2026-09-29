@@ -67,6 +67,7 @@ depotdownloader -app 1802720 -depot 1802721 -manifest 8524424218577615553
 
 - 파일: `{BMS 파일명}.txt` → `trackinfo.txt` → `info.txt` → 폴더의 첫 `*.txt` 순서로 하나를 읽음(UTF-8)
 - 형식: 한 줄에 `키: 값`, `#`/`//`로 시작하면 주석
+- ⚠️ 파일은 **UTF-8**로 저장하세요. 메모장에서 ANSI로 저장하면 `제목:` 키가 깨져 경고 없이 제목이 `커스텀 차트`가 됩니다(알려진 문제 #21).
 
 ```text
 제목: My Custom Song
@@ -135,6 +136,8 @@ depotdownloader -app 1802720 -depot 1802721 -manifest 8524424218577615553
   - 파일을 읽지 못하면(편집기가 잠근 상태 등) 기존 값을 유지하고 다음 플레이 때 다시 시도합니다.
   - 새로 만들어지는 파일 머리말의 "게임 실행 시 자동 적용됩니다" 문구는 옛 설명입니다. 실제 동작은 위와 같습니다.
 - `#` 또는 `//`로 시작하는 줄은 주석입니다. 형식은 `키=값`이고 키는 대소문자를 구분하지 않습니다.
+- ⚠️ 주석은 **줄 맨 앞에서만** 인식합니다. `AutoPlay=1 # 메모`처럼 값 뒤에 주석을 붙이면 값이 `1 # 메모`가 되어 경고 없이
+  기본값으로 무시됩니다. 오탈자 키도 경고 없이 무시됩니다(알려진 문제 #20).
 
 ### 켜기/끄기 값
 
@@ -187,6 +190,13 @@ depotdownloader -app 1802720 -depot 1802721 -manifest 8524424218577615553
 - `AutoPlay`/`AllPerfect`/`BlockSave`는 아래 MelonPreferences 값과 **OR**로 합쳐집니다. MelonPreferences의
   `BlockSaveBestRanking` 기본값이 `true`라서, **`config.txt`에 `BlockSave=0`을 써도 저장 차단이 풀리지 않습니다.**
   기록을 저장하려면 `UserData\MelonPreferences.cfg`의 `[sxtg2]`에서 `BlockSaveBestRanking = false`로도 바꿔야 합니다.
+- ⚠️ **차단을 끄면 커스텀 곡의 기록도 실제 세이브에 저장됩니다.** 게임은 곡 ID로 기록 파일을 만들고(`CUSTOM_…` ID도 예외 없음),
+  모든 저장이 Steam 클라우드(`SteamRemoteStorage`)를 거칩니다. 원본 곡 기록만 남기고 싶다면 코드 쪽 개선이 필요합니다
+  (`CURRENT_STATUS.md` 알려진 문제 #13).
+- ⚠️ **`BlockSave`는 기록/랭킹 전송만 막습니다.** 결과 화면이 하는 나머지 일(플레이 횟수와 실패 횟수 증가, 마지막 플레이 곡 저장,
+  **Steam 업적 해금**)과, 곡을 시작할 때 원본이 서버로 보내는 플레이 카운트(커스텀 곡 ID 포함)는 막지 않습니다.
+  오토플레이/올퍼펙트/`MaxScore` 변경/쉬운 커스텀 차트로 `PUREBLUE_FIRST`, `FULLCOMBO_FIRST` 같은 업적이 열릴 수 있습니다
+  (`CURRENT_STATUS.md` 알려진 문제 #13, #14).
 
 ## 7) MelonPreferences 항목
 

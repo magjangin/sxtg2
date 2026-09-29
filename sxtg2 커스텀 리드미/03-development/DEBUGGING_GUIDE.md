@@ -365,3 +365,4 @@ catch (ReflectionTypeLoadException ex)
     var loadedTypes = ex.Types.Where(t => t != null);
     // loadedTypes 사용
 }
+```

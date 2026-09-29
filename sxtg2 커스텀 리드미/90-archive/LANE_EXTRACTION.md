@@ -117,7 +117,7 @@ var noteList = itemProp.GetValue(laneData, new object[] { 0 });
 
 ## 3) 레인별 "추출" (읽기/분석) - NoteDataExtractor
 
-**파일**: [`sxtg2-mod/Processors/NoteDataExtractor.cs`](../sxtg2-mod/Processors/NoteDataExtractor.cs)
+**파일**: `sxtg2-mod/Processors/NoteDataExtractor.cs` (삭제됨)
 
 ### 목적
 
@@ -298,7 +298,7 @@ if (extractedNotes.Count > 0)
 
 ## 4) 레인별 "타입 추출" (실제 타입/생성자 캐시) - SXGTDataHook
 
-**파일**: [`sxtg2-mod/Hooks/SXGT/SXGTDataHook.cs`](../sxtg2-mod/Hooks/SXGT/SXGTDataHook.cs)
+**파일**: `sxtg2-mod/Hooks/SXGT/SXGTDataHook.cs` (삭제됨)
 
 ### 왜 타입 추출이 필요한가?
 
@@ -585,7 +585,7 @@ if (_holdNoteDurationConstructor != null)
 
 ## 5) 레인별 "제거" (Clear/RemoveAt) - SXGTDataHook.ClearAllNotes
 
-**파일**: [`sxtg2-mod/Hooks/SXGT/SXGTDataHook.cs`](../sxtg2-mod/Hooks/SXGT/SXGTDataHook.cs)
+**파일**: `sxtg2-mod/Hooks/SXGT/SXGTDataHook.cs` (삭제됨)
 
 ### 목적
 
@@ -822,9 +822,9 @@ for (int lane = 0; lane <= 9; lane++)
 ```
 
 **사용 위치**:
-- [`NoteDataExtractor.cs`](../sxtg2-mod/Processors/NoteDataExtractor.cs) - `ExtractNoteData`
-- [`SXGTDataHook.cs`](../sxtg2-mod/Hooks/SXGT/SXGTDataHook.cs) - `ClearAllNotes`
-- [`CustomChartInjector.cs`](../sxtg2-mod/Processors/CustomChartInjector.cs) - 노트 주입
+- `NoteDataExtractor.cs` (삭제됨) - `ExtractNoteData`
+- `SXGTDataHook.cs` (삭제됨) - `ClearAllNotes`
+- [`CustomChartInjector.cs`](../../sxtg2-mod/Processors/CustomChartInjector.cs) - 노트 주입
 
 ### 레인 범위 선택 근거
 

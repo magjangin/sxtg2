@@ -98,6 +98,9 @@ Transpiler는 `Ldc_R4 1000000f` 명령어를 찾아 상수를 새 값으로 굽�
 (`Util.cs`, `ManagerResult.cs`, `ManagerMusicSelect.cs`의 `score >= 1000000` 비교)는 별도의
 하드코딩 상수라 그대로입니다. 상한을 1000000보다 크게 잡으면 그 화면들에서 만점 취급이
 어긋날 수 있으니, `BlockSave=1`을 유지한 채 사용하는 것을 권장합니다.
+다만 `BlockSave=1`은 기록/랭킹 전송만 막고 Steam 업적은 막지 못합니다. 결과 화면이 `score >= 1000000`이면
+`PUREBLUE_FIRST`/`FULLCOMBO_FIRST` 업적을 바로 요청하므로, `MaxScore`를 1000000보다 크게 잡으면(예: 2000000이면 노트
+절반만 맞혀도 1000000 이상) 쉽게 열립니다(`CURRENT_STATUS.md` 알려진 문제 #13).
 클리어 효과음 기준(`RG_PS_Judgement.JudgeDivergence`의 `JudgeScore >= 700000f`)도 고정값이라,
 상한을 700000 이하로 낮추면 풀콤보가 아닐 때 `Clear_Normal`이 나오지 않습니다.
 

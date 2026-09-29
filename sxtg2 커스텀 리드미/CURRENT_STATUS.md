@@ -1,12 +1,13 @@
 # 현재 상태
 
-기준일: 2026-09-28 (코드 v1.1.0, 커밋 `2093826`)
+기준일: 2026-09-29 (코드 v1.1.0, 커밋 `0bde1f8`)
 
 ## 현재 결론
 
 커스텀 차트 흐름, 판정바/키뷰어, 설정 파일(플레이마다 재로드)이 동작하는 상태입니다. 2026-09-28 전체 점검에서
 코드 버그 후보 몇 가지를 찾았고(아래 "알려진 문제"), **코드는 아직 고치지 않았습니다**. 문서는 같은 날 현재 코드
-기준으로 다시 정리했습니다.
+기준으로 다시 정리했습니다. 2026-09-29에 코드 전체와 디컴파일 원본을 다시 대조해 #13~#21과 사소한 것 목록을
+추가했습니다(이번에도 코드는 수정하지 않고 문서에만 기록).
 
 ## 검증된 상태
 
@@ -15,9 +16,10 @@
 - 실제 게임에서 커스텀 차트 흐름, 판정바 등급 색, 키뷰어 표시, v1.1.0 설정 재로드(`MaxScore` 1000000 → 2000000이
   재시작 없이 다음 플레이에 반영) 확인
 
-## 알려진 문제 (2026-09-28 점검, 코드 미수정)
+## 알려진 문제 (2026-09-28 / 09-29 점검, 코드 미수정)
 
 디컴파일 원본(`sxtg2/`)과 대조하거나 파서를 직접 실행해서 확인한 것들입니다. "확인 필요"는 실게임 확인이 아직 없는 것입니다.
+#1~#12는 09-28, #13~#21은 09-29 점검에서 추가했습니다.
 
 | # | 문제 | 위치 | 영향 |
 | --- | --- | --- | --- |
@@ -33,13 +35,85 @@
 | 10 | 모든 노트에 `SetNativeSize()` → 게임 노트 크기 옵션이 무시될 수 있음 (확인 필요) | `Loaders/CustomNoteLoaders.cs` `NoteRendererRecovery` | 노트 크기 |
 | 11 | 판정바 히트가 장착 위젯 수만큼 중복 등록, 위젯이 없으면 틱 없음 | `Features/JudgmentBarFeature.cs` | 판정바 표시 |
 | 12 | BMS 채널 `02`(마디 길이) 무시, BPM 변화 미지원 | `Loaders/BmsParser.cs` | 해당 차트 타이밍 어긋남 |
+| 13 | `BlockSave`가 막는 범위가 좁음: `ResultSaveBlockHook`은 `ComparePlayResultHighScore`/`PostRequestPlayResult`만 건너뜀. 원본 `ManagerResult.Start`의 `playCount++`/`failCount++`, `lastPlayedTrackID` 저장, Steam 업적(`PUREBLUE_FIRST`, `FULLCOMBO_FIRST`, `COMET_FIRST` 등)은 그대로 실행됨. `BlockSave`를 끄면(#3 우회법) `GetPlayData`가 `CUSTOM_…` ID로 새 기록을 만들어 `SteamRemoteStorage`(Steam 클라우드)에 저장 | `Hooks/GameplayHooks.cs` `ResultSaveBlockHook`, 원본 `ManagerResult.cs:113,150-161,182-185,236-252` | 커스텀 차트/오토플레이/올퍼펙트/`MaxScore` 변경으로 Steam 업적 해금과 카운터 증가, 차단을 끄면 클라우드 세이브 오염 |
+| 14 | 곡을 시작할 때 원본이 `LyrebirdServer.IncreaseTrackPlayCount(CUSTOM_…)`로 커스텀 트랙 ID를 공식 서버(`lyrebirdferdinant.com:3939`)에 보냄. 저장 차단 훅 범위 밖 | 원본 `ManagerMusicSelect.cs:540-544`, `LyrebirdServer.cs:256` | 커스텀 ID가 서버로 나감 |
+| 15 | (확인 필요, 게임 업데이트 시) `NoteSpriteHook`의 `static readonly FieldRefAccess`가 필드 이름 변경으로 `TypeInitializationException`을 던지면 `Main.OnInitializeMelon`이 씬 이벤트 구독(`activeSceneChanged`)까지 건너뜀. `NoteSpriteHook.Initialize()`가 구독보다 먼저, 별도 `try` 없이 호출됨. `CustomNotes` 폴더 생성 실패도 같은 결과 | `Main/Main.cs:27-38`, `Hooks/GameplayHooks.cs` | 판정바/키뷰어가 안 나오고 설정 재로드도 멈춤 |
+| 16 | (확인 필요) 진단 훅과 핵심 훅이 한 클래스(`ManagerMusicSelectHook`)에 섞여 있고, 진단 전용 `confirmWindow` `FieldRef`가 정적 필드임. 필드가 사라지면 같은 클래스의 `PlayPreviewPrefix`가 예외를 던질 수 있고, 진단 훅 대상 메서드가 바뀌면 클래스 단위 패치 실패가 핵심 패치(`Awake`/`PlayPreview`)로 번질 수 있음 | `Features/MusicSelectFeature.cs` | 커스텀 곡 등록/미리듣기 중단 가능 |
+| 17 | 주입 도중 예외가 나면 레인이 이미 비워진 채 반쯤 채워진 상태로 진행함(예외를 삼키고 반환, 호출부는 성공으로 보고 BGM 교체까지 진행, 노트 수는 도너 값) | `Processors/CustomChartInjector.cs` `InjectBmsNotesToLaneData` | 깨진 차트로 플레이 |
+| 18 | `EnableJudgmentBar=0`이어도 `RegisterHit`이 계속 `HitHistory`에 추가하는데 정리(`RemoveAll`)는 그리기 함수 안에만 있어 계속 늘어남. `OnGUI`가 프레임당 여러 이벤트로 불리는데 `Repaint` 필터가 없어 판정바/키뷰어가 매번 클로저와 문자열을 할당함 | `Features/JudgmentBarFeature.cs`, `Features/KeyViewerFeature.cs` | 메모리 증가(작음), 불필요한 GC |
+| 19 | (확인 필요) 오토플레이가 게임의 `ManagerPlay.autoPlay`(public bool) 대신 private `AutoPlayJudge`를 Postfix에서 직접 호출하고, 시간 캐시 `CurrentTimeSeconds`는 플레이가 아닌 씬으로 갈 때만 -1로 리셋됨 → 씬 이름이 그대로인 리트라이에서 이전 판 값이 남아 첫 프레임에 노트가 조기 판정될 가능성. 메서드를 못 찾으면 매 프레임 `AccessTools`로 다시 찾고 경고도 없음 | `Hooks/GameplayHooks.cs` `AutoPlayHook`, `Main/Main.cs:69-72` | 오토플레이 리트라이 오동작 가능 |
+| 20 | `config.txt`의 줄 끝 주석(`AutoPlay=1 # 메모`)은 값이 `1 # 메모`가 되어 경고 없이 기본값으로 무시됨. 오탈자 키도 경고 없음. 옵션 하나를 추가하려면 6곳(기본값, 템플릿, 파싱, Snapshot, 요약, 누락 항목 추가)을 고쳐야 함 | `Helpers/ModHelpers.cs` `LoadConfigFile` | 설정이 조용히 안 먹음 |
+| 21 | `trackinfo.txt`를 ANSI(메모장 CP949)로 저장하면 `StreamReader`가 UTF-8로 읽어 `제목:` 키가 깨지고, 제목이 경고 없이 `커스텀 차트`가 됨. 제목이 없으면 모든 곡이 같은 이름 | `Loaders/TrackInfoParser.cs`, `Features/MusicSelectFeature.cs` `CreateCustomTrack` | 곡 정보 누락 |
 
 사소한 것: 색상명 `핑크` 미인식(`핑`으로 오타), 기본 `config.txt` 머리말의 "게임 실행 시 적용" 문구가 옛 설명,
 켜기/끄기 값에 모르는 단어를 써도 경고 없음, `ParseFlexibleBool` 테스트가 실제 함수가 아닌 복사본을 검증,
 테스트 프로젝트의 호출되지 않는 `Inspect*` 메서드, 빈 `clean.bat`, `build.bat` LF 줄바꿈(`goto` 오작동 가능성).
 
+사소한 것 (2026-09-29 추가):
+
+- BMS: `#BPM Infinity`가 `float.TryParse`를 통과함(`> 0`만 검사) → 모든 노트가 0초에 몰림.
+- 로그: `ModLog.Verbose($"…")`의 보간 문자열이 로그 레벨과 무관하게 매번 만들어짐(노트 생성/판정마다).
+  `AllPerfectJudgeHook`/`FastSlowMeter_OnGetJudge_Patch`의 `TargetMethods()`는 대상이 0개여도 경고가 없음.
+- 연출: NoteSway는 진폭이 0이 돼도 x를 `BaseX`로 되돌리지 않음. NoteSpeedChaos 레인별 모드의 시드는
+  `InstanceID % 1000`(음수 가능, 실행마다 다름)이라 레인 인덱스 기반이 더 낫음.
+- 프로젝트 파일: `sxtg2.sln`의 프로젝트 GUID `{3B0C2BC5…}`가 csproj `ProjectGuid` `{222E1C89…}`와 다름.
+  `AssemblyInfo.cs`의 `AssemblyTitle`/`AssemblyProduct`가 옛 이름 `sixgtar3`. 버전 문자열이 `Main.cs`(`MelonInfo`),
+  `AssemblyInfo.cs`, README에 중복됨. csproj에 안 쓰는 참조(`System.Data`, `System.Xml.Linq`, `System.Net.Http`)와
+  `RuntimeIdentifiers`가 남아 있음.
+- 빌드 스크립트: `build.bat`/`build-release.bat`이 156줄짜리 거의 같은 파일, 끝의 `pause`가 자동 실행을 막음,
+  `taskkill /IM VBCSCompiler.exe`는 다른 빌드까지 죽이는데 `UseSharedCompilation=false`와 겹침. `.gitattributes` 없음
+  (작업 트리 줄바꿈이 파일마다 다름).
+- 테스트: `sxtg2.LogicTests`가 `sxtg2.sln`에 없음. 콜론 헤더(#4), 끝 없는 홀드(#1), `TrackInfoParser`, 설정 파서
+  (`ParseFloatSetting`/`ParseSideSetting`/`ParseShapeSetting`)는 테스트가 없음.
+- 저장소 루트에 `Latest.log`(2026-01), `build_detailed.log`(455KB)가 남아 있음(`.gitignore` 대상이라 커밋은 안 됨).
+
 저장소 정리 후보: `list_managed_games.txt`(개인 Steam 라이브러리 목록, 모드와 무관), `release/sxtg2.dll`(v1.0.0으로
-소스보다 오래됨), `tools/merge_partial_classes.py`(끝난 일회성 스크립트).
+소스보다 오래됨), `tools/merge_partial_classes.py`(끝난 일회성 스크립트). `release/`의 zip/dll은 git에 바이너리로
+들어 있으니 GitHub Releases로 옮기는 편이 낫습니다.
+
+### 수정 방향 제안 (2026-09-29, 아직 적용 안 함)
+
+| # | 제안 |
+| --- | --- |
+| 3, 13 | 함께 설계: 커스텀 트랙, 오토플레이, 올퍼펙트, `MaxScore`≠기본일 때는 항상 차단하고, 원본 곡만 `BlockSave` 설정을 따르게 함. 업적은 `UserAccountModule.RequestAchievementUnlock` Prefix로 같은 조건에서 막음. `config.txt`와 MelonPreferences의 OR 결합은 없애거나 한쪽으로 통일 |
+| 14 | `LyrebirdServer.IncreaseTrackPlayCount`(와 `GetHighScoreList`)에 `CustomTrackData` ID면 건너뛰는 Prefix |
+| 15, 16 | `NoteSpriteHook.Initialize()`를 씬 구독 뒤로 옮기거나 별도 `try`로 감싸고, `FieldRefAccess`는 지연 해석. 진단 훅은 별도 클래스로 분리(또는 `LogLevel=2`에서만 동작) |
+| 17, 1 | 임시 리스트에 노트를 만들고 성공했을 때만 `laneData`를 교체, 실패하면 예외를 올려 도너 패턴 유지. 짝 없는 홀드는 `ShortNote`로 바꾸거나 버리고 경고 로그(`MissingEndNotes`/`OrphanEndNotes`도 로그로 출력) |
+| 18 | 판정바가 꺼져 있으면 `RegisterHit` 건너뛰기, 그리기 함수는 `Event.current.type == EventType.Repaint`일 때만 실행 |
+| 19 | 플레이 시작 시 `ManagerPlay.Instance.autoPlay = true`로 세팅하는 방식을 검토(게임 기능 재사용). 현재 방식을 유지한다면 씬 전환마다 `CurrentTimeSeconds = -1` |
+| 20 | 줄 끝 `#`/`//` 주석 제거 후 파싱, 모르는 키와 값에는 경고, 키→처리기 표로 6곳 수정을 1곳으로 |
+| 21 | 필드를 하나도 못 읽었으면 경고, 기본 제목은 폴더 이름, BMS 헤더 `#TITLE`/`#ARTIST`/`#PLAYLEVEL` 읽기 |
+| 4 | 채널부(`#`와 `:` 사이)에 공백이 있으면 헤더로 보고 건너뜀 |
+| 테스트 | `ParseFlexibleBool` 등 순수 함수를 Unity 무의존 파일로 빼서 모드와 테스트가 같은 소스를 링크. 위 회귀 케이스 추가 |
+
+## 2026-09-29 추가 점검 (코드 미수정, 문서만)
+
+- **범위**: `sxtg2-mod/` 13개 파일 전체, `sxtg2.LogicTests`, 빌드 스크립트, 문서 전체를 읽고 디컴파일 원본
+  (`ManagerResult`, `ManagerMusicSelect`, `ManagerPlay`, `RG_PS_Judgement`, `TrackData`, `UserAccountModule`,
+  `FSForSteam`, `LyrebirdServer`)과 대조. 결과는 위 "알려진 문제" #13~#21, 사소한 것, 수정 방향 제안.
+- **원본과 대조해서 안전하다고 확인한 것**
+  - `ResultSaveBlockHook`의 대상 두 메서드(`PostRequestPlayResult`, `ComparePlayResultHighScore`)는 `void`라
+    Prefix로 건너뛰어도 반환값 문제가 없음.
+  - 노트는 `NoteGenerator.Generate`가 `Object.Instantiate`로 만들고 풀링하지 않으므로 `GetInstanceID()` 캐시
+    (NoteSway/NoteSpeedChaos)가 안전함.
+  - 저장된 `lastSelectedSongIndex`가 `CUSTOM_…`여도, 곡 목록에 없는 ID면 `ManagerMusicSelect`가 0번 곡으로 폴백함
+    (모드를 빼거나 폴더 이름을 바꿔도 곡 선택 화면이 깨지지 않음).
+  - `Util.GetTrackDataListByVisibility()`는 호출마다 새 리스트를 만들므로 `InjectCustomTracks`의 "이미 주입됨"
+    검사는 사실상 항상 통과하고, 곡 선택 화면에 들어갈 때마다 폴더를 다시 스캔한다는 문서 설명이 맞음.
+  - `ManagerPlay.Update`는 `isGameStarted` 이후에만 `CheckGameFinished`를 호출함(#19 분석의 근거).
+- **보존 관점 메모**: 이 저장소 모드에는 Steam/DLC 검증 우회 코드가 없음(과거 `SteamManifestLock`은 제거됨).
+  원본 게임은 `FSForSteam.InitializeSteamWorks`에서 `SteamClient.Init(1802720)`이 실패하면 `Util.RequireAppQuit()`로
+  종료하고, 모든 저장이 `SteamRemoteStorage`를 거치며, 점수/플레이 횟수는 `lyrebirdferdinant.com:3939`로 보냄.
+  모드에는 게임 버전 가드가 없어서 업데이트되면 조용히 깨질 수 있음(→ 시작 시 게임 버전/`Assembly-CSharp` 해시를
+  로그로 남기고 테스트한 버전과 다르면 경고하는 것을 권장). `BlockSave`를 "커스텀/치트일 때만 차단"으로 바꾸면
+  서버가 닫힌 뒤에도 원본 곡 결과 화면이 서버를 호출하게 되므로, 그 전에 `PostToServer`의 실패 처리(`IncreaseTrackPlayCount`는
+  콜백에 `null`을 넘김)를 확인해야 함.
+- **문서 수정**: 위 항목을 `INSTALL_AND_LAYOUT`, `TROUBLESHOOTING`, `HOOK_SYSTEM`, `GAME_LOGIC`, `SCORE_SYSTEM`,
+  `ARCHITECTURE`, `CODE_STRUCTURE`에 경고로 반영. `DEBUGGING_GUIDE.md`의 닫히지 않은 코드 펜스 수정,
+  `90-archive/` 깨진 링크 18개 수정, `문서_구조_개선안.md`에 보관 배너 추가.
+- **아직 안 한 문서 정리**: `DEBUGGING_GUIDE.md` 115행 이후의 범용 예시 코드(약 250줄) 정리, 알려진 문제가 여러 문서에
+  중복된 것을 한 곳으로 모으기, `CURRENT_STATUS.md`를 변경 이력/알려진 문제/계획으로 나누기, 문서 폴더 이름의
+  공백/한글(링크가 `%20`으로 깨지기 쉬움) 정리.
 
 ## 2026-09-28 문서 정리
 
@@ -366,7 +440,9 @@ Result
 
 ## 남은 주의점
 
-- 위 "알려진 문제" 표의 항목들(특히 #1 홀드 끝 누락, #2 노트 스킨, #3 BlockSave).
+- 위 "알려진 문제" 표의 항목들(특히 #1 홀드 끝 누락, #2 노트 스킨, #3/#13 BlockSave의 차단 범위, #14 서버로 나가는 커스텀 ID).
+- `BlockSave`는 이름과 달리 업적, 플레이 횟수, 서버 플레이 카운트는 막지 않습니다(#13, #14). 오토플레이/올퍼펙트/
+  `MaxScore` 변경/커스텀 차트를 쓰는 동안은 Steam 업적이 열릴 수 있다는 점을 알고 사용하세요.
 - 진단용 로깅 훅(`OpenConfirmWindowPostfix`, `InstantiateOperatorCharacterPostfix`, `OperatorCharacterHook`,
   `ManagerResultHook`)은 조사가 끝나면 제거하거나 `LogLevel=2`에서만 동작하게 바꿀 대상입니다.
 - 게임 업데이트로 private 필드/메서드 이름이나 판정 메서드의 `1000000f` 리터럴이 바뀌면 해당 기능이 조용히
