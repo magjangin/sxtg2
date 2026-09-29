@@ -7,7 +7,7 @@
 커스텀 차트 흐름, 판정바/키뷰어, 설정 파일(플레이마다 재로드)이 동작하는 상태입니다. 2026-09-28 전체 점검에서
 코드 버그 후보 몇 가지를 찾았고(아래 "알려진 문제"), **코드는 아직 고치지 않았습니다**. 문서는 같은 날 현재 코드
 기준으로 다시 정리했습니다. 2026-09-29에 코드 전체와 디컴파일 원본을 다시 대조해 #13~#21과 사소한 것 목록을
-추가했습니다(이번에도 코드는 수정하지 않고 문서에만 기록).
+추가했습니다(기록만 했고, 이 중 #18만 같은 날 코드를 고쳤습니다 — "2026-09-29 수정" 절 참고).
 
 ## 검증된 상태
 
@@ -40,7 +40,7 @@
 | 15 | (확인 필요, 게임 업데이트 시) `NoteSpriteHook`의 `static readonly FieldRefAccess`가 필드 이름 변경으로 `TypeInitializationException`을 던지면 `Main.OnInitializeMelon`이 씬 이벤트 구독(`activeSceneChanged`)까지 건너뜀. `NoteSpriteHook.Initialize()`가 구독보다 먼저, 별도 `try` 없이 호출됨. `CustomNotes` 폴더 생성 실패도 같은 결과 | `Main/Main.cs:27-38`, `Hooks/GameplayHooks.cs` | 판정바/키뷰어가 안 나오고 설정 재로드도 멈춤 |
 | 16 | (확인 필요) 진단 훅과 핵심 훅이 한 클래스(`ManagerMusicSelectHook`)에 섞여 있고, 진단 전용 `confirmWindow` `FieldRef`가 정적 필드임. 필드가 사라지면 같은 클래스의 `PlayPreviewPrefix`가 예외를 던질 수 있고, 진단 훅 대상 메서드가 바뀌면 클래스 단위 패치 실패가 핵심 패치(`Awake`/`PlayPreview`)로 번질 수 있음 | `Features/MusicSelectFeature.cs` | 커스텀 곡 등록/미리듣기 중단 가능 |
 | 17 | 주입 도중 예외가 나면 레인이 이미 비워진 채 반쯤 채워진 상태로 진행함(예외를 삼키고 반환, 호출부는 성공으로 보고 BGM 교체까지 진행, 노트 수는 도너 값) | `Processors/CustomChartInjector.cs` `InjectBmsNotesToLaneData` | 깨진 차트로 플레이 |
-| 18 | `EnableJudgmentBar=0`이어도 `RegisterHit`이 계속 `HitHistory`에 추가하는데 정리(`RemoveAll`)는 그리기 함수 안에만 있어 계속 늘어남. `OnGUI`가 프레임당 여러 이벤트로 불리는데 `Repaint` 필터가 없어 판정바/키뷰어가 매번 클로저와 문자열을 할당함 | `Features/JudgmentBarFeature.cs`, `Features/KeyViewerFeature.cs` | 메모리 증가(작음), 불필요한 GC |
+| 18 | **(2026-09-29 수정됨)** `EnableJudgmentBar=0`이어도 `RegisterHit`이 계속 `HitHistory`에 추가하는데 정리(`RemoveAll`)는 그리기 함수 안에만 있어 계속 늘어남. `OnGUI`가 프레임당 여러 이벤트로 불리는데 `Repaint` 필터가 없어 판정바/키뷰어가 매번 클로저와 문자열을 할당함 | `Features/JudgmentBarFeature.cs`, `Features/KeyViewerFeature.cs` | 메모리 증가(작음), 불필요한 GC |
 | 19 | (확인 필요) 오토플레이가 게임의 `ManagerPlay.autoPlay`(public bool) 대신 private `AutoPlayJudge`를 Postfix에서 직접 호출하고, 시간 캐시 `CurrentTimeSeconds`는 플레이가 아닌 씬으로 갈 때만 -1로 리셋됨 → 씬 이름이 그대로인 리트라이에서 이전 판 값이 남아 첫 프레임에 노트가 조기 판정될 가능성. 메서드를 못 찾으면 매 프레임 `AccessTools`로 다시 찾고 경고도 없음 | `Hooks/GameplayHooks.cs` `AutoPlayHook`, `Main/Main.cs:69-72` | 오토플레이 리트라이 오동작 가능 |
 | 20 | `config.txt`의 줄 끝 주석(`AutoPlay=1 # 메모`)은 값이 `1 # 메모`가 되어 경고 없이 기본값으로 무시됨. 오탈자 키도 경고 없음. 옵션 하나를 추가하려면 6곳(기본값, 템플릿, 파싱, Snapshot, 요약, 누락 항목 추가)을 고쳐야 함 | `Helpers/ModHelpers.cs` `LoadConfigFile` | 설정이 조용히 안 먹음 |
 | 21 | `trackinfo.txt`를 ANSI(메모장 CP949)로 저장하면 `StreamReader`가 UTF-8로 읽어 `제목:` 키가 깨지고, 제목이 경고 없이 `커스텀 차트`가 됨. 제목이 없으면 모든 곡이 같은 이름 | `Loaders/TrackInfoParser.cs`, `Features/MusicSelectFeature.cs` `CreateCustomTrack` | 곡 정보 누락 |
@@ -79,14 +79,28 @@
 | 14 | `LyrebirdServer.IncreaseTrackPlayCount`(와 `GetHighScoreList`)에 `CustomTrackData` ID면 건너뛰는 Prefix |
 | 15, 16 | `NoteSpriteHook.Initialize()`를 씬 구독 뒤로 옮기거나 별도 `try`로 감싸고, `FieldRefAccess`는 지연 해석. 진단 훅은 별도 클래스로 분리(또는 `LogLevel=2`에서만 동작) |
 | 17, 1 | 임시 리스트에 노트를 만들고 성공했을 때만 `laneData`를 교체, 실패하면 예외를 올려 도너 패턴 유지. 짝 없는 홀드는 `ShortNote`로 바꾸거나 버리고 경고 로그(`MissingEndNotes`/`OrphanEndNotes`도 로그로 출력) |
-| 18 | 판정바가 꺼져 있으면 `RegisterHit` 건너뛰기, 그리기 함수는 `Event.current.type == EventType.Repaint`일 때만 실행 |
+| 18 | (적용됨) 판정바가 꺼져 있으면 `RegisterHit` 건너뛰기, 그리기 함수는 `Event.current.type == EventType.Repaint`일 때만 실행 |
 | 19 | 플레이 시작 시 `ManagerPlay.Instance.autoPlay = true`로 세팅하는 방식을 검토(게임 기능 재사용). 현재 방식을 유지한다면 씬 전환마다 `CurrentTimeSeconds = -1` |
 | 20 | 줄 끝 `#`/`//` 주석 제거 후 파싱, 모르는 키와 값에는 경고, 키→처리기 표로 6곳 수정을 1곳으로 |
 | 21 | 필드를 하나도 못 읽었으면 경고, 기본 제목은 폴더 이름, BMS 헤더 `#TITLE`/`#ARTIST`/`#PLAYLEVEL` 읽기 |
 | 4 | 채널부(`#`와 `:` 사이)에 공백이 있으면 헤더로 보고 건너뜀 |
 | 테스트 | `ParseFlexibleBool` 등 순수 함수를 Unity 무의존 파일로 빼서 모드와 테스트가 같은 소스를 링크. 위 회귀 케이스 추가 |
 
-## 2026-09-29 추가 점검 (코드 미수정, 문서만)
+## 2026-09-29 수정: 판정바 히트 목록 누적과 OnGUI 낭비 (#18)
+
+- **증상**: `EnableJudgmentBar=0`이어도 판정 훅이 `JudgmentBar.RegisterHit`을 계속 불러 `HitHistory`가 플레이 내내(세션 내내)
+  늘어남. 정리(`RemoveAll`)는 `DrawJudgmentBar` 안에만 있는데, 꺼져 있으면 그 함수가 정리 전에 반환하기 때문. 또 `OnGUI`가
+  프레임당 여러 이벤트(Layout/Repaint 등)로 불리는데 판정바/키뷰어가 이벤트마다 처리해 클로저와 문자열을 매번 할당함.
+- **수정**
+  - `JudgmentBar.RegisterHit`: `EnableJudgmentBar`가 꺼져 있으면 바로 반환(설정은 플레이 씬 진입 때만 바뀌므로 한 판 안에서는 일관됨).
+  - `JudgmentBar.DrawJudgmentBar`, `KeyViewer.Draw`: `Event.current.type != EventType.Repaint`이면 바로 반환.
+    실제로 그려지는 건 Repaint뿐이라 화면은 그대로이고, 나머지 이벤트의 정리/텍스트 조립/`GUI.*` 호출이 사라짐.
+  - `DrawJudgmentBar`의 `duration`을 `const`로 바꿔 `RemoveAll` 람다가 지역 변수를 캡처하지 않게 함(호출마다 클로저 할당 제거).
+- **검증**: `dotnet build` 성공(경고 0개, 배포 없이 컴파일만), `sxtg2.LogicTests` 7개 통과. 실게임 확인 **미완료** —
+  판정바/키뷰어가 예전과 똑같이 그려지는지, `EnableJudgmentBar=0`에서 판정바가 안 나오는지 플레이해서 확인 필요.
+- 다른 #13~#21 항목은 아직 코드 수정 전입니다.
+
+## 2026-09-29 추가 점검 (문서만 기록)
 
 - **범위**: `sxtg2-mod/` 13개 파일 전체, `sxtg2.LogicTests`, 빌드 스크립트, 문서 전체를 읽고 디컴파일 원본
   (`ManagerResult`, `ManagerMusicSelect`, `ManagerPlay`, `RG_PS_Judgement`, `TrackData`, `UserAccountModule`,

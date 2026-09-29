@@ -91,6 +91,11 @@ namespace sxtg2.Features
             if (!SaveCustomKeyConfig.EnableKeyViewer)
                 return;
 
+            // OnGUI는 프레임당 여러 이벤트로 불리지만 실제로 그려지는 건 Repaint뿐이다.
+            Event guiEvent = Event.current;
+            if (guiEvent == null || guiEvent.type != EventType.Repaint)
+                return;
+
             try
             {
                 if (_whiteTex == null)

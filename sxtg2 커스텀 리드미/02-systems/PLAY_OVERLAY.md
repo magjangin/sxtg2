@@ -16,6 +16,10 @@
 설정(`EnableJudgmentBar` 등)은 플레이 씬에 들어갈 때마다 `config.txt`를 다시 읽어 반영됩니다(v1.1.0). 한 판이
 진행되는 동안에는 바뀌지 않습니다.
 
+`OnGUI`는 프레임당 Layout/Repaint 등 여러 이벤트로 불리지만 실제로 그려지는 것은 `Repaint`뿐이라, `DrawJudgmentBar`와
+`KeyViewer.Draw`는 `Event.current.type == EventType.Repaint`일 때만 동작합니다. `EnableJudgmentBar=0`이면 히트 데이터
+자체를 모으지 않습니다(`RegisterHit`이 바로 반환).
+
 ---
 
 ## 1) 판정바 (JudgmentBar)

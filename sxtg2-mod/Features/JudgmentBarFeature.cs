@@ -80,6 +80,10 @@ namespace sxtg2.Features
 
         public static void RegisterHit(float gapInSeconds, int judgeIndex)
         {
+            // 꺼져 있으면 DrawJudgmentBar가 HitHistory를 정리하지 않으므로, 여기서 쌓으면 끝없이 늘어난다.
+            if (!SaveCustomKeyConfig.EnableJudgmentBar)
+                return;
+
             try
             {
                 float offsetMs = gapInSeconds * 1000f;
@@ -108,9 +112,16 @@ namespace sxtg2.Features
             if (!SaveCustomKeyConfig.EnableJudgmentBar)
                 return;
 
+            // OnGUI는 프레임당 Layout/Repaint 등 여러 이벤트로 불린다. 실제로 그려지는 건 Repaint뿐이라
+            // 나머지 이벤트에서는 정리/텍스트 조립/GUI 호출을 전부 건너뛴다.
+            Event guiEvent = Event.current;
+            if (guiEvent == null || guiEvent.type != EventType.Repaint)
+                return;
+
             try
             {
-                float duration = 1.5f;
+                // const여야 아래 람다가 지역 변수를 캡처하지 않아 호출마다 클로저가 할당되지 않는다.
+                const float duration = 1.5f;
                 HitHistory.RemoveAll(tick => Time.time - tick.timeAdded > duration);
 
                 if (_whiteTex == null)
