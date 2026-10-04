@@ -231,8 +231,9 @@ StartCoroutine(SetBackable(2.5f))
 PostRequestPlayResult()                  // 서버 전송
 ```
 
-**모드 개입**: `ResultSaveBlockHook`이 조건에 따라 `ComparePlayResultHighScore`와 `PostRequestPlayResult`를 건너뜁니다.
-`ManagerResultHook`(진단 로깅)은 `Start` Postfix입니다.
+**모드 개입**: `ResultSaveBlockHook`이 조건에 따라 이 래퍼들이 부르는 말단 메서드인 `UserAccountModule.SavePlayData`(`ComparePlayResultHighScore`
+안, 298행)와 `LyrebirdServer.PostUserScore`(`PostRequestPlayResult` 안, 262행)를 건너뜁니다. 래퍼 자체는 실행되므로 래퍼 끝의
+베스트 점수 표시 갱신(300~301행)은 그대로 동작합니다. `ManagerResultHook`(진단 로깅)은 `Start` Postfix입니다.
 
 **모드가 막지 않는 것**: `ManagerResult.Start`는 위 흐름 앞뒤로 `userData.playCount++`(113행), 점수 1,000,000 이상/풀콤보일 때
 `RequestAchievementUnlock("PUREBLUE_FIRST"/"FULLCOMBO_FIRST")`(150~161행), 실패 시 `failCount++`(182행)을 실행하고,
@@ -259,7 +260,7 @@ PostRequestPlayResult()                  // 서버 전송
 | `ManagerPlay.CheckGameFinished` | `AutoPlayHook`(Prefix) | 현재 시간 기록 |
 | 판정 관련 메서드들 | `AllPerfectJudgeHook` | 등급 조작 |
 | `PlayWidget.OnGetJudge(EJudges, float)` | `FastSlowMeter_OnGetJudge_Patch` | 판정바 |
-| `ManagerResult.ComparePlayResultHighScore` / `PostRequestPlayResult` | `ResultSaveBlockHook` | 저장 차단 |
+| `UserAccountModule.SavePlayData` / `LyrebirdServer.PostUserScore` (결과 화면이 부름) | `ResultSaveBlockHook` | 저장/전송 차단 |
 
 ## 관련 문서
 

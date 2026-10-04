@@ -541,16 +541,25 @@ namespace sxtg2.Hooks
     [HarmonyPatch]
     public static class ResultSaveBlockHook
     {
+        /// <summary>
+        /// ManagerResult.ComparePlayResultHighScore/PostRequestPlayResult 래퍼를 통째로 건너뛰면 래퍼 끝에 있는
+        /// 화면 갱신(베스트 점수 표시, ManagerResult.cs:300-301)까지 같이 사라진다. 그래서 실제로 기록을 쓰고
+        /// 서버로 보내는 말단 메서드만 막는다: 저장은 UserAccountModule.SavePlayData, 전송은 LyrebirdServer.PostUserScore.
+        /// 둘 다 원본에서 ManagerResult 말고는 부르는 곳이 없다.
+        /// </summary>
         private static IEnumerable<MethodBase> TargetMethods()
         {
-            var type = AccessTools.TypeByName("RhythmGame.Result.ManagerResult");
-            if (type == null) yield break;
+            var save = AccessTools.Method(typeof(UserAccountModule), nameof(UserAccountModule.SavePlayData));
+            if (save != null)
+                yield return save;
+            else
+                MelonLogger.Warning("[ResultSaveBlock] UserAccountModule.SavePlayData를 찾지 못해 기록 저장 차단이 적용되지 않습니다.");
 
-            var m1 = AccessTools.Method(type, "PostRequestPlayResult");
-            if (m1 != null) yield return m1;
-
-            var m2 = AccessTools.Method(type, "ComparePlayResultHighScore");
-            if (m2 != null) yield return m2;
+            var post = AccessTools.Method(typeof(LyrebirdServer), nameof(LyrebirdServer.PostUserScore));
+            if (post != null)
+                yield return post;
+            else
+                MelonLogger.Warning("[ResultSaveBlock] LyrebirdServer.PostUserScore를 찾지 못해 랭킹 전송 차단이 적용되지 않습니다.");
         }
 
         [HarmonyPrefix]

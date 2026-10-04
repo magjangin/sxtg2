@@ -72,7 +72,9 @@ namespace sxtg2.Processors
 
                 MelonLogger.Msg(
                     $"[CustomChartInjector] {_parsedChart.Notes.Count}개 주입, " +
-                    $"totalNotes={totalNotes}, totalNoteWithTicks={totalNoteWithTicks}, BPM={bpm}");
+                    $"totalNotes={totalNotes}, totalNoteWithTicks={totalNoteWithTicks}, BPM={bpm}, " +
+                    // BGM/BGA 시작 시각(CurTime >= trackStartTiming)은 도너 패턴의 값을 그대로 쓴다. 0이 아니면 BMS의 0초와 어긋난다.
+                    $"trackStartTiming={data.trackStartTiming}(도너 값)");
             }
             catch (Exception ex)
             {

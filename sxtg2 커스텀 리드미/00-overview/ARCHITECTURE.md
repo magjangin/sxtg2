@@ -57,7 +57,7 @@ Models / Helpers          CustomTrackData, 로그, config.txt, 썸네일
 
 - `CustomTrackData`: `TrackData` 파생. `AlbumFolder`, `BmsPath`, `ResourceDonor`(도너 트랙), `CustomJacket`
 - `ModLog`: MelonPreferences `LogLevel`(0/1/2)에 따라 로그 출력, 예외 포맷
-- `SaveCustomKeyConfig`: `config.txt` 생성·파싱·재로드·누락 항목 자동 추가
+- `SaveCustomKeyConfig`: `config.txt` 생성·파싱·재로드·누락 항목 자동 추가(누락 항목 추가는 게임 시작 때만)
 - `ThumbnailLoader`: 앨범 폴더 자켓 PNG → `Sprite`
 
 ## 핵심 설계

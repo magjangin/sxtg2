@@ -66,7 +66,7 @@ ManagerPlay 초기화 → FetchBMSToModules(bms)
        │    └─ 실패/노트 0개면 경고 후 도너 패턴으로 플레이
        ├─ CustomChartInjector.InjectBmsNotesToLaneData(bms)
        │    레인 비우기 → 노트 추가 → 정렬 → bpm/totalNotes/totalNoteWithTicks 갱신
-       │    로그: [CustomChartInjector] N개 주입, totalNotes=..., totalNoteWithTicks=..., BPM=...
+       │    로그: [CustomChartInjector] N개 주입, totalNotes=..., totalNoteWithTicks=..., BPM=..., trackStartTiming=...(도너 값)
        ├─ BGMPlayerHook.ReplacePlaySceneBGM → music.* 비동기 로드 시작
        └─ (게임 BGA 설정 ON) BGAPlayerHook.ReplacePlaySceneBGA → 첫 *.mp4로 VideoPlayer.url 교체
 
@@ -97,8 +97,8 @@ Main.OnGUI:    JudgmentBar.DrawJudgmentBar, KeyViewer.Draw
 
 ```text
 ManagerResult.Start
-  ├─ ComparePlayResultHighScore → ResultSaveBlockHook: 차단 조건이면 건너뜀
-  ├─ PostRequestPlayResult      → ResultSaveBlockHook: 차단 조건이면 건너뜀
+  ├─ ComparePlayResultHighScore → 안의 UserAccountModule.SavePlayData를 ResultSaveBlockHook이 차단 조건이면 건너뜀
+  ├─ PostRequestPlayResult      → 안의 LyrebirdServer.PostUserScore를 ResultSaveBlockHook이 차단 조건이면 건너뜀
   └─ ManagerResultHook Postfix  → 진단 로깅(오퍼레이터 계층, 전체 GameObject 스캔)
 차단 조건: config BlockSave(또는 MelonPreferences BlockSaveBestRanking) || 오토플레이 || 올퍼펙트
 ```

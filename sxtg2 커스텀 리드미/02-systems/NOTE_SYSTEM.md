@@ -49,7 +49,7 @@ InjectBmsNotesToLaneData(SXGTData data)
   ├─ data.bpm = [bpm]
   ├─ data.totalNotes, data.totalNoteWithTicks 덮어쓰기
   ├─ data.scorePerNote = maxScore(1000000) / totalNotes   // 게임 판정식에서는 쓰이지 않음
-  └─ 로그: [CustomChartInjector] N개 주입, totalNotes=..., totalNoteWithTicks=..., BPM=...
+  └─ 로그: [CustomChartInjector] N개 주입, totalNotes=..., totalNoteWithTicks=..., BPM=..., trackStartTiming=...(도너 값)
 ```
 
 `SXGTData` 인스턴스는 게임이 도너 패턴을 읽어 만든 것을 그대로 쓰고, 내용만 바꿉니다. 게임은 이 직후

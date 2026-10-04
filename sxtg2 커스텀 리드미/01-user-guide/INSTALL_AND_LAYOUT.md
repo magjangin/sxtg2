@@ -179,9 +179,11 @@ depotdownloader -app 1802720 -depot 1802721 -manifest 8524424218577615553
 - 색상은 `#RRGGBB`, `#RRGGBBAA`, `R,G,B[,A]`(0~255 또는 0~1), 영문/한글 색상명을 씁니다. 목록은 `02-systems/PLAY_OVERLAY.md`.
 - `MaxScore`의 IL 패치는 항상 붙어 있고, 기본값이면 원본과 똑같이 동작합니다. 자세한 내용: `02-systems/SCORE_SYSTEM.md`
 - `NoteSway`와 `NoteSpeedChaos`는 판정에 전혀 영향이 없습니다(판정은 시간만 봄). 자세한 내용: `02-systems/NOTE_SYSTEM.md`
-- 예전 버전에서 만든 파일에 다음 묶음이 없으면 파일 끝에 기본값 줄을 자동으로 덧붙입니다:
+- 예전 버전에서 만든 파일에 다음 묶음이 없으면 **게임을 시작할 때** 파일 끝에 기본값 줄을 자동으로 덧붙입니다:
   판정바 모양(`JudgmentBarShape`/`RangeShape`), 판정바 위치, 키뷰어 색상, `MaxScore`, `NoteSway` 묶음, `NoteSpeedChaos` 묶음.
   (새로 만든 파일에도 키뷰어 색상 묶음이 빠져 있어서, 첫 실행 때 파일 끝에 추가됩니다.)
+  플레이 씬 진입 때의 재로드에서는 파일을 **수정하지 않습니다**. 그래서 묶음을 지우거나 주석 처리해도 다음 게임 시작 전까지는
+  되살아나지 않고, 그동안은 기본값으로 동작합니다(2026-10-04부터).
 
 ### ⚠️ BlockSave 주의 (알려진 문제)
 

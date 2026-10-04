@@ -22,7 +22,8 @@
 - `[ManagerPlayHook] 차트를 읽지 못해 원본 패턴을 유지합니다: ...` → BMS에서 노트를 하나도 읽지 못했습니다.
   - 채널/값 규칙이 sxtg2 방식인지 확인(`02-systems/BMS_FORMAT.md`). 일반 키음 BMS는 값이 `01`~`05`가 아니라 무시됩니다.
 - `[ManagerPlayHook] 커스텀 차트 주입 실패` 오류 → 예외 내용을 확인하세요.
-- 정상이면 `[CustomChartInjector] N개 주입, totalNotes=..., totalNoteWithTicks=..., BPM=...`이 찍힙니다.
+- 정상이면 `[CustomChartInjector] N개 주입, totalNotes=..., totalNoteWithTicks=..., BPM=..., trackStartTiming=...(도너 값)`이 찍힙니다.
+  `trackStartTiming`이 0이 아니면 BGM/BGA가 그 시각에 시작해서 차트(BMS의 0초)와 그만큼 어긋납니다(알려진 문제 #23, 확인 필요).
   `totalNotes`가 BMS의 노트 수와 비슷한지 확인하세요.
 
 ## 3) 플레이 도중 판정이 멈춤 / 점수가 안 오름 / 노트가 안 사라짐
@@ -86,7 +87,9 @@
 - 주의: 차단을 끄면 커스텀 곡의 기록(`CUSTOM_…` ID)도 실제 세이브와 Steam 클라우드에 저장됩니다(알려진 문제 #13).
 - 반대로 `BlockSave=1`이어도 결과 화면의 플레이 횟수/실패 횟수 증가와 Steam 업적 해금은 막지 못합니다(알려진 문제 #13).
 - 오토플레이나 올퍼펙트가 켜져 있으면 항상 차단됩니다(의도된 동작).
-- 차단될 때마다 `[차단] 하이스코어 및 랭킹 저장 차단: ManagerResult.PostRequestPlayResult` 같은 로그가 남습니다.
+- 차단될 때마다 `[차단] 하이스코어 및 랭킹 저장 차단: LyrebirdServer.PostUserScore`(또는 `UserAccountModule.SavePlayData`) 같은 로그가 남습니다.
+  `SavePlayData`는 새 최고 기록/풀콤보/랭크가 있을 때만 불리므로 그 줄은 매번 나오지 않습니다.
+- 결과 화면의 베스트 점수 표시는 차단과 상관없이 원본처럼 갱신됩니다(저장만 막음).
 
 ## 11) 커스텀 노트 스킨이 적용되지 않음
 

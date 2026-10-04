@@ -90,7 +90,7 @@ private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstructi
 | `AutoPlayHook` (GameplayHooks) | `ManagerPlay.CheckGameFinished(float)` | Prefix | 항상 | 현재 곡 시간을 `CurrentTimeSeconds`에 저장 |
 | | `RG_PS_Judgement.Update` | Postfix | 오토플레이 켜짐 + 플레이 씬 | 레인마다 원본 `AutoPlayJudge(curTime, lane)` 호출 |
 | `AllPerfectJudgeHook` (GameplayHooks) | `TargetMethods()` 참고 | Prefix | 올퍼펙트 켜짐 | 첫 인자 `EJudges`를 `BLUESTAR`로 바꿈 |
-| `ResultSaveBlockHook` (GameplayHooks) | `ManagerResult.PostRequestPlayResult`, `ComparePlayResultHighScore` | Prefix | `BlockSave` 또는 오토/올퍼펙트 | 원본 실행 건너뜀(서버 전송·하이스코어 저장 차단) |
+| `ResultSaveBlockHook` (GameplayHooks) | `UserAccountModule.SavePlayData`, `LyrebirdServer.PostUserScore` | Prefix | `BlockSave` 또는 오토/올퍼펙트 | 원본 실행 건너뜀(하이스코어 저장·서버 전송 차단) |
 | `JudgeScoreMaxHook` (GameplayHooks) | `RG_PS_Judgement.Update`, `CalculateJudgeScore(float)` | Transpiler | 항상 | `ldc.r4 1000000` → `GetMaxScore()` 호출 |
 | `TrackDataMediaHook` (GameplayHooks) | `TrackData.GetJacketSprite()`, `GetThumbSprite` | Prefix | 커스텀 트랙 | 앨범 폴더 자켓 PNG 반환 (없으면 원본) |
 | | `TrackData.GetAudioClip()`, `GetLoadingAnimation` | Prefix | 커스텀 트랙 | 도너 트랙 리소스 반환 |
@@ -160,7 +160,12 @@ FetchBMSToModulesPrefix(__instance, _bms, ___playTrack, ___bgaPlayer, ___default
   - `TryJudgeShortNote(float, Note)`는 첫 인자가 `float`라 실제로는 제외됩니다. 파생 위젯 타입에서
     `GetMethods()`로 찾기 때문에 상속된 `PlayWidget.OnGetJudge` 베이스 메서드도 대상에 들어갑니다.
 - **저장 차단**: `ModLog.BlockSaveBestRanking || ModLog.EnableAutoPlay || ModLog.EnableAllPerfect`이면
-  `ComparePlayResultHighScore`(로컬 하이스코어 갱신)와 `PostRequestPlayResult`(서버 전송)를 건너뜁니다.
+  `UserAccountModule.SavePlayData`(하이스코어 파일 저장)와 `LyrebirdServer.PostUserScore`(서버 전송)를 건너뜁니다.
+  예전에는 이 두 메서드를 부르는 래퍼 `ManagerResult.ComparePlayResultHighScore`/`PostRequestPlayResult`를
+  통째로 건너뛰었는데, 그러면 래퍼 끝의 베스트 점수 표시 갱신(`ManagerResult.cs:300-301`)까지 같이 사라져서 말단으로 옮겼습니다.
+  이제 결과 화면은 원본처럼 베스트 점수를 표시하고(메모리에서만 계산, 저장 안 함), 두 말단 메서드는 원본에서 `ManagerResult`
+  말고는 부르는 곳이 없습니다. 차단되면 `[차단] ... 저장 차단: UserAccountModule.SavePlayData`/`LyrebirdServer.PostUserScore`
+  로그가 남습니다(`SavePlayData`는 새 기록이 있을 때만 불립니다). 대상 메서드를 못 찾으면 시작 시 경고 로그가 남습니다.
   세 값은 모두 **`config.txt` 값 OR MelonPreferences 값**입니다(`ModHelpers.cs`). MelonPreferences의
   `BlockSaveBestRanking` 기본값이 `true`라서, `config.txt`에 `BlockSave=0`을 써도 차단이 풀리지 않습니다
   (알려진 문제 — `01-user-guide/TROUBLESHOOTING.md` 참고).
@@ -168,6 +173,7 @@ FetchBMSToModulesPrefix(__instance, _bms, ___playTrack, ___bgaPlayer, ___default
   `CheckResultSceneAchievements`의 `lastPlayedTrackID` 저장과 Steam 업적, 초반의 `PUREBLUE_FIRST`/`FULLCOMBO_FIRST`)와
   `MoveToPlayLoadingScene`의 `LyrebirdServer.IncreaseTrackPlayCount`는 그대로 실행됩니다
   (`CURRENT_STATUS.md` 알려진 문제 #13, #14). 두 대상 메서드는 `void`라 Prefix로 건너뛰어도 반환값 문제는 없습니다.
+  `TrackPlayData`는 곡 ID와 무관하게 레벨 4칸을 만들므로, 커스텀 곡에서도 래퍼가 그대로 실행돼도 예외가 나지 않습니다.
 - **오토플레이의 시간 캐시**: `CurrentTimeSeconds`는 플레이가 아닌 씬으로 갈 때만 -1로 리셋되므로, 씬 이름이 그대로인
   리트라이에서는 이전 판의 값이 남습니다(알려진 문제 #19, 확인 필요). 게임에는 `ManagerPlay.autoPlay`(public bool)가
   이미 있어 `RG_PS_Judgement.Update`가 그 값으로 `AutoPlayJudge`를 부르는데, 모드는 이 플래그를 쓰지 않고 Postfix에서

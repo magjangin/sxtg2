@@ -600,7 +600,10 @@ namespace sxtg2.Helpers
                     NoteSpeedChaosMax = swap;
                 }
 
-                AppendSectionsMissingFrom(filePath, seenKeys);
+                // 누락 항목 추가는 게임 시작 때만 한다. 플레이마다 재로드할 때 하면, 사용자가 지우거나 주석 처리한
+                // 묶음을 모드가 다시 써 넣고 편집기에서 열어 둔 파일과 충돌한다(지운 줄은 기본값으로 동작하므로 불필요).
+                if (!isReload)
+                    AppendSectionsMissingFrom(filePath, seenKeys);
 
                 string shapeStr = JudgmentBarShape == 2 ? "삼각(2)" : (JudgmentBarShape == 1 ? "캡슐(1)" : "사각(0)");
                 string rangeShapeStr = JudgmentBarRangeShape == -1 ? "추종(-1)" : (JudgmentBarRangeShape == 2 ? "삼각(2)" : (JudgmentBarRangeShape == 1 ? "캡슐(1)" : "사각(0)"));

@@ -79,8 +79,8 @@ UserData\MelonPreferences.cfg [sxtg2]
                                 -> config.txt 값과 OR 결합 (ModLog.EnableAutoPlay 등)
 ```
 
-`config.txt`에 없는 새 항목(판정바 모양/위치, 키뷰어 색, MaxScore, NoteSway, NoteSpeedChaos 묶음)은 로드할 때
-파일 끝에 기본값 줄로 자동 추가됩니다.
+`config.txt`에 없는 새 항목(판정바 모양/위치, 키뷰어 색, MaxScore, NoteSway, NoteSpeedChaos 묶음)은 게임 시작 때의
+최초 로드(`Initialize`)에서만 파일 끝에 기본값 줄로 자동 추가됩니다. 플레이 씬 진입 재로드(`Reload`)는 파일을 수정하지 않습니다.
 
 ## 판정 데이터 → 판정바
 
@@ -98,5 +98,5 @@ RG_PS_Judgement.JudgeRange -> JudgmentBar.RefreshJudgeRange (매 프레임) -> �
 ```text
 CustomChartInjector -> SXGTData.totalNotes / totalNoteWithTicks
 RG_PS_Judgement.Update:  JudgeScore = Lerp(0, GetMaxScore(), JudgeRatio / totalNotes)   // JudgeScoreMaxHook
-ResultSaveBlockHook:     조건부로 ComparePlayResultHighScore / PostRequestPlayResult 건너뜀
+ResultSaveBlockHook:     조건부로 UserAccountModule.SavePlayData / LyrebirdServer.PostUserScore 건너뜀
 ```
