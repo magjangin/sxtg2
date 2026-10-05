@@ -17,7 +17,20 @@ namespace sxtg2.Features
     public static class TrackDataAnalyzer
     {
         private const string LogPrefix = "[TrackDataAnalyzer]";
+        private const string FallbackTitle = "커스텀 차트";
         private static readonly string[] BmsPatterns = { "*.bms", "*.bme", "*.bml" };
+
+        /// <summary>
+        /// 지금 곡 목록에 주입된 커스텀 곡(ID → 곡). 원본의 Util.FindTrackByID는 CSV 곡 목록만 뒤져서
+        /// 커스텀 곡 ID를 못 찾으므로, 못 찾았을 때 여기서 대신 찾아 준다(ServerGuardHook).
+        /// </summary>
+        private static readonly Dictionary<string, CustomTrackData> CustomTracksById =
+            new Dictionary<string, CustomTrackData>(StringComparer.Ordinal);
+
+        public static TrackData FindCustomTrack(string id)
+        {
+            return id != null && CustomTracksById.TryGetValue(id, out CustomTrackData track) ? track : null;
+        }
 
         public static void InjectCustomTracks(List<TrackData> trackDatas)
         {
@@ -41,6 +54,7 @@ namespace sxtg2.Features
 
             TrackData donor = trackDatas[0];
             int addedCount = 0;
+            CustomTracksById.Clear();
 
             foreach (string albumFolder in EnumerateAlbumFolders(hwaFolder))
             {
@@ -56,7 +70,9 @@ namespace sxtg2.Features
                         albumFolder,
                         Path.GetFileNameWithoutExtension(bmsPath));
 
-                    trackDatas.Add(CreateCustomTrack(donor, trackInfo, albumFolder, bmsPath));
+                    CustomTrackData track = CreateCustomTrack(donor, trackInfo, albumFolder, bmsPath);
+                    trackDatas.Add(track);
+                    CustomTracksById[track.ID] = track;
                     addedCount++;
                 }
                 catch (Exception ex)
@@ -102,9 +118,10 @@ namespace sxtg2.Features
             string albumFolder,
             string bmsPath)
         {
+            // 곡 정보 파일에 제목이 없으면 앨범 폴더 이름을 쓴다(예전에는 모든 곡이 "커스텀 차트"라는 같은 이름이 됐다).
             string title = !string.IsNullOrEmpty(trackInfo.Title)
                 ? trackInfo.Title
-                : "커스텀 차트";
+                : GetFolderTitle(albumFolder);
             string composer = !string.IsNullOrEmpty(trackInfo.Artist)
                 ? trackInfo.Artist
                 : donor.Composer;
@@ -126,6 +143,12 @@ namespace sxtg2.Features
             };
         }
 
+        private static string GetFolderTitle(string albumFolder)
+        {
+            string name = Path.GetFileName(albumFolder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            return string.IsNullOrWhiteSpace(name) ? FallbackTitle : name;
+        }
+
         private static string BuildStableCustomId(string path)
         {
             const ulong offsetBasis = 14695981039346656037UL;
@@ -140,7 +163,7 @@ namespace sxtg2.Features
                 hash *= prime;
             }
 
-            return $"CUSTOM_{hash:X16}";
+            return $"{CustomTrackData.IdPrefix}{hash:X16}";
         }
 
         private static string[] BuildLevelArray(List<int> difficulties, string[] fallback)
@@ -169,13 +192,17 @@ namespace sxtg2.Features
         }
     }
 
+    /// <summary>
+    /// 곡 선택 화면의 핵심 훅(커스텀 곡 등록, 미리듣기). 조사용 로깅 훅은 DiagnosticHooks.cs의 별도 클래스에 있다 —
+    /// 진단용 필드/메서드가 게임 업데이트로 바뀌어도 이 핵심 훅이 같이 깨지지 않게 분리했다.
+    /// </summary>
     [HarmonyPatch(typeof(ManagerMusicSelect))]
     public static class ManagerMusicSelectHook
     {
         private static int _previewRequestVersion;
 
-        private static readonly AccessTools.FieldRef<ManagerMusicSelect, ConfirmWindow> ConfirmWindowField =
-            AccessTools.FieldRefAccess<ManagerMusicSelect, ConfirmWindow>("confirmWindow");
+        /// <summary>마지막으로 만든 커스텀 미리듣기 클립. 새 클립이 생기면 이전 것을 해제한다(곡마다 노래 한 곡 분량이 쌓이지 않게).</summary>
+        private static AudioClip _customPreviewClip;
 
         [HarmonyPatch("Awake")]
         [HarmonyPostfix]
@@ -188,77 +215,6 @@ namespace sxtg2.Features
             catch (Exception ex)
             {
                 MelonLogger.Error($"[ManagerMusicSelectHook] 커스텀 트랙 주입 실패: {ex}");
-            }
-        }
-
-        [HarmonyPatch("OpenConfirmWindow")]
-        [HarmonyPostfix]
-        private static void OpenConfirmWindowPostfix(ManagerMusicSelect __instance, bool willFetchKey)
-        {
-            try
-            {
-                TrackData track = __instance.trackDatas[__instance.TrackCursor];
-                MelonLogger.Msg(
-                    $"[ManagerMusicSelectHook] OpenConfirmWindow 호출: track={track?.DisplayName}, " +
-                    $"level={__instance.LevelCursor}, style={__instance.playStyle}, willFetchKey={willFetchKey}");
-
-                LogCharacterLayer(__instance);
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[ManagerMusicSelectHook] OpenConfirmWindow 로깅 실패: {ex.Message}");
-            }
-        }
-
-        private static void LogCharacterLayer(ManagerMusicSelect instance)
-        {
-            ConfirmWindow confirmWindow = ConfirmWindowField(instance);
-            GameObject layer = confirmWindow?.characterLayer;
-            if (layer == null)
-            {
-                MelonLogger.Msg("[ManagerMusicSelectHook] characterLayer가 비어있습니다.");
-                return;
-            }
-
-            MelonLogger.Msg($"[ManagerMusicSelectHook] characterLayer 오브젝트: {layer.name} (active={layer.activeSelf})");
-            LogHierarchy(layer.transform, 1);
-
-            OperatorCharacter[] operators = layer.GetComponentsInChildren<OperatorCharacter>(includeInactive: true);
-            if (operators.Length == 0)
-            {
-                MelonLogger.Msg("[ManagerMusicSelectHook]   -> OperatorCharacter 컴포넌트를 찾지 못했습니다.");
-            }
-            foreach (OperatorCharacter op in operators)
-            {
-                MelonLogger.Msg(
-                    $"[ManagerMusicSelectHook]   -> Operator 발견: name={op.OperatorName} " +
-                    $"(type={op.GetType().Name}, object={op.gameObject.name}, active={op.gameObject.activeInHierarchy})");
-            }
-        }
-
-        private static void LogHierarchy(Transform t, int depth)
-        {
-            foreach (Transform child in t)
-            {
-                MelonLogger.Msg(
-                    $"[ManagerMusicSelectHook] {new string(' ', depth * 2)}- {child.name} (active={child.gameObject.activeSelf})");
-                LogHierarchy(child, depth + 1);
-            }
-        }
-
-        [HarmonyPatch("instantiateOperatorCharacter")]
-        [HarmonyPostfix]
-        private static void InstantiateOperatorCharacterPostfix(string opCharID, OperatorCharacter __result)
-        {
-            try
-            {
-                MelonLogger.Msg(
-                    $"[ManagerMusicSelectHook] instantiateOperatorCharacter 호출: opCharID={opCharID}, " +
-                    $"result={__result?.OperatorName ?? "null"} (object={__result?.gameObject.name ?? "null"})");
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[ManagerMusicSelectHook] instantiateOperatorCharacter 로깅 실패: {ex.Message}");
             }
         }
 
@@ -324,8 +280,8 @@ namespace sxtg2.Features
             string filePath,
             int requestVersion)
         {
-            string url = "file://" + filePath.Replace("\\", "/");
-            AudioType audioType = GetAudioType(Path.GetExtension(filePath));
+            string url = MediaUrl.FromPath(filePath);
+            AudioType audioType = BgmFileResolver.GetAudioType(Path.GetExtension(filePath));
             using (var request = UnityWebRequestMultimedia.GetAudioClip(url, audioType))
             {
                 yield return request.SendWebRequest();
@@ -348,7 +304,13 @@ namespace sxtg2.Features
                     yield break;
                 }
 
+                // 새 클립을 먼저 물리고 나서 이전 커스텀 클립을 해제한다.
+                AudioClip previous = _customPreviewClip;
                 previewSource.clip = clip;
+                _customPreviewClip = clip;
+                if (previous != null && previous != clip)
+                    UnityEngine.Object.Destroy(previous);
+
                 previewSource.volume = Util.GetGameplayVolume();
                 previewSource.Play();
                 MelonLogger.Msg(
@@ -364,17 +326,6 @@ namespace sxtg2.Features
             }
         }
 
-        private static AudioType GetAudioType(string extension)
-        {
-            switch (extension?.ToLowerInvariant())
-            {
-                case ".ogg": return AudioType.OGGVORBIS;
-                case ".mp3": return AudioType.MPEG;
-                case ".wav": return AudioType.WAV;
-                default: return AudioType.UNKNOWN;
-            }
-        }
-
         private static void RestoreMenuBgm(AudioSource bgmSource)
         {
             if (bgmSource == null)
@@ -383,149 +334,6 @@ namespace sxtg2.Features
             bgmSource.volume = Util.GetBGMVolume();
             if (!bgmSource.isPlaying)
                 bgmSource.Play();
-        }
-    }
-
-    [HarmonyPatch(typeof(OperatorCharacter))]
-    public static class OperatorCharacterHook
-    {
-        [HarmonyPatch("SetUp")]
-        [HarmonyPrefix]
-        private static void SetUpPrefix(OperatorCharacter __instance)
-        {
-            try
-            {
-                MelonLogger.Msg(
-                    $"[OperatorCharacterHook] SetUp 호출: name={__instance.OperatorName} " +
-                    $"(type={__instance.GetType().Name}, object={__instance.gameObject.name})");
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[OperatorCharacterHook] SetUp 로깅 실패: {ex.Message}");
-            }
-        }
-
-        [HarmonyPatch("ShowDialogue")]
-        [HarmonyPrefix]
-        private static void ShowDialoguePrefix(OperatorCharacter __instance, EOperatorStatus os)
-        {
-            try
-            {
-                MelonLogger.Msg(
-                    $"[OperatorCharacterHook] ShowDialogue 호출: name={__instance.OperatorName}, " +
-                    $"status={os} (type={__instance.GetType().Name}, object={__instance.gameObject.name})");
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[OperatorCharacterHook] ShowDialogue 로깅 실패: {ex.Message}");
-            }
-        }
-    }
-
-    [HarmonyPatch(typeof(RhythmGame.Result.ManagerResult))]
-    public static class ManagerResultHook
-    {
-        private static readonly AccessTools.FieldRef<RhythmGame.Result.ManagerResult, Animator> OperatorAnimatorField =
-            AccessTools.FieldRefAccess<RhythmGame.Result.ManagerResult, Animator>("operatorAnimator");
-
-        [HarmonyPatch("Start")]
-        [HarmonyPostfix]
-        private static void StartPostfix(RhythmGame.Result.ManagerResult __instance)
-        {
-            try
-            {
-                MelonLogger.Msg("[ManagerResultHook] ManagerResult.Start Postfix 실행 감지");
-                LogResultOperatorLayer(__instance);
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[ManagerResultHook] 결과 씬 로깅 실패: {ex.Message}");
-            }
-        }
-
-        private static void LogResultOperatorLayer(RhythmGame.Result.ManagerResult instance)
-        {
-            if (instance == null)
-            {
-                MelonLogger.Msg("[ManagerResultHook] ManagerResult 인스턴스가 null입니다.");
-                return;
-            }
-
-            MelonLogger.Msg("[ManagerResultHook] === 결과 씬 오퍼레이터 레이어 스캔 시작 ===");
-
-            Animator animator = null;
-            try
-            {
-                animator = OperatorAnimatorField(instance);
-            }
-            catch
-            {
-                System.Reflection.FieldInfo field = AccessTools.Field(typeof(RhythmGame.Result.ManagerResult), "operatorAnimator");
-                if (field != null)
-                    animator = field.GetValue(instance) as Animator;
-            }
-
-            if (animator == null)
-            {
-                MelonLogger.Msg("[ManagerResultHook] operatorAnimator 필드가 null입니다.");
-            }
-            else
-            {
-                GameObject animObj = animator.gameObject;
-                MelonLogger.Msg($"[ManagerResultHook] operatorAnimator 오브젝트: {animObj.name} (activeSelf={animObj.activeSelf}, activeInHierarchy={animObj.activeInHierarchy})");
-                if (animObj.transform.parent != null)
-                {
-                    MelonLogger.Msg($"[ManagerResultHook] operatorAnimator 부모: {animObj.transform.parent.name}");
-                    LogHierarchy(animObj.transform.parent, 1);
-                }
-                else
-                {
-                    LogHierarchy(animObj.transform, 1);
-                }
-            }
-
-            OperatorCharacter[] operators = instance.GetComponentsInChildren<OperatorCharacter>(includeInactive: true);
-            if (operators.Length == 0)
-            {
-                operators = UnityEngine.Object.FindObjectsOfType<OperatorCharacter>();
-            }
-
-            MelonLogger.Msg($"[ManagerResultHook] 씬 내 OperatorCharacter 수: {operators.Length}");
-            foreach (OperatorCharacter op in operators)
-            {
-                MelonLogger.Msg(
-                    $"[ManagerResultHook]   -> Operator 발견: name={op.OperatorName} " +
-                    $"(type={op.GetType().Name}, object={op.gameObject.name}, activeSelf={op.gameObject.activeSelf}, activeInHierarchy={op.gameObject.activeInHierarchy})");
-                LogHierarchy(op.transform, 1);
-            }
-
-            GameObject[] allObjects = UnityEngine.Object.FindObjectsOfType<GameObject>();
-            int matchedCount = 0;
-            foreach (GameObject obj in allObjects)
-            {
-                if (obj == null) continue;
-                string objName = obj.name;
-                if (objName.IndexOf("operator", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    objName.IndexOf("shii", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    objName.IndexOf("character", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    matchedCount++;
-                    MelonLogger.Msg($"[ManagerResultHook] 매칭 오브젝트: {obj.name} (activeSelf={obj.activeSelf}, activeInHierarchy={obj.activeInHierarchy})");
-                }
-            }
-
-            MelonLogger.Msg($"[ManagerResultHook] === 결과 씬 오퍼레이터 레이어 스캔 완료 (매칭 오브젝트 {matchedCount}개) ===");
-        }
-
-        private static void LogHierarchy(Transform t, int depth)
-        {
-            if (t == null || depth > 4) return;
-            foreach (Transform child in t)
-            {
-                MelonLogger.Msg(
-                    $"[ManagerResultHook] {new string(' ', depth * 2)}- {child.name} (activeSelf={child.gameObject.activeSelf}, activeInHierarchy={child.gameObject.activeInHierarchy})");
-                LogHierarchy(child, depth + 1);
-            }
         }
     }
 }

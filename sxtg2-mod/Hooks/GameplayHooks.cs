@@ -13,7 +13,6 @@ using UnityEngine.UI;
 using UnityEngine.Video;
 using sxtg2.Helpers;
 using sxtg2.Helpers.Track;
-using sxtg2.Helpers.UI;
 using sxtg2.Hooks.Audio;
 using sxtg2.Loaders;
 using sxtg2.Models;
@@ -21,6 +20,33 @@ using sxtg2.Processors;
 
 namespace sxtg2.Hooks
 {
+    /// <summary>
+    /// 게임의 private 필드 접근자를 안전하게 만든다. `static readonly FieldRefAccess(...)`를 필드 초기화로 바로 쓰면
+    /// 게임 업데이트로 필드 이름이 바뀔 때 TypeInitializationException이 나서 그 클래스를 처음 건드리는 코드(씬 전환 처리 등)까지
+    /// 같이 죽는다. 여기서는 실패하면 경고만 남기고 null을 돌려주므로, 사용하는 쪽이 null이면 그 기능만 건너뛰면 된다.
+    /// </summary>
+    internal static class SafeAccess
+    {
+        public static AccessTools.FieldRef<T, F> FieldRef<T, F>(string fieldName)
+        {
+            try
+            {
+                return AccessTools.FieldRefAccess<T, F>(fieldName);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[SafeAccess] {typeof(T).Name}.{fieldName} 필드를 찾지 못해 관련 기능을 건너뜁니다 (게임 업데이트로 바뀌었을 수 있음): {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>접근자가 null(필드를 못 찾음)이면 기본값을, 아니면 필드 값을 돌려준다.</summary>
+        public static F Get<T, F>(AccessTools.FieldRef<T, F> accessor, T instance)
+        {
+            return accessor == null ? default(F) : accessor(instance);
+        }
+    }
+
     [HarmonyPatch(typeof(ManagerPlay))]
     public static class ManagerPlayHook
     {
@@ -87,11 +113,11 @@ namespace sxtg2.Hooks
     {
         private static bool _isInitialized = false;
         private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> ShortNote =
-            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("shortNote");
+            SafeAccess.FieldRef<RG_NoteObject, RectTransform>("shortNote");
         private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> TailNote =
-            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("tailNote");
+            SafeAccess.FieldRef<RG_NoteObject, RectTransform>("tailNote");
         private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> HoldTexture =
-            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("holdTexture");
+            SafeAccess.FieldRef<RG_NoteObject, RectTransform>("holdTexture");
 
         public static void Initialize()
         {
@@ -118,8 +144,9 @@ namespace sxtg2.Hooks
                 if (noteObject == null)
                     return;
 
+                // 커스텀 스프라이트를 쓰는 이미지에만 손댄다. 예전에는 스킨이 없는 모든 노트에도 SetNativeSize를 불러서
+                // 게임의 노트 크기 옵션(noteSize)을 무시했다.
                 ApplyCustomSprites(__result, noteObject);
-                NoteRendererRecovery.RecoverNoteRenderer(noteObject);
             }
             catch (Exception ex)
             {
@@ -129,23 +156,49 @@ namespace sxtg2.Hooks
 
         private static void ApplyCustomSprites(RG_NoteObject noteInstance, GameObject noteObject)
         {
-            string noteType = CustomNoteSpriteLoader.ExtractNoteType(noteObject.name);
-            ModLog.Verbose($"[NoteSpriteHook] 노트 생성: name={noteObject.name}, 추출된 타입={(string.IsNullOrEmpty(noteType) ? "(없음)" : noteType)}");
+            // 커스텀 스프라이트가 하나도 없으면(스킨 폴더가 비어 있으면) 노트마다 할 일이 없다.
+            if (!CustomNoteSpriteLoader.HasAnySprite)
+                return;
 
-            ApplyToTarget(ShortNote(noteInstance), CustomNoteSpriteLoader.GetCustomSpriteForNote(noteObject.name));
-            ApplyToTarget(TailNote(noteInstance), CustomNoteSpriteLoader.GetTailNoteSprite(noteType));
-            ApplyToTarget(HoldTexture(noteInstance), CustomNoteSpriteLoader.GetHoldTextureSprite(noteType));
+            string noteType = CustomNoteSpriteLoader.ExtractNoteType(noteObject.name);
+            if (ModLog.IsVerbose)
+                ModLog.Verbose($"[NoteSpriteHook] 노트 생성: name={noteObject.name}, 추출된 타입={(string.IsNullOrEmpty(noteType) ? "(없음)" : noteType)}");
+
+            // 원본 RG_NoteObject.SetSize와 같은 규칙: 헤드/꼬리는 가로세로, 홀드 몸통 무늬는 가로만 노트 크기를 곱한다.
+            ApplyToTarget(SafeAccess.Get(ShortNote, noteInstance), CustomNoteSpriteLoader.GetCustomSpriteForNote(noteObject.name), scaleHeight: true);
+            ApplyToTarget(SafeAccess.Get(TailNote, noteInstance), CustomNoteSpriteLoader.GetTailNoteSprite(noteType), scaleHeight: true);
+            ApplyToTarget(SafeAccess.Get(HoldTexture, noteInstance), CustomNoteSpriteLoader.GetHoldTextureSprite(noteType), scaleHeight: false);
         }
 
-        private static void ApplyToTarget(RectTransform target, Sprite sprite)
+        private static void ApplyToTarget(RectTransform target, Sprite sprite, bool scaleHeight)
         {
             if (sprite == null || target == null)
                 return;
 
             var image = target.GetComponent<Image>();
-            if (image != null)
+            if (image == null)
+                return;
+
+            image.sprite = sprite;
+
+            // 스프라이트 원본 크기로 맞춘 뒤, 원본이 SetTiming에서 곱해 둔 노트 크기 옵션(noteSize/100)을 다시 곱한다.
+            image.SetNativeSize();
+            float scale = GetNoteSizeScale();
+            Vector2 size = target.sizeDelta;
+            target.sizeDelta = new Vector2(size.x * scale, scaleHeight ? size.y * scale : size.y);
+            image.SetAllDirty();
+        }
+
+        private static float GetNoteSizeScale()
+        {
+            try
             {
-                image.sprite = sprite;
+                var userData = UserAccountModule.Instance?.userData;
+                return userData != null ? userData.noteSize / 100f : 1f;
+            }
+            catch
+            {
+                return 1f;
             }
         }
     }
@@ -198,7 +251,13 @@ namespace sxtg2.Hooks
                 }
 
                 if (amplitude <= 0f)
+                {
+                    // 진폭이 0으로 수렴한 뒤에는 기준 위치로 되돌려 마지막 프레임의 잔여 오프셋이 남지 않게 한다.
+                    var current = state.Root.anchoredPosition;
+                    if (current.x != state.BaseX)
+                        state.Root.anchoredPosition = new Vector2(state.BaseX, current.y);
                     return;
+                }
 
                 float angle = __0 * SaveCustomKeyConfig.NoteSwaySpeed * 2f * Mathf.PI + state.Phase;
                 float offset = amplitude * Mathf.Sin(angle);
@@ -244,15 +303,15 @@ namespace sxtg2.Hooks
     public static class NoteSpeedChaosHook
     {
         private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> ShortNote =
-            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("shortNote");
+            SafeAccess.FieldRef<RG_NoteObject, RectTransform>("shortNote");
         private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> HoldMask =
-            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("holdMask");
+            SafeAccess.FieldRef<RG_NoteObject, RectTransform>("holdMask");
         private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> HoldTexture =
-            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("holdTexture");
+            SafeAccess.FieldRef<RG_NoteObject, RectTransform>("holdTexture");
         private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> TailNote =
-            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("tailNote");
+            SafeAccess.FieldRef<RG_NoteObject, RectTransform>("tailNote");
         private static readonly AccessTools.FieldRef<RG_NoteObject, float> HoldTextureYOffset =
-            AccessTools.FieldRefAccess<RG_NoteObject, float>("holdTextureYOffset");
+            SafeAccess.FieldRef<RG_NoteObject, float>("holdTextureYOffset");
 
         private static readonly Dictionary<int, float> Multipliers = new Dictionary<int, float>();
 
@@ -278,7 +337,7 @@ namespace sxtg2.Hooks
                 if (Mathf.Approximately(multiplier, 1f))
                     return;
 
-                var head = ShortNote(__instance);
+                var head = SafeAccess.Get(ShortNote, __instance);
                 if (head == null)
                     return;
 
@@ -288,7 +347,7 @@ namespace sxtg2.Hooks
                 if (__instance.Duration == 0f)
                     return;
 
-                var mask = HoldMask(__instance);
+                var mask = SafeAccess.Get(HoldMask, __instance);
                 if (mask == null)
                     return;
 
@@ -297,8 +356,8 @@ namespace sxtg2.Hooks
                 mask.sizeDelta = new Vector2(mask.sizeDelta.x, length);
                 mask.anchoredPosition = new Vector2(mask.anchoredPosition.x, headY + length / 2f);
 
-                var texture = HoldTexture(__instance);
-                if (texture != null)
+                var texture = SafeAccess.Get(HoldTexture, __instance);
+                if (texture != null && HoldTextureYOffset != null)
                 {
                     // 마스크를 옮겼으면 무늬가 반대로 밀리지 않도록 원본과 같은 상쇄를 다시 건다.
                     texture.anchoredPosition = new Vector2(
@@ -306,7 +365,7 @@ namespace sxtg2.Hooks
                         mask.anchoredPosition.y * -1f + HoldTextureYOffset(__instance));
                 }
 
-                var tail = TailNote(__instance);
+                var tail = SafeAccess.Get(TailNote, __instance);
                 if (tail != null)
                 {
                     tail.anchoredPosition = new Vector2(tail.anchoredPosition.x, headY + length);
@@ -377,86 +436,24 @@ namespace sxtg2.Hooks
         }
     }
 
+    /// <summary>
+    /// 오토플레이: 게임에 원래 있는 ManagerPlay.autoPlay 플래그를 플레이 시작 때 켠다.
+    /// 예전에는 private AutoPlayJudge를 RG_PS_Judgement.Update Postfix에서 직접 불렀는데, 그러면 게임이 autoPlay 플래그로
+    /// 하는 처리(홀드가 끝날 때 OnLaneKeyUp, 홀드 틱 판정, 키 입력 무시)가 빠져 홀드 뒤에 레인이 눌린 채로 남았고,
+    /// 시간 캐시(CurrentTimeSeconds)도 리트라이 때 이전 판 값이 남았다. 플래그를 쓰면 게임 원래 경로 그대로 동작한다.
+    /// </summary>
     [HarmonyPatch]
     public static class AutoPlayHook
     {
-        public static float CurrentTimeSeconds = -1f;
-        public static bool IsPlayScene = false;
-
-        private static Action<RG_PS_Judgement, float, int> _autoPlayJudge;
-        private static FieldInfo _noteJudgeCursorField;
-        private static FieldInfo _numLanesField;
-
-        [HarmonyPatch(typeof(ManagerPlay), "CheckGameFinished", new[] { typeof(float) })]
-        [HarmonyPrefix]
-        private static void CheckGameFinished_Prefix(float __0)
-        {
-            CurrentTimeSeconds = __0;
-        }
-
-        [HarmonyPatch(typeof(RG_PS_Judgement), "Update")]
+        [HarmonyPatch(typeof(ManagerPlay), nameof(ManagerPlay.InitializePlayScene))]
         [HarmonyPostfix]
-        private static void RG_PS_Judgement_Update_Postfix(RG_PS_Judgement __instance)
+        private static void InitializePlaySceneAutoPlay(ManagerPlay __instance)
         {
-            if (!ModLog.EnableAutoPlay || !IsPlayScene)
+            if (!ModLog.EnableAutoPlay)
                 return;
 
-            float curTime = CurrentTimeSeconds;
-            if (curTime < 0f)
-                return;
-
-            try
-            {
-                EnsureCaches();
-                if (_autoPlayJudge == null)
-                    return;
-
-                int laneCount = GetLaneCount(__instance);
-                for (int lane = 0; lane < laneCount; lane++)
-                {
-                    _autoPlayJudge(__instance, curTime, lane);
-                }
-            }
-            catch
-            {
-                // 플레이 중 프레임 예외 방지
-            }
-        }
-
-        private static void EnsureCaches()
-        {
-            if (_autoPlayJudge == null)
-            {
-                var m = AccessTools.Method(typeof(RG_PS_Judgement), "AutoPlayJudge", new[] { typeof(float), typeof(int) });
-                if (m != null)
-                    _autoPlayJudge = AccessTools.MethodDelegate<Action<RG_PS_Judgement, float, int>>(m);
-            }
-
-            if (_noteJudgeCursorField == null)
-                _noteJudgeCursorField = AccessTools.Field(typeof(RG_PS_Judgement), "noteJudgeCursor");
-            if (_numLanesField == null)
-                _numLanesField = AccessTools.Field(typeof(RG_PS_Judgement), "numLanes");
-        }
-
-        private static int GetLaneCount(RG_PS_Judgement instance)
-        {
-            try
-            {
-                if (_noteJudgeCursorField != null)
-                {
-                    if (_noteJudgeCursorField.GetValue(instance) is IList list && list.Count > 0)
-                        return list.Count;
-                }
-
-                if (_numLanesField != null)
-                {
-                    int n = (int)_numLanesField.GetValue(instance);
-                    if (n > 0 && n <= 10) return n;
-                }
-            }
-            catch { }
-
-            return 10;
+            __instance.autoPlay = true;
+            ModLog.Msg("[AutoPlay] 게임의 autoPlay 플래그를 켰습니다.");
         }
     }
 
@@ -483,8 +480,12 @@ namespace sxtg2.Hooks
         private static IEnumerable<MethodBase> TargetMethods()
         {
             InitializeEJudges();
+            var targets = new List<MethodBase>();
             if (_eJudgesType == null)
-                yield break;
+            {
+                MelonLogger.Warning("[AllPerfect] EJudges 타입을 찾지 못해 올퍼펙트가 적용되지 않습니다.");
+                return targets;
+            }
 
             string[] targetTypes = {
                 "RhythmGame.Play.RG_PS_Judgement",
@@ -502,25 +503,36 @@ namespace sxtg2.Hooks
                 "OnGetJudge"
             };
 
+            // 상속된 베이스 메서드(PlayWidget.OnGetJudge 등)는 여러 파생 타입에서 같은 메서드로 잡히므로 한 번만 패치한다.
+            // MethodInfo는 가져온 타입(ReflectedType)이 다르면 같은 메서드도 서로 다른 객체라, 선언 타입+시그니처 문자열로 구분한다.
+            var seen = new HashSet<string>();
             foreach (var typeName in targetTypes)
             {
                 var type = AccessTools.TypeByName(typeName);
                 if (type == null) continue;
 
+                var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var methodName in targetMethods)
                 {
-                    var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                     foreach (var m in methods)
                     {
                         if (m.Name != methodName) continue;
                         var paramsInfo = m.GetParameters();
-                        if (paramsInfo.Length >= 1 && paramsInfo[0].ParameterType == _eJudgesType)
+                        if (paramsInfo.Length >= 1 && paramsInfo[0].ParameterType == _eJudgesType &&
+                            seen.Add(m.DeclaringType.FullName + "::" + m))
                         {
-                            yield return m;
+                            targets.Add(m);
                         }
                     }
                 }
             }
+
+            if (targets.Count == 0)
+                MelonLogger.Warning("[AllPerfect] 패치할 판정 메서드를 하나도 찾지 못해 올퍼펙트가 적용되지 않습니다 (게임 업데이트로 바뀌었을 수 있음).");
+            else
+                MelonLogger.Msg($"[AllPerfect] 판정 메서드 {targets.Count}개를 패치합니다.");
+
+            return targets;
         }
 
         [HarmonyPrefix]
@@ -532,45 +544,6 @@ namespace sxtg2.Hooks
             if (_eJudgesType != null && _bluestarValue != null && __0 != null && __0.GetType() == _eJudgesType)
             {
                 __0 = _bluestarValue;
-            }
-
-            return true;
-        }
-    }
-
-    [HarmonyPatch]
-    public static class ResultSaveBlockHook
-    {
-        /// <summary>
-        /// ManagerResult.ComparePlayResultHighScore/PostRequestPlayResult 래퍼를 통째로 건너뛰면 래퍼 끝에 있는
-        /// 화면 갱신(베스트 점수 표시, ManagerResult.cs:300-301)까지 같이 사라진다. 그래서 실제로 기록을 쓰고
-        /// 서버로 보내는 말단 메서드만 막는다: 저장은 UserAccountModule.SavePlayData, 전송은 LyrebirdServer.PostUserScore.
-        /// 둘 다 원본에서 ManagerResult 말고는 부르는 곳이 없다.
-        /// </summary>
-        private static IEnumerable<MethodBase> TargetMethods()
-        {
-            var save = AccessTools.Method(typeof(UserAccountModule), nameof(UserAccountModule.SavePlayData));
-            if (save != null)
-                yield return save;
-            else
-                MelonLogger.Warning("[ResultSaveBlock] UserAccountModule.SavePlayData를 찾지 못해 기록 저장 차단이 적용되지 않습니다.");
-
-            var post = AccessTools.Method(typeof(LyrebirdServer), nameof(LyrebirdServer.PostUserScore));
-            if (post != null)
-                yield return post;
-            else
-                MelonLogger.Warning("[ResultSaveBlock] LyrebirdServer.PostUserScore를 찾지 못해 랭킹 전송 차단이 적용되지 않습니다.");
-        }
-
-        [HarmonyPrefix]
-        private static bool Prefix(MethodBase __originalMethod)
-        {
-            bool shouldBlock = ModLog.BlockSaveBestRanking || ModLog.EnableAutoPlay || ModLog.EnableAllPerfect;
-
-            if (shouldBlock)
-            {
-                ModLog.Msg($"[차단] 하이스코어 및 랭킹 저장 차단: {__originalMethod?.DeclaringType?.Name}.{__originalMethod?.Name}");
-                return false;
             }
 
             return true;
@@ -599,14 +572,22 @@ namespace sxtg2.Hooks
         /// 그러면 설정을 재로드해 MaxScore를 바꿔도 훅 자체가 없어서 영영 반영되지 않는다.
         /// GetMaxScore()가 실시간으로 읽으므로 기본값일 때 동작은 원본과 완전히 동일하다.
         /// </summary>
+        private static bool _prepareLogged;
+
         private static bool Prepare()
         {
             SaveCustomKeyConfig.EnsureInitialized();
 
-            MelonLogger.Msg(
-                $"[JudgeScoreMax] 점수 상한 훅 적용 (현재 {SaveCustomKeyConfig.MaxScore:0.###}" +
-                $"{(SaveCustomKeyConfig.IsMaxScoreCustom ? " - 커스텀" : " - 기본값, 원본과 동일 동작")}, " +
-                $"원본 상수 {OriginalMaxScore:0.###}).");
+            // Harmony가 대상 메서드마다 Prepare를 부르므로 같은 줄이 세 번 찍혔다. 한 번만 남긴다.
+            if (!_prepareLogged)
+            {
+                _prepareLogged = true;
+                MelonLogger.Msg(
+                    $"[JudgeScoreMax] 점수 상한 훅 적용 (현재 {SaveCustomKeyConfig.MaxScore:0.###}" +
+                    $"{(SaveCustomKeyConfig.IsMaxScoreCustom ? " - 커스텀" : " - 기본값, 원본과 동일 동작")}, " +
+                    $"원본 상수 {OriginalMaxScore:0.###}).");
+            }
+
             return true;
         }
 
@@ -684,7 +665,7 @@ namespace sxtg2.Hooks
         [HarmonyPrefix]
         private static bool GetAudioClipPrefix(TrackData __instance, ref AudioClip __result)
         {
-            if (!(__instance is CustomTrackData customTrack))
+            if (!(__instance is CustomTrackData customTrack) || customTrack.ResourceDonor == null)
                 return true;
 
             __result = customTrack.ResourceDonor.GetAudioClip();
@@ -695,7 +676,7 @@ namespace sxtg2.Hooks
         [HarmonyPrefix]
         private static bool GetLoadingAnimationPrefix(TrackData __instance, ref VideoClip __result)
         {
-            if (!(__instance is CustomTrackData customTrack))
+            if (!(__instance is CustomTrackData customTrack) || customTrack.ResourceDonor == null)
                 return true;
 
             __result = customTrack.ResourceDonor.GetLoadingAnimation();
@@ -711,7 +692,7 @@ namespace sxtg2.Hooks
             bool willUseSXGT,
             ref string __result)
         {
-            if (!(__instance is CustomTrackData customTrack))
+            if (!(__instance is CustomTrackData customTrack) || customTrack.ResourceDonor == null)
                 return true;
 
             __result = customTrack.ResourceDonor.GetSixtarPatternDirectory(lv, ps, willUseSXGT);
@@ -726,7 +707,7 @@ namespace sxtg2.Hooks
             bool willUseSXGT,
             ref string __result)
         {
-            if (!(__instance is CustomTrackData customTrack))
+            if (!(__instance is CustomTrackData customTrack) || customTrack.ResourceDonor == null)
                 return true;
 
             __result = customTrack.ResourceDonor.GetSixtarPatternDirectory(lv, willUseSXGT);
@@ -738,19 +719,24 @@ namespace sxtg2.Hooks
             if (!(track is CustomTrackData customTrack))
                 return true;
 
-            if (customTrack.CustomJacket == null)
+            // 자켓은 곡마다 한 번만 찾는다. 파일이 없을 때도 결과를 기억해서, 게임이 자켓을 요청할 때마다
+            // 파일 9개를 다시 확인하고 같은 경고를 반복하지 않는다.
+            if (customTrack.CustomJacket == null && !customTrack.JacketSearched)
             {
+                customTrack.JacketSearched = true;
                 customTrack.CustomJacket = ThumbnailLoader.LoadThumbnail(
                     customTrack.ID,
                     customTrack.AlbumFolder);
+
+                if (customTrack.CustomJacket == null)
+                {
+                    MelonLogger.Warning(
+                        $"[TrackDataMediaHook] 커스텀 자켓을 찾지 못해 기본 자켓을 사용합니다: {customTrack.DisplayName}");
+                }
             }
 
             if (customTrack.CustomJacket == null)
-            {
-                MelonLogger.Warning(
-                    $"[TrackDataMediaHook] 커스텀 자켓을 찾지 못해 기본 자켓을 사용합니다: {customTrack.DisplayName}");
                 return true;
-            }
 
             result = customTrack.CustomJacket;
             return false;

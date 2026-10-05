@@ -78,11 +78,26 @@ namespace sxtg2.Features
             }
         }
 
+        // 같은 프레임에 같은 판정이 위젯 수만큼 겹쳐 들어오는 것을 걸러내기 위한 기록.
+        private static int _lastHitFrame = -1;
+        private static float _lastHitGapSeconds;
+        private static int _lastHitJudgeIndex = -1;
+
         public static void RegisterHit(float gapInSeconds, int judgeIndex)
         {
             // 꺼져 있으면 DrawJudgmentBar가 HitHistory를 정리하지 않으므로, 여기서 쌓으면 끝없이 늘어난다.
             if (!SaveCustomKeyConfig.EnableJudgmentBar)
                 return;
+
+            // 게임은 판정 하나를 장착한 위젯마다(최대 5개) OnGetJudge로 알리므로 같은 프레임에 같은 값이 여러 번 들어온다.
+            // 그대로 쌓으면 틱이 겹쳐 그려져 더 진해 보이고 히트 수가 부풀려진다. 같은 프레임의 같은 (판정, 오차)는 한 번만 받는다.
+            // (같은 시각에 두 레인을 동시에 쳐서 완전히 같은 값이 나오는 경우도 같은 위치에 겹쳐 그려지므로 화면은 똑같다.)
+            int frame = Time.frameCount;
+            if (frame == _lastHitFrame && judgeIndex == _lastHitJudgeIndex && gapInSeconds == _lastHitGapSeconds)
+                return;
+            _lastHitFrame = frame;
+            _lastHitJudgeIndex = judgeIndex;
+            _lastHitGapSeconds = gapInSeconds;
 
             try
             {
@@ -107,6 +122,22 @@ namespace sxtg2.Features
             }
         }
 
+        /// <summary>틱과 라벨이 서서히 사라지는 시간(초).</summary>
+        private const float HitFadeSeconds = 1.5f;
+
+        /// <summary>한 번의 그리기에서 쓰는 판정바 배치(화면 크기, 방향, 위치, 눈금 배율).</summary>
+        private struct BarLayout
+        {
+            public bool IsVertical;
+            public bool IsRight;
+            public float CenterX;
+            public float CenterY;
+            public float BarW;
+            public float BarH;
+            public float MaxMsRange;
+            public float Scale;
+        }
+
         public static void DrawJudgmentBar()
         {
             if (!SaveCustomKeyConfig.EnableJudgmentBar)
@@ -120,129 +151,163 @@ namespace sxtg2.Features
 
             try
             {
-                // const여야 아래 람다가 지역 변수를 캡처하지 않아 호출마다 클로저가 할당되지 않는다.
-                const float duration = 1.5f;
-                HitHistory.RemoveAll(tick => Time.time - tick.timeAdded > duration);
+                // 상수 필드만 쓰므로 이 람다는 변수를 캡처하지 않아 호출마다 클로저가 할당되지 않는다.
+                HitHistory.RemoveAll(tick => Time.time - tick.timeAdded > HitFadeSeconds);
 
-                if (_whiteTex == null)
-                {
-                    _whiteTex = new Texture2D(1, 1);
-                    _whiteTex.SetPixel(0, 0, Color.white);
-                    _whiteTex.Apply();
-                }
+                EnsureWhiteTexture();
 
-                float screenWidth = Screen.width;
-                float screenHeight = Screen.height;
-
-                bool isVertical = SaveCustomKeyConfig.JudgmentBarVertical;
+                BarLayout layout = ComputeLayout();
                 int trackShape = SaveCustomKeyConfig.JudgmentBarShape;
                 int rangeShape = SaveCustomKeyConfig.JudgmentBarRangeShape == -1 ? trackShape : SaveCustomKeyConfig.JudgmentBarRangeShape;
-                string side = SaveCustomKeyConfig.JudgmentBarSide;
-                bool isLeft = side.Equals("Left", StringComparison.OrdinalIgnoreCase);
-                bool isRight = side.Equals("Right", StringComparison.OrdinalIgnoreCase);
-                float barW = isVertical ? 24f : 300f;
-                float barH = isVertical ? 300f : 24f;
 
-                const float edgeMargin = 60f;
-                float centerX;
-                if (isLeft)
-                    centerX = isVertical ? edgeMargin : edgeMargin + barW / 2f;
-                else if (isRight)
-                    centerX = isVertical ? (screenWidth - edgeMargin) : (screenWidth - edgeMargin - barW / 2f);
-                else // Center(기본값): 세로는 왼쪽 고정, 가로는 화면 정중앙 - 기존 동작 그대로
-                    centerX = isVertical ? edgeMargin : screenWidth / 2f;
-
-                float centerY = screenHeight / 2f;
-
-                // 눈금 범위는 게임의 최대 판정 폭(REDSTAR 경계)에 맞춘다.
-                float maxMsRange = RangeMs[3];
-                float scale = (isVertical ? (barH / 2f) : (barW / 2f)) / maxMsRange;
-
-                // 1. 전체 배경 트랙 (±REDSTAR 범위)
-                DrawBarShape(trackShape, new Rect(centerX - barW / 2f, centerY - barH / 2f, barW, barH), new Color(0.08f, 0.08f, 0.08f, 0.65f));
-
-                // 2~4. 실제 판정 범위 박스 (넓은 등급부터 겹쳐 그림)
-                DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[2] * 2f * scale, new Color(0.65f, 0.55f, 0.12f, 0.18f), rangeShape); // YELLOWSTAR
-                DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[1] * 2f * scale, new Color(0.75f, 0.75f, 0.75f, 0.20f), rangeShape); // WHITESTAR
-                DrawRangeBox(centerX, centerY, barW, barH, isVertical, RangeMs[0] * 2f * scale, new Color(0.20f, 0.50f, 0.85f, 0.32f), rangeShape); // BLUESTAR
-
-                // 4. Center Line (0ms)
-                if (isVertical)
-                    DrawColorRect(new Rect(centerX - barW / 2f - 2f, centerY - 1f, barW + 4f, 2f), Color.white);
-                else
-                    DrawColorRect(new Rect(centerX - 1f, centerY - barH / 2f - 2f, 2f, barH + 4f), Color.white);
-
-                // 5. 히트 잔상 틱 렌더링
-                foreach (var tick in HitHistory)
-                {
-                    float ms = Mathf.Clamp(tick.offsetMs, -maxMsRange, maxMsRange);
-                    float elapsed = Time.time - tick.timeAdded;
-                    float alpha = Mathf.Clamp01(1f - (elapsed / duration));
-                    Color finalColor = new Color(tick.color.r, tick.color.g, tick.color.b, alpha * 0.9f);
-
-                    if (isVertical)
-                    {
-                        // 세로 바: 위쪽 = +ms (FAST), 아래쪽 = -ms (SLOW)
-                        float tickY = centerY - (ms * scale);
-                        DrawColorRect(new Rect(centerX - barW / 2f - 1f, tickY - 1f, barW + 2f, 2f), finalColor);
-                    }
-                    else
-                    {
-                        // 가로 바: 오른쪽 = +ms (FAST), 왼쪽 = -ms (SLOW)
-                        float tickX = centerX + (ms * scale);
-                        DrawColorRect(new Rect(tickX - 1f, centerY - barH / 2f - 1f, 2f, barH + 2f), finalColor);
-                    }
-                }
-
-                // 6. 실시간 ms 오차 텍스트 출력
-                float textElapsed = Time.time - _lastHitTime;
-                if (textElapsed < duration)
-                {
-                    string sign = _lastHitOffsetMs >= 0f ? "+" : "";
-                    string judgeName = (_lastHitJudge >= 0 && _lastHitJudge < JudgeNames.Length) ? JudgeNames[_lastHitJudge] : "?";
-                    string tag = _lastHitOffsetMs >= 0f ? "FAST" : "SLOW";
-                    string msText = $"{sign}{_lastHitOffsetMs:F1} ms · {judgeName} ({tag})";
-
-                    float alpha = Mathf.Clamp01(1f - (textElapsed / duration));
-
-                    if (_labelStyle == null)
-                    {
-                        _labelStyle = new GUIStyle(GUI.skin.label)
-                        {
-                            fontStyle = FontStyle.Bold,
-                            alignment = TextAnchor.MiddleLeft
-                        };
-                    }
-                    _labelStyle.fontSize = 16;
-
-                    // 세로 바가 화면 오른쪽에 있으면 라벨이 화면 밖으로 나가므로 바 왼쪽에 붙인다.
-                    bool labelOnLeftOfBar = isVertical && isRight;
-                    _labelStyle.alignment = labelOnLeftOfBar ? TextAnchor.MiddleRight : TextAnchor.MiddleLeft;
-
-                    const float labelWidth = 260f;
-                    Rect labelRect = isVertical
-                        ? (labelOnLeftOfBar
-                            ? new Rect(centerX - barW / 2f - 10f - labelWidth, centerY - 12f, labelWidth, 24f)
-                            : new Rect(centerX + barW / 2f + 10f, centerY - 12f, labelWidth, 24f))
-                        : new Rect(centerX - 90f, centerY - barH / 2f - 28f, labelWidth, 24f);
-
-                    // 그림자
-                    _labelStyle.normal.textColor = new Color(0f, 0f, 0f, alpha * 0.8f);
-                    float offset = 1.5f;
-                    GUI.Label(new Rect(labelRect.x - offset, labelRect.y - offset, labelRect.width, labelRect.height), msText, _labelStyle);
-                    GUI.Label(new Rect(labelRect.x + offset, labelRect.y - offset, labelRect.width, labelRect.height), msText, _labelStyle);
-                    GUI.Label(new Rect(labelRect.x - offset, labelRect.y + offset, labelRect.width, labelRect.height), msText, _labelStyle);
-                    GUI.Label(new Rect(labelRect.x + offset, labelRect.y + offset, labelRect.width, labelRect.height), msText, _labelStyle);
-
-                    // 메인 텍스트
-                    _labelStyle.normal.textColor = new Color(_lastHitColor.r, _lastHitColor.g, _lastHitColor.b, alpha);
-                    GUI.Label(labelRect, msText, _labelStyle);
-                }
+                DrawTrackAndRanges(layout, trackShape, rangeShape);
+                DrawCenterLine(layout);
+                DrawHitTicks(layout);
+                DrawHitLabel(layout);
             }
             catch (Exception ex)
             {
                 ModLog.Warning($"[JudgmentBar] OnGUI 드로우 에러: {ex.Message}");
             }
+        }
+
+        private static void EnsureWhiteTexture()
+        {
+            if (_whiteTex != null)
+                return;
+
+            _whiteTex = new Texture2D(1, 1);
+            _whiteTex.SetPixel(0, 0, Color.white);
+            _whiteTex.Apply();
+        }
+
+        private static BarLayout ComputeLayout()
+        {
+            float screenWidth = Screen.width;
+            float screenHeight = Screen.height;
+
+            bool isVertical = SaveCustomKeyConfig.JudgmentBarVertical;
+            string side = SaveCustomKeyConfig.JudgmentBarSide;
+            bool isLeft = side.Equals("Left", StringComparison.OrdinalIgnoreCase);
+            bool isRight = side.Equals("Right", StringComparison.OrdinalIgnoreCase);
+            float barW = isVertical ? 24f : 300f;
+            float barH = isVertical ? 300f : 24f;
+
+            const float edgeMargin = 60f;
+            float centerX;
+            if (isLeft)
+                centerX = isVertical ? edgeMargin : edgeMargin + barW / 2f;
+            else if (isRight)
+                centerX = isVertical ? (screenWidth - edgeMargin) : (screenWidth - edgeMargin - barW / 2f);
+            else // Center(기본값): 세로는 왼쪽 고정, 가로는 화면 정중앙 - 기존 동작 그대로
+                centerX = isVertical ? edgeMargin : screenWidth / 2f;
+
+            // 눈금 범위는 게임의 최대 판정 폭(REDSTAR 경계)에 맞춘다.
+            float maxMsRange = RangeMs[3];
+
+            return new BarLayout
+            {
+                IsVertical = isVertical,
+                IsRight = isRight,
+                CenterX = centerX,
+                CenterY = screenHeight / 2f,
+                BarW = barW,
+                BarH = barH,
+                MaxMsRange = maxMsRange,
+                Scale = (isVertical ? (barH / 2f) : (barW / 2f)) / maxMsRange
+            };
+        }
+
+        /// <summary>전체 배경 트랙(±REDSTAR 범위)과 실제 판정 범위 박스(넓은 등급부터 겹쳐 그림).</summary>
+        private static void DrawTrackAndRanges(BarLayout l, int trackShape, int rangeShape)
+        {
+            DrawBarShape(trackShape, new Rect(l.CenterX - l.BarW / 2f, l.CenterY - l.BarH / 2f, l.BarW, l.BarH), new Color(0.08f, 0.08f, 0.08f, 0.65f));
+
+            DrawRangeBox(l.CenterX, l.CenterY, l.BarW, l.BarH, l.IsVertical, RangeMs[2] * 2f * l.Scale, new Color(0.65f, 0.55f, 0.12f, 0.18f), rangeShape); // YELLOWSTAR
+            DrawRangeBox(l.CenterX, l.CenterY, l.BarW, l.BarH, l.IsVertical, RangeMs[1] * 2f * l.Scale, new Color(0.75f, 0.75f, 0.75f, 0.20f), rangeShape); // WHITESTAR
+            DrawRangeBox(l.CenterX, l.CenterY, l.BarW, l.BarH, l.IsVertical, RangeMs[0] * 2f * l.Scale, new Color(0.20f, 0.50f, 0.85f, 0.32f), rangeShape); // BLUESTAR
+        }
+
+        /// <summary>0ms 기준선.</summary>
+        private static void DrawCenterLine(BarLayout l)
+        {
+            if (l.IsVertical)
+                DrawColorRect(new Rect(l.CenterX - l.BarW / 2f - 2f, l.CenterY - 1f, l.BarW + 4f, 2f), Color.white);
+            else
+                DrawColorRect(new Rect(l.CenterX - 1f, l.CenterY - l.BarH / 2f - 2f, 2f, l.BarH + 4f), Color.white);
+        }
+
+        /// <summary>히트 잔상 틱.</summary>
+        private static void DrawHitTicks(BarLayout l)
+        {
+            foreach (var tick in HitHistory)
+            {
+                float ms = Mathf.Clamp(tick.offsetMs, -l.MaxMsRange, l.MaxMsRange);
+                float elapsed = Time.time - tick.timeAdded;
+                float alpha = Mathf.Clamp01(1f - (elapsed / HitFadeSeconds));
+                Color finalColor = new Color(tick.color.r, tick.color.g, tick.color.b, alpha * 0.9f);
+
+                if (l.IsVertical)
+                {
+                    // 세로 바: 위쪽 = +ms (FAST), 아래쪽 = -ms (SLOW)
+                    float tickY = l.CenterY - (ms * l.Scale);
+                    DrawColorRect(new Rect(l.CenterX - l.BarW / 2f - 1f, tickY - 1f, l.BarW + 2f, 2f), finalColor);
+                }
+                else
+                {
+                    // 가로 바: 오른쪽 = +ms (FAST), 왼쪽 = -ms (SLOW)
+                    float tickX = l.CenterX + (ms * l.Scale);
+                    DrawColorRect(new Rect(tickX - 1f, l.CenterY - l.BarH / 2f - 1f, 2f, l.BarH + 2f), finalColor);
+                }
+            }
+        }
+
+        /// <summary>마지막 히트의 오차(ms)·등급 텍스트. 그림자 4방향 + 메인 텍스트.</summary>
+        private static void DrawHitLabel(BarLayout l)
+        {
+            float textElapsed = Time.time - _lastHitTime;
+            if (textElapsed >= HitFadeSeconds)
+                return;
+
+            string sign = _lastHitOffsetMs >= 0f ? "+" : "";
+            string judgeName = (_lastHitJudge >= 0 && _lastHitJudge < JudgeNames.Length) ? JudgeNames[_lastHitJudge] : "?";
+            string tag = _lastHitOffsetMs >= 0f ? "FAST" : "SLOW";
+            string msText = $"{sign}{_lastHitOffsetMs:F1} ms · {judgeName} ({tag})";
+
+            float alpha = Mathf.Clamp01(1f - (textElapsed / HitFadeSeconds));
+
+            if (_labelStyle == null)
+            {
+                _labelStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleLeft
+                };
+            }
+            _labelStyle.fontSize = 16;
+
+            // 세로 바가 화면 오른쪽에 있으면 라벨이 화면 밖으로 나가므로 바 왼쪽에 붙인다.
+            bool labelOnLeftOfBar = l.IsVertical && l.IsRight;
+            _labelStyle.alignment = labelOnLeftOfBar ? TextAnchor.MiddleRight : TextAnchor.MiddleLeft;
+
+            const float labelWidth = 260f;
+            Rect labelRect = l.IsVertical
+                ? (labelOnLeftOfBar
+                    ? new Rect(l.CenterX - l.BarW / 2f - 10f - labelWidth, l.CenterY - 12f, labelWidth, 24f)
+                    : new Rect(l.CenterX + l.BarW / 2f + 10f, l.CenterY - 12f, labelWidth, 24f))
+                : new Rect(l.CenterX - 90f, l.CenterY - l.BarH / 2f - 28f, labelWidth, 24f);
+
+            // 그림자
+            _labelStyle.normal.textColor = new Color(0f, 0f, 0f, alpha * 0.8f);
+            float offset = 1.5f;
+            GUI.Label(new Rect(labelRect.x - offset, labelRect.y - offset, labelRect.width, labelRect.height), msText, _labelStyle);
+            GUI.Label(new Rect(labelRect.x + offset, labelRect.y - offset, labelRect.width, labelRect.height), msText, _labelStyle);
+            GUI.Label(new Rect(labelRect.x - offset, labelRect.y + offset, labelRect.width, labelRect.height), msText, _labelStyle);
+            GUI.Label(new Rect(labelRect.x + offset, labelRect.y + offset, labelRect.width, labelRect.height), msText, _labelStyle);
+
+            // 메인 텍스트
+            _labelStyle.normal.textColor = new Color(_lastHitColor.r, _lastHitColor.g, _lastHitColor.b, alpha);
+            GUI.Label(labelRect, msText, _labelStyle);
         }
 
         private static void DrawRangeBox(float centerX, float centerY, float barW, float barH, bool isVertical, float size, Color color, int shapeType)
@@ -406,6 +471,8 @@ namespace sxtg2.Features
                 "JudgeTextViewer"
             };
 
+            var targets = new List<MethodBase>();
+            var seen = new HashSet<string>();
             foreach (var typeName in typeNames)
             {
                 var type = AccessTools.TypeByName(typeName);
@@ -416,12 +483,18 @@ namespace sxtg2.Features
                 {
                     if (m.Name != "OnGetJudge") continue;
                     var parameters = m.GetParameters();
-                    if (parameters.Length >= 2 && (parameters[1].ParameterType == typeof(float) || parameters[1].ParameterType == typeof(double)))
+                    if (parameters.Length >= 2 && (parameters[1].ParameterType == typeof(float) || parameters[1].ParameterType == typeof(double)) &&
+                        seen.Add(m.DeclaringType.FullName + "::" + m))
                     {
-                        yield return m;
+                        targets.Add(m);
                     }
                 }
             }
+
+            if (targets.Count == 0)
+                MelonLogger.Warning("[JudgmentBar] OnGetJudge 판정 메서드를 하나도 찾지 못해 판정바에 틱이 나오지 않습니다 (게임 업데이트로 바뀌었을 수 있음).");
+
+            return targets;
         }
 
         [HarmonyPostfix]
@@ -453,7 +526,8 @@ namespace sxtg2.Features
                 }
 
                 JudgmentBar.RegisterHit(deltaTime, judgeIndex);
-                ModLog.Verbose($"[JudgmentBar] 히트 감지: judge={judgeIndex}, deltaTime={deltaTime:F4}s ({deltaTime * 1000f:F1}ms)");
+                if (ModLog.IsVerbose)
+                    ModLog.Verbose($"[JudgmentBar] 히트 감지: judge={judgeIndex}, deltaTime={deltaTime:F4}s ({deltaTime * 1000f:F1}ms)");
             }
             catch (Exception ex)
             {

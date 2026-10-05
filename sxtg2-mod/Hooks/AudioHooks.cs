@@ -9,6 +9,21 @@ using sxtg2.Helpers;
 
 namespace sxtg2.Hooks.Audio
 {
+    internal static class MediaUrl
+    {
+        /// <summary>
+        /// 로컬 파일 경로를 UnityWebRequest/VideoPlayer용 file:// URL로 바꾼다. URL에서 특별한 뜻을 갖는 `%`, `#`, `?`만
+        /// 이스케이프하고 나머지(한글/일본어/공백/작은따옴표 등)는 지금까지와 똑같이 둔다. 예전에는 폴더 이름에 `#`나 `%`가 있으면
+        /// 경로가 잘려 BGM/BGA/미리듣기를 못 읽었다.
+        /// </summary>
+        public static string FromPath(string filePath)
+        {
+            string path = filePath.Replace('\\', '/');
+            path = path.Replace("%", "%25").Replace("#", "%23").Replace("?", "%3F");
+            return "file://" + path;
+        }
+    }
+
     internal static class BgaFileResolver
     {
         public static string FindForAlbum(string albumFolder)
@@ -39,7 +54,12 @@ namespace sxtg2.Hooks.Audio
             }
 
             var files = Directory.GetFiles(folder, "*.mp4", SearchOption.TopDirectoryOnly);
-            return files.Length > 0 ? files[0] : null;
+            if (files.Length == 0)
+                return null;
+
+            // Directory.GetFiles의 순서는 보장되지 않으므로 이름순으로 정해 항상 같은 파일이 고르게 한다.
+            Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+            return files[0];
         }
     }
 
@@ -52,8 +72,18 @@ namespace sxtg2.Hooks.Audio
         {
             try
             {
-                var albumFile = FindNamedAudioFile(albumFolder, "music")
-                    ?? FindFirstAudioFile(albumFolder);
+                var albumFile = FindNamedAudioFile(albumFolder, "music");
+                if (string.IsNullOrEmpty(albumFile))
+                {
+                    albumFile = FindLargestAudioFile(albumFolder);
+                    if (!string.IsNullOrEmpty(albumFile))
+                    {
+                        MelonLogger.Warning(
+                            $"[BGMPlayerHook] music.ogg/mp3/wav가 없어 폴더에서 가장 큰 오디오 파일을 BGM으로 씁니다: {Path.GetFileName(albumFile)} " +
+                            "(곡 음원은 music.ogg 같은 이름으로 두는 것을 권장합니다)");
+                    }
+                }
+
                 if (!string.IsNullOrEmpty(albumFile))
                 {
                     MelonLogger.Msg($"[BGMPlayerHook] 앨범 폴더에서 BGM 파일 발견: {Path.GetFileName(albumFile)}");
@@ -73,7 +103,18 @@ namespace sxtg2.Hooks.Audio
         {
             return FindNamedAudioFile(albumFolder, "demo")
                 ?? FindNamedAudioFile(albumFolder, "music")
-                ?? FindFirstAudioFile(albumFolder);
+                ?? FindLargestAudioFile(albumFolder);
+        }
+
+        public static AudioType GetAudioType(string extension)
+        {
+            switch (extension?.ToLowerInvariant())
+            {
+                case ".ogg": return AudioType.OGGVORBIS;
+                case ".mp3": return AudioType.MPEG;
+                case ".wav": return AudioType.WAV;
+                default: return AudioType.UNKNOWN;
+            }
         }
 
         private static string FindNamedAudioFile(string folder, string baseName)
@@ -91,23 +132,33 @@ namespace sxtg2.Hooks.Audio
             return null;
         }
 
-        private static string FindFirstAudioFile(string folder)
+        /// <summary>
+        /// music.*가 없을 때의 폴백. 예전에는 폴더의 첫 .ogg(없으면 .mp3, .wav)를 골라서, 키음이 많은 폴더에서는
+        /// 키음 하나가 BGM이 됐다. 곡 음원은 키음보다 훨씬 크므로 가장 큰 오디오 파일을 고른다.
+        /// </summary>
+        private static string FindLargestAudioFile(string folder)
         {
             if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
             {
                 return null;
             }
 
+            string best = null;
+            long bestSize = -1;
             foreach (var pattern in AudioPatterns)
             {
-                var files = Directory.GetFiles(folder, pattern, SearchOption.TopDirectoryOnly);
-                if (files.Length > 0)
+                foreach (string file in Directory.GetFiles(folder, pattern, SearchOption.TopDirectoryOnly))
                 {
-                    return files[0];
+                    long size = new FileInfo(file).Length;
+                    if (size > bestSize)
+                    {
+                        best = file;
+                        bestSize = size;
+                    }
                 }
             }
 
-            return null;
+            return best;
         }
     }
 
@@ -127,74 +178,92 @@ namespace sxtg2.Hooks.Audio
                 if (bgmAudioSource == null)
                     return;
 
-                if (bgmAudioSource.isPlaying)
+                if (!bgmAudioSource.isPlaying)
                 {
-                    if (!videoPlayer.isPlaying)
-                    {
-                        videoPlayer.time = bgmAudioSource.time;
-                        videoPlayer.Play();
-                        ModLog.Verbose($"[BGABGMSyncHook] BGM 재생 감지 -> BGA 재생 재개 (시점: {bgmAudioSource.time:F2}s)");
-                    }
-
-                    if (Time.time - _lastSyncCheckTime < 0.1f)
-                        return;
-                    _lastSyncCheckTime = Time.time;
-
-                    var bgaTime = (float)videoPlayer.time;
-                    var bgmTime = bgmAudioSource.time;
-
-                    if (bgaTime <= 0 || bgmTime <= 0) return;
-
-                    var timeDifference = bgaTime - bgmTime;
-                    var absDifference = Mathf.Abs(timeDifference);
-
-                    if (absDifference > 0.5f)
-                    {
-                        videoPlayer.time = bgmTime;
-                        if (videoPlayer.canSetPlaybackSpeed) videoPlayer.playbackSpeed = 1.0f;
-                        ModLog.Verbose($"[BGABGMSyncHook] 하드 재동기화: BGA {bgaTime:F3} -> BGM {bgmTime:F3} (차이 {timeDifference:F3})");
-                    }
-                    else
-                    {
-                        bool isAdjusting = Mathf.Abs(videoPlayer.playbackSpeed - 1.0f) > 0.001f;
-                        float threshold = isAdjusting ? 0.01f : 0.05f;
-
-                        if (absDifference > threshold)
-                        {
-                            if (videoPlayer.canSetPlaybackSpeed)
-                            {
-                                float adjustmentFactor = (absDifference > 0.1f) ? 0.05f : 0.02f;
-                                float targetSpeed = (timeDifference > 0) ? (1.0f - adjustmentFactor) : (1.0f + adjustmentFactor);
-
-                                if (Mathf.Abs(videoPlayer.playbackSpeed - targetSpeed) > 0.001f)
-                                {
-                                    videoPlayer.playbackSpeed = targetSpeed;
-                                    ModLog.Verbose($"[BGABGMSyncHook] 소프트 동기화: 속도 {targetSpeed:F3} (차이 {timeDifference:F4})");
-                                }
-                            }
-                        }
-                        else
-                        {
-                            if (videoPlayer.canSetPlaybackSpeed && Mathf.Abs(videoPlayer.playbackSpeed - 1.0f) > 0.001f)
-                            {
-                                videoPlayer.playbackSpeed = 1.0f;
-                                ModLog.Verbose($"[BGABGMSyncHook] 동기화 안정: 속도 1.0 복귀");
-                            }
-                        }
-                    }
+                    PauseVideoWhileBgmPaused(videoPlayer);
+                    return;
                 }
-                else
+
+                float bgmTime = bgmAudioSource.time;
+
+                // 영상이 곡보다 짧으면 영상이 끝난 뒤에는 건드리지 않는다. 예전에는 "BGM은 재생 중인데 영상은 멈춤"으로 보고
+                // 매 프레임 time을 곡 위치로 옮기고 Play()를 다시 불렀다(끝난 영상을 계속 재시작하려 듦).
+                if (IsVideoFinished(videoPlayer, bgmTime))
+                    return;
+
+                if (!videoPlayer.isPlaying)
                 {
-                    if (videoPlayer.isPlaying)
-                    {
-                        videoPlayer.Pause();
-                        ModLog.Verbose("[BGABGMSyncHook] BGM 일시정지 감지 -> BGA 일시정지");
-                    }
+                    videoPlayer.time = bgmTime;
+                    videoPlayer.Play();
+                    ModLog.Verbose($"[BGABGMSyncHook] BGM 재생 감지 -> BGA 재생 재개 (시점: {bgmTime:F2}s)");
                 }
+
+                if (Time.time - _lastSyncCheckTime < 0.1f)
+                    return;
+                _lastSyncCheckTime = Time.time;
+
+                AdjustVideoToBgm(videoPlayer, bgmTime);
             }
             catch (Exception ex)
             {
                 MelonLogger.Warning($"[BGABGMSyncHook] 동기화 체크 실패: {ex.Message}");
+            }
+        }
+
+        /// <summary>영상 길이를 알 수 있고(준비 완료), BGM 위치가 이미 영상 끝을 넘었는지.</summary>
+        private static bool IsVideoFinished(VideoPlayer videoPlayer, float bgmTime)
+        {
+            return videoPlayer.isPrepared && videoPlayer.length > 0.0 && bgmTime >= videoPlayer.length;
+        }
+
+        private static void PauseVideoWhileBgmPaused(VideoPlayer videoPlayer)
+        {
+            if (!videoPlayer.isPlaying)
+                return;
+
+            videoPlayer.Pause();
+            ModLog.Verbose("[BGABGMSyncHook] BGM 일시정지 감지 -> BGA 일시정지");
+        }
+
+        /// <summary>BGA와 BGM의 시간 차이를 보고 하드 싱크(위치 이동) 또는 소프트 싱크(재생 속도 ±2~5%)를 한다.</summary>
+        private static void AdjustVideoToBgm(VideoPlayer videoPlayer, float bgmTime)
+        {
+            float bgaTime = (float)videoPlayer.time;
+            if (bgaTime <= 0 || bgmTime <= 0)
+                return;
+
+            float timeDifference = bgaTime - bgmTime;
+            float absDifference = Mathf.Abs(timeDifference);
+
+            if (absDifference > 0.5f)
+            {
+                videoPlayer.time = bgmTime;
+                if (videoPlayer.canSetPlaybackSpeed) videoPlayer.playbackSpeed = 1.0f;
+                ModLog.Verbose($"[BGABGMSyncHook] 하드 재동기화: BGA {bgaTime:F3} -> BGM {bgmTime:F3} (차이 {timeDifference:F3})");
+                return;
+            }
+
+            if (!videoPlayer.canSetPlaybackSpeed)
+                return;
+
+            bool isAdjusting = Mathf.Abs(videoPlayer.playbackSpeed - 1.0f) > 0.001f;
+            float threshold = isAdjusting ? 0.01f : 0.05f;
+
+            if (absDifference > threshold)
+            {
+                float adjustmentFactor = (absDifference > 0.1f) ? 0.05f : 0.02f;
+                float targetSpeed = (timeDifference > 0) ? (1.0f - adjustmentFactor) : (1.0f + adjustmentFactor);
+
+                if (Mathf.Abs(videoPlayer.playbackSpeed - targetSpeed) > 0.001f)
+                {
+                    videoPlayer.playbackSpeed = targetSpeed;
+                    ModLog.Verbose($"[BGABGMSyncHook] 소프트 동기화: 속도 {targetSpeed:F3} (차이 {timeDifference:F4})");
+                }
+            }
+            else if (isAdjusting)
+            {
+                videoPlayer.playbackSpeed = 1.0f;
+                ModLog.Verbose("[BGABGMSyncHook] 동기화 안정: 속도 1.0 복귀");
             }
         }
     }
@@ -259,7 +328,7 @@ namespace sxtg2.Hooks.Audio
         {
             try
             {
-                var videoUrl = "file://" + bgaFilePath.Replace("\\", "/");
+                var videoUrl = MediaUrl.FromPath(bgaFilePath);
 
                 if (videoPlayer.isPlaying)
                 {
@@ -337,7 +406,7 @@ namespace sxtg2.Hooks.Audio
 
         private static IEnumerator LoadAudio(AudioSource target, string filePath, int version)
         {
-            string url = "file://" + filePath.Replace("\\", "/");
+            string url = MediaUrl.FromPath(filePath);
             var request = CreateRequest(url, filePath);
             if (request == null)
             {
@@ -380,13 +449,13 @@ namespace sxtg2.Hooks.Audio
         {
             try
             {
-                AudioType audioType = GetAudioType(Path.GetExtension(filePath));
+                AudioType audioType = BgmFileResolver.GetAudioType(Path.GetExtension(filePath));
                 var request = UnityWebRequestMultimedia.GetAudioClip(url, audioType);
                 if (request.downloadHandler is DownloadHandlerAudioClip handler)
                 {
-                    handler.streamAudio =
-                        Path.GetExtension(filePath).Equals(".wav", StringComparison.OrdinalIgnoreCase) ||
-                        new FileInfo(filePath).Length > 5 * 1024 * 1024;
+                    // 5MB를 넘는 파일만 스트리밍한다. 예전에는 .wav도 항상 스트리밍했는데, 게임은 곡 종료를 bgm.clip.length로
+                    // 판단하므로 길이가 확실한 통째 로드가 안전하다(.wav도 압축 해제된 PCM이라 크지만 한 곡 분량이다).
+                    handler.streamAudio = new FileInfo(filePath).Length > 5 * 1024 * 1024;
                 }
                 return request;
             }
@@ -401,17 +470,6 @@ namespace sxtg2.Hooks.Audio
         {
             if (version == _requestVersion)
                 _isLoading = false;
-        }
-
-        private static AudioType GetAudioType(string extension)
-        {
-            switch (extension?.ToLowerInvariant())
-            {
-                case ".ogg": return AudioType.OGGVORBIS;
-                case ".mp3": return AudioType.MPEG;
-                case ".wav": return AudioType.WAV;
-                default: return AudioType.UNKNOWN;
-            }
         }
 
         private static CoroutineRunner GetRunner()

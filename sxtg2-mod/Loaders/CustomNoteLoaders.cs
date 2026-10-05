@@ -3,14 +3,28 @@ using System.Collections.Generic;
 using System.IO;
 using MelonLoader;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace sxtg2.Loaders
 {
     public static class CustomNoteSpriteLoader
     {
         private const string LogPrefix = "[CustomNoteSpriteLoader]";
+
+        // Unity가 Instantiate한 복제본 이름 끝에 붙이는 접미사. 노트 이름은 `_Blue(Clone)` 형태가 된다.
+        private const string CloneSuffix = "(Clone)";
+
         private static readonly Dictionary<string, Sprite> LoadedCustomSprites = new Dictionary<string, Sprite>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>로드된 커스텀 스프라이트가 하나라도 있는지. 없으면 노트마다 할 일이 없다.</summary>
+        public static bool HasAnySprite => LoadedCustomSprites.Count > 0;
+
+        private static string StripCloneSuffix(string name)
+        {
+            if (!string.IsNullOrEmpty(name) && name.EndsWith(CloneSuffix, StringComparison.Ordinal))
+                return name.Substring(0, name.Length - CloneSuffix.Length);
+
+            return name;
+        }
 
         public static void Initialize()
         {
@@ -32,12 +46,13 @@ namespace sxtg2.Loaders
 
             int secondUnderscore = gameObjectName.IndexOf('_', firstUnderscore + 1);
 
+            // 노트 이름은 `_Blue(Clone)`이라 그대로 자르면 `Blue(Clone)`이 나와 `Blue.png`와 맞지 않았다. 접미사를 뗀다.
             if (secondUnderscore > firstUnderscore)
             {
-                return gameObjectName.Substring(firstUnderscore + 1, secondUnderscore - firstUnderscore - 1);
+                return StripCloneSuffix(gameObjectName.Substring(firstUnderscore + 1, secondUnderscore - firstUnderscore - 1));
             }
 
-            return gameObjectName.Substring(firstUnderscore + 1);
+            return StripCloneSuffix(gameObjectName.Substring(firstUnderscore + 1));
         }
 
         public static Sprite GetCustomSpriteForNote(string gameObjectName)
@@ -54,6 +69,9 @@ namespace sxtg2.Loaders
             {
                 if (LoadedCustomSprites.TryGetValue(gameObjectName, out Sprite fullNameSprite))
                     return fullNameSprite;
+
+                if (LoadedCustomSprites.TryGetValue(StripCloneSuffix(gameObjectName), out Sprite fullNameWithoutCloneSprite))
+                    return fullNameWithoutCloneSprite;
             }
 
             return null;
@@ -112,7 +130,18 @@ namespace sxtg2.Loaders
                             new Vector2(0.5f, 0.5f));
 
                         LoadedCustomSprites[noteName] = sprite;
-                        MelonLogger.Msg($"{LogPrefix} 커스텀 노트 스프라이트 로드: {noteName}");
+
+                        // 예전 안내대로 `Blue(Clone).png`처럼 접미사까지 붙인 파일도 `Blue`로 찾히게 한다.
+                        string normalizedName = noteName.Replace(CloneSuffix, "");
+                        if (normalizedName.Length > 0 && !LoadedCustomSprites.ContainsKey(normalizedName))
+                            LoadedCustomSprites[normalizedName] = sprite;
+
+                        MelonLogger.Msg($"{LogPrefix} 커스텀 노트 스프라이트 로드: {noteName} ({texture.width}x{texture.height})");
+                    }
+                    else
+                    {
+                        UnityEngine.Object.Destroy(texture);
+                        MelonLogger.Warning($"{LogPrefix} PNG로 읽지 못해 건너뜁니다: {Path.GetFileName(file)}");
                     }
                 }
                 catch (Exception ex)
@@ -122,43 +151,6 @@ namespace sxtg2.Loaders
             }
 
             MelonLogger.Msg($"{LogPrefix} 총 {LoadedCustomSprites.Count}개의 커스텀 노트 스프라이트 로드 완료");
-        }
-    }
-}
-
-namespace sxtg2.Helpers.UI
-{
-    public static class NoteRendererRecovery
-    {
-        public static void RecoverNoteRenderer(GameObject noteObject)
-        {
-            if (noteObject == null)
-                return;
-
-            try
-            {
-                RecoverImage(noteObject);
-
-                var transform = noteObject.transform;
-                for (int i = 0; i < transform.childCount; i++)
-                {
-                    RecoverImage(transform.GetChild(i).gameObject);
-                }
-            }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[NoteRendererRecovery] 렌더러 복구 오류: {ex.Message}");
-            }
-        }
-
-        private static void RecoverImage(GameObject target)
-        {
-            var image = target.GetComponent<Image>();
-            if (image == null)
-                return;
-
-            image.SetNativeSize();
-            image.SetAllDirty();
         }
     }
 }

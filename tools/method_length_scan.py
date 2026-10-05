@@ -126,14 +126,15 @@ def scan_file(path: Path) -> list[tuple[int, str, str]]:
 
 
 def main():
-    root = Path(__file__).resolve().parents[1] / "sxtg2"
+    # 모드 소스 폴더. (저장소 루트의 sxtg2/ 는 디컴파일된 게임 소스라 재 보았자 의미가 없다.)
+    root = Path(__file__).resolve().parents[1] / "sxtg2-mod"
     if not root.is_dir():
-        print("sxtg2 folder not found", file=sys.stderr)
+        print("sxtg2-mod folder not found", file=sys.stderr)
         sys.exit(1)
     all_m: list[tuple[int, str, str]] = []
     for path in sorted(root.rglob("*.cs")):
         parts = set(path.parts)
-        if "obj" in parts or "bin" in parts:
+        if SKIP_DIRS & parts:
             continue
         all_m.extend(scan_file(path))
     all_m.sort(key=lambda x: -x[0])

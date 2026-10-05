@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // 어셈블리에 대한 일반 정보는 다음 특성 집합을 통해 
 // 제어됩니다. 어셈블리와 관련된 정보를 수정하려면
 // 이러한 특성 값을 변경하세요.
-[assembly: AssemblyTitle("sixgtar3")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyTitle("sxtg2")]
+[assembly: AssemblyDescription("Sixtar Gate STARTRAIL custom chart / overlay mod")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("sixgtar3")]
+[assembly: AssemblyProduct("sxtg2")]
 [assembly: AssemblyCopyright("Copyright ©  2025")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
@@ -29,5 +29,16 @@ using System.Runtime.InteropServices;
 //      빌드 번호
 //      수정 버전
 //
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+// 버전은 ModInfo.Version 한 곳에서 정한다(Main.cs의 MelonInfo도 같은 상수를 쓴다).
+// 올릴 때는 아래 ModInfo.Version과 README만 고치면 된다.
+[assembly: AssemblyVersion(sxtg2.ModInfo.Version + ".0")]
+[assembly: AssemblyFileVersion(sxtg2.ModInfo.Version + ".0")]
+
+namespace sxtg2
+{
+    internal static class ModInfo
+    {
+        /// <summary>모드 버전(major.minor.build). MelonInfo와 AssemblyVersion이 이 값을 쓴다.</summary>
+        public const string Version = "1.1.0";
+    }
+}

@@ -85,6 +85,9 @@ namespace sxtg2.Loaders
         private const int ExtendedNoteValueWidth = 3;
         private const float DefaultBpm = 150f;
 
+        // float.TryParse는 "Infinity"도 받아들인다. 그대로 쓰면 모든 노트 시각이 0초가 되므로 상한을 둔다.
+        private const float MaxBpm = 100000f;
+
         public static List<ParsedNote> ParseBmsFile(string filePath)
         {
             return ParseBmsFileWithStatistics(filePath)?.Notes ?? new List<ParsedNote>();
@@ -199,7 +202,8 @@ namespace sxtg2.Loaders
                         NumberStyles.Float,
                         CultureInfo.InvariantCulture,
                         out float bpm) &&
-                    bpm > 0f)
+                    bpm > 0f &&
+                    bpm <= MaxBpm)
                 {
                     return bpm;
                 }
@@ -223,11 +227,55 @@ namespace sxtg2.Loaders
                 string key = keyEnd >= 0
                     ? line.Substring(1, keyEnd - 1)
                     : line.Substring(1);
-                if (key.Length == 6)
+                if (IsExtendedWavKey(key))
                     return ExtendedNoteValueWidth;
             }
 
             return DefaultNoteValueWidth;
+        }
+
+        /// <summary>
+        /// 키음 번호가 3자리인 키(`WAV001`, `WAV00A`)인지. 길이만 6인 `#WAVCMD` 같은 명령 줄은 제외한다
+        /// (예전에는 길이만 봐서, 이런 줄이 하나만 있어도 모든 데이터 줄을 3글자로 잘못 읽어 노트가 0개가 됐다).
+        /// </summary>
+        private static bool IsExtendedWavKey(string key)
+        {
+            if (key.Length != 6 ||
+                !key.StartsWith("WAV", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("WAVCMD", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            for (int i = 3; i < key.Length; i++)
+            {
+                char c = key[i];
+                bool isAsciiAlphanumeric =
+                    (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+                if (!isAsciiAlphanumeric)
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// `#`와 `:` 사이가 데이터 줄의 채널부(마디 숫자 + 채널 두 글자)인지. `#TITLE Remix 2011:0101` 같은 헤더 줄은
+        /// 공백/문자가 섞여 있어 여기서 걸러진다(예전에는 마지막 두 글자 `11`을 레인 채널로 오인해 가짜 노트가 생겼다).
+        /// </summary>
+        private static bool IsValidChannelPart(string channel)
+        {
+            int measureLength = channel.Length - 2;
+            for (int i = 0; i < channel.Length; i++)
+            {
+                char c = channel[i];
+                bool isDigit = c >= '0' && c <= '9';
+                bool isAsciiLetter = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+                if (i < measureLength ? !isDigit : !(isDigit || isAsciiLetter))
+                    return false;
+            }
+
+            return true;
         }
 
         private static void ParseNoteData(
@@ -237,7 +285,7 @@ namespace sxtg2.Loaders
             float bpm,
             List<ParsedNote> notes)
         {
-            if (channel.Length < 2 || data.Length < valueWidth)
+            if (channel.Length < 2 || data.Length < valueWidth || !IsValidChannelPart(channel))
                 return;
 
             string channelNumber = channel.Substring(channel.Length - 2);

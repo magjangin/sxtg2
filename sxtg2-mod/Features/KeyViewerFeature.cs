@@ -98,22 +98,7 @@ namespace sxtg2.Features
 
             try
             {
-                if (_whiteTex == null)
-                {
-                    _whiteTex = new Texture2D(1, 1);
-                    _whiteTex.SetPixel(0, 0, Color.white);
-                    _whiteTex.Apply();
-                }
-
-                if (_keyStyle == null)
-                {
-                    _keyStyle = new GUIStyle(GUI.skin.label)
-                    {
-                        fontStyle = FontStyle.Bold,
-                        alignment = TextAnchor.MiddleCenter,
-                        fontSize = 15
-                    };
-                }
+                EnsureDrawResources();
 
                 const float boxW = 44f;
                 const float boxH = 44f;
@@ -125,40 +110,61 @@ namespace sxtg2.Features
                 float y = Screen.height - bottomMargin - boxH;
 
                 for (int i = 0; i < Lanes.Length; i++)
-                {
-                    float x = startX + i * (boxW + gap);
-                    var box = new Rect(x, y, boxW, boxH);
-
-                    bool pressed = Pressed[i];
-                    bool unbound = Keys[i] == KeyCode.None;
-                    bool isGate = Lanes[i] == SixtarInput.RhythmGame_GATE;
-
-                    Color normalBg = SaveCustomKeyConfig.KeyViewerNormalColor;
-                    Color pressedBg = isGate
-                        ? SaveCustomKeyConfig.KeyViewerGatePressedColor
-                        : SaveCustomKeyConfig.KeyViewerPressedColor;
-
-                    // 박스 배경
-                    Color bg = unbound
-                        ? new Color(normalBg.r, normalBg.g, normalBg.b, normalBg.a * 0.5f)
-                        : (pressed ? pressedBg : normalBg);
-                    DrawColorRect(box, bg);
-
-                    // 테두리
-                    Color border = pressed ? new Color(1f, 1f, 1f, 0.95f) : new Color(1f, 1f, 1f, 0.35f);
-                    DrawBorder(box, border);
-
-                    // 키 라벨
-                    _keyStyle.normal.textColor = pressed
-                        ? new Color(0.05f, 0.05f, 0.05f, 1f)
-                        : new Color(1f, 1f, 1f, unbound ? 0.35f : 0.9f);
-                    GUI.Label(box, Labels[i] ?? "-", _keyStyle);
-                }
+                    DrawKey(i, new Rect(startX + i * (boxW + gap), y, boxW, boxH));
             }
             catch (Exception ex)
             {
                 ModLog.Warning($"[KeyViewer] OnGUI 드로우 에러: {ex.Message}");
             }
+        }
+
+        private static void EnsureDrawResources()
+        {
+            if (_whiteTex == null)
+            {
+                _whiteTex = new Texture2D(1, 1);
+                _whiteTex.SetPixel(0, 0, Color.white);
+                _whiteTex.Apply();
+            }
+
+            if (_keyStyle == null)
+            {
+                _keyStyle = new GUIStyle(GUI.skin.label)
+                {
+                    fontStyle = FontStyle.Bold,
+                    alignment = TextAnchor.MiddleCenter,
+                    fontSize = 15
+                };
+            }
+        }
+
+        /// <summary>키 하나(배경, 테두리, 라벨)를 그린다.</summary>
+        private static void DrawKey(int index, Rect box)
+        {
+            bool pressed = Pressed[index];
+            bool unbound = Keys[index] == KeyCode.None;
+            bool isGate = Lanes[index] == SixtarInput.RhythmGame_GATE;
+
+            Color normalBg = SaveCustomKeyConfig.KeyViewerNormalColor;
+            Color pressedBg = isGate
+                ? SaveCustomKeyConfig.KeyViewerGatePressedColor
+                : SaveCustomKeyConfig.KeyViewerPressedColor;
+
+            // 박스 배경
+            Color bg = unbound
+                ? new Color(normalBg.r, normalBg.g, normalBg.b, normalBg.a * 0.5f)
+                : (pressed ? pressedBg : normalBg);
+            DrawColorRect(box, bg);
+
+            // 테두리
+            Color border = pressed ? new Color(1f, 1f, 1f, 0.95f) : new Color(1f, 1f, 1f, 0.35f);
+            DrawBorder(box, border);
+
+            // 키 라벨
+            _keyStyle.normal.textColor = pressed
+                ? new Color(0.05f, 0.05f, 0.05f, 1f)
+                : new Color(1f, 1f, 1f, unbound ? 0.35f : 0.9f);
+            GUI.Label(box, Labels[index] ?? "-", _keyStyle);
         }
 
         private static string ToLabel(KeyCode kc)

@@ -1,3 +1,4 @@
+using sxtg2.Helpers;
 using sxtg2.Loaders;
 
 namespace sxtg2.LogicTests;
@@ -15,6 +16,12 @@ internal static class Program
             ("ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd", ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd),
             ("ParseBmsFileWithStatistics_UsesCacheForSamePath", ParseBmsFileWithStatistics_UsesCacheForSamePath),
             ("ParseFlexibleBool_SupportsComprehensiveTrueFalseKeywords", ParseFlexibleBool_SupportsComprehensiveTrueFalseKeywords),
+            ("ParseBmsFromText_IgnoresHeaderLinesContainingColons", ParseBmsFromText_IgnoresHeaderLinesContainingColons),
+            ("ParseBmsFromText_DoesNotTreatWavCommandAsExtendedKey", ParseBmsFromText_DoesNotTreatWavCommandAsExtendedKey),
+            ("ParseBmsFromText_IgnoresInvalidBpmValues", ParseBmsFromText_IgnoresInvalidBpmValues),
+            ("ParseBmsFromText_ReportsOpenAndHoldWithoutEnd", ParseBmsFromText_ReportsOpenAndHoldWithoutEnd),
+            ("ConfigParsing_StripsInlineCommentsButKeepsHexColors", ConfigParsing_StripsInlineCommentsButKeepsHexColors),
+            ("ConfigParsing_ParsesValuesAndKeepsDefaultsForBadInput", ConfigParsing_ParsesValuesAndKeepsDefaultsForBadInput),
         };
 
         var failed = new List<string>();
@@ -190,33 +197,106 @@ internal static class Program
 
         foreach (var tc in trueCases)
         {
-            Assert.True(ParseFlexibleBool(tc, false), $"'{tc}'가 true로 해석되지 않았습니다.");
+            Assert.True(ConfigParsing.ParseFlexibleBool(tc, false), $"'{tc}'가 true로 해석되지 않았습니다.");
         }
 
         foreach (var fc in falseCases)
         {
-            Assert.True(!ParseFlexibleBool(fc, true), $"'{fc}'가 false로 해석되지 않았습니다.");
+            Assert.True(!ConfigParsing.ParseFlexibleBool(fc, true), $"'{fc}'가 false로 해석되지 않았습니다.");
         }
 
-        Assert.True(ParseFlexibleBool(null, true), "null 입력 시 defaultValue(true)가 반환되어야 합니다.");
-        Assert.True(!ParseFlexibleBool("", false), "빈 입력 시 defaultValue(false)가 반환되어야 합니다.");
-        Assert.True(ParseFlexibleBool("unknown_value", true), "알 수 없는 입력 시 defaultValue(true)가 반환되어야 합니다.");
+        Assert.True(ConfigParsing.ParseFlexibleBool(null, true), "null 입력 시 defaultValue(true)가 반환되어야 합니다.");
+        Assert.True(!ConfigParsing.ParseFlexibleBool("", false), "빈 입력 시 defaultValue(false)가 반환되어야 합니다.");
+        Assert.True(ConfigParsing.ParseFlexibleBool("unknown_value", true), "알 수 없는 입력 시 defaultValue(true)가 반환되어야 합니다.");
     }
 
-    private static bool ParseFlexibleBool(string val, bool defaultValue)
+    private static void ParseBmsFromText_IgnoresHeaderLinesContainingColons()
     {
-        if (string.IsNullOrEmpty(val))
-            return defaultValue;
+        // 헤더 값에 콜론이 있으면 마지막 두 글자(11)를 레인 채널로 오인해 가짜 노트가 생기던 문제(알려진 문제 #4).
+        string bms = """
+#BPM 150
+#TITLE Remix 2011:0101
+#ARTIST someone : 11
+#00111:0100
+""";
 
-        var s = val.Trim().ToLowerInvariant();
+        var result = BmsParser.ParseBmsFromText(bms);
+        Assert.NotNull(result, "결과가 null입니다.");
+        Assert.True(result!.Notes.Count == 1, $"헤더 줄이 노트로 읽히면 안 됩니다. 예상 1개, 실제 {result.Notes.Count}개");
+        Assert.True(Math.Abs(result.Notes[0].Time - 1.6f) < 0.0001f, $"예상 시각 1.6, 실제 {result.Notes[0].Time}");
+    }
 
-        if (s == "1" || s == "true" || s == "t" || s == "on" || s == "켜짐" || s == "사용" || s == "활성화" || s == "enable" || s == "enabled" || s == "yes" || s == "y" || s == "트루" || s == "참" || s == "켜기")
-            return true;
+    private static void ParseBmsFromText_DoesNotTreatWavCommandAsExtendedKey()
+    {
+        // `#WAVCMD`처럼 길이만 6인 명령 줄이 3글자 모드를 켜서 노트가 0개가 되던 문제(알려진 문제 #27).
+        string bms = """
+#BPM 150
+#WAVCMD 01 01 x
+#00111:0100
+""";
 
-        if (s == "0" || s == "false" || s == "f" || s == "off" || s == "꺼짐" || s == "미사용" || s == "비활성화" || s == "disable" || s == "disabled" || s == "no" || s == "n" || s == "폴스" || s == "거짓" || s == "끄기")
-            return false;
+        var result = BmsParser.ParseBmsFromText(bms);
+        Assert.NotNull(result, "결과가 null입니다.");
+        Assert.True(result!.Notes.Count == 1, $"예상 노트 1개, 실제 {result.Notes.Count}개");
+    }
 
-        return defaultValue;
+    private static void ParseBmsFromText_IgnoresInvalidBpmValues()
+    {
+        // `#BPM Infinity`가 통과하면 모든 노트가 0초에 몰리던 문제(알려진 문제 #28).
+        var onlyInfinity = BmsParser.ParseBmsFromText("#BPM Infinity\n#00111:0100");
+        Assert.NotNull(onlyInfinity, "결과가 null입니다.");
+        Assert.True(onlyInfinity!.BaseBpm == 150f, $"무효한 BPM이면 기본값 150이어야 합니다. 실제 {onlyInfinity.BaseBpm}");
+        Assert.True(Math.Abs(onlyInfinity.Notes.Single().Time - 1.6f) < 0.0001f, $"예상 시각 1.6, 실제 {onlyInfinity.Notes.Single().Time}");
+
+        var fallsThrough = BmsParser.ParseBmsFromText("#BPM Infinity\n#BPM 120\n#00111:0100");
+        Assert.True(fallsThrough!.BaseBpm == 120f, $"무효한 값은 건너뛰고 다음 유효한 #BPM(120)을 써야 합니다. 실제 {fallsThrough.BaseBpm}");
+    }
+
+    private static void ParseBmsFromText_ReportsOpenAndHoldWithoutEnd()
+    {
+        // 끝(03/05)이 없는 홀드/오픈 노트는 길이 0으로 남고 MissingEndNotes에 종류별로 기록된다.
+        // 주입기는 이 정보로 홀드를 일반 노트로, 오픈 노트를 기본 길이로 바꾼다.
+        string bms = """
+#BPM 120
+#00111:0200
+#00104:0400
+""";
+
+        var result = BmsParser.ParseBmsFromText(bms);
+        Assert.NotNull(result, "결과가 null입니다.");
+        var hold = result!.Notes.Single(n => n.NoteType == BmsParser.NoteType.Long);
+        var open = result.Notes.Single(n => n.NoteType == BmsParser.NoteType.Open);
+        Assert.True(hold.Length == 0f, $"끝 없는 홀드 길이는 0이어야 합니다. 실제 {hold.Length}");
+        Assert.True(open.Length == 0f && open.Lane == 9, $"끝 없는 오픈 노트는 레인 9, 길이 0이어야 합니다. 실제 레인 {open.Lane}, 길이 {open.Length}");
+        Assert.True(result.Statistics.MissingEndNotes.Any(m => m.NoteType == "Long"), "MissingEndNotes에 홀드가 기록되어야 합니다.");
+        Assert.True(result.Statistics.MissingEndNotes.Any(m => m.NoteType == "Open"), "MissingEndNotes에 오픈 노트가 기록되어야 합니다.");
+    }
+
+    private static void ConfigParsing_StripsInlineCommentsButKeepsHexColors()
+    {
+        Assert.True(ConfigParsing.StripInlineComment("1 # 메모") == "1", "줄 끝 # 주석을 떼야 합니다.");
+        Assert.True(ConfigParsing.StripInlineComment("Left // 메모") == "Left", "줄 끝 // 주석을 떼야 합니다.");
+        Assert.True(ConfigParsing.StripInlineComment("#26BFD9D9") == "#26BFD9D9", "맨 앞의 # 색상 값은 그대로여야 합니다.");
+        Assert.True(ConfigParsing.StripInlineComment("#26BFD9D9 # 시안") == "#26BFD9D9", "색상 값 뒤의 주석만 떼야 합니다.");
+        Assert.True(ConfigParsing.StripInlineComment("255,128,0") == "255,128,0", "주석이 없으면 그대로여야 합니다.");
+        Assert.True(ConfigParsing.StripInlineComment("a#b") == "a#b", "공백 없이 붙은 #는 주석이 아닙니다.");
+        Assert.True(ConfigParsing.ParseBoolSetting("AutoPlay", ConfigParsing.StripInlineComment("1 # 메모"), false), "`AutoPlay=1 # 메모`가 켜짐으로 읽혀야 합니다.");
+    }
+
+    private static void ConfigParsing_ParsesValuesAndKeepsDefaultsForBadInput()
+    {
+        Assert.True(ConfigParsing.ParseBoolSetting("K", "켜짐", false), "켜짐은 true여야 합니다.");
+        Assert.True(!ConfigParsing.ParseBoolSetting("K", "꺼짐", true), "꺼짐은 false여야 합니다.");
+        Assert.True(ConfigParsing.ParseBoolSetting("K", "몰라요", true), "모르는 단어는 기본값(true)을 유지해야 합니다.");
+        Assert.True(ConfigParsing.ParseFloatSetting("K", "2.5", 1f, 0f, 10f) == 2.5f, "범위 안의 숫자는 그대로 읽어야 합니다.");
+        Assert.True(ConfigParsing.ParseFloatSetting("K", "99", 1f, 0f, 10f) == 1f, "범위를 벗어나면 기본값을 유지해야 합니다.");
+        Assert.True(ConfigParsing.ParseFloatSetting("K", "abc", 1f, 0f, 10f) == 1f, "숫자가 아니면 기본값을 유지해야 합니다.");
+        Assert.True(ConfigParsing.ParseSideSetting("K", "왼쪽", "Center") == "Left", "왼쪽은 Left여야 합니다.");
+        Assert.True(ConfigParsing.ParseSideSetting("K", "???", "Center") == "Center", "모르는 값은 기본값을 유지해야 합니다.");
+        Assert.True(ConfigParsing.ParseShapeSetting("K", "캡슐", 0) == 1, "캡슐은 1이어야 합니다.");
+        Assert.True(ConfigParsing.ParseShapeSetting("K", "삼각", 0) == 2, "삼각은 2여야 합니다.");
+        Assert.True(ConfigParsing.ParseShapeSetting("K", "추종", 0) == -1, "추종은 -1이어야 합니다.");
+        Assert.True(ConfigParsing.ParseShapeSetting("K", "9", 1) == 1, "범위 밖 숫자는 기본값을 유지해야 합니다.");
     }
 
     private static string WriteTempBms(string content)
@@ -238,66 +318,6 @@ internal static class Program
         catch (Exception ex)
         {
             Console.WriteLine($"[LogicTests] 임시 BMS 삭제 건너뜀: {ex.Message}");
-        }
-    }
-    private static void InspectInputTypes()
-    {
-        string asmPath = @"H:\Sixtar Gate STARTRAIL custom mode\Sixtar Gate STARTRAIL_Data\Managed\Assembly-CSharp.dll";
-        if (!File.Exists(asmPath)) return;
-
-        var asm = System.Reflection.Assembly.LoadFrom(asmPath);
-        Console.WriteLine("\n=== INSPECTING Assembly-CSharp.dll INPUT TYPES ===");
-
-        foreach (var type in asm.GetTypes())
-        {
-            if (type.FullName == null) continue;
-            if (type.FullName.Contains("Input") || type.FullName.Contains("KeyConfig") || type.FullName.Contains("Keyboard") || type.FullName.Contains("Control") || type.FullName.Contains("RG_PS_Judgement"))
-            {
-                Console.WriteLine($"TYPE: {type.FullName}");
-                foreach (var m in type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static))
-                {
-                    if (m.DeclaringType != type) continue;
-                    var paramsInfo = string.Join(", ", m.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}"));
-                    Console.WriteLine($"   - {m.Name}({paramsInfo}) -> {m.ReturnType.Name}");
-                }
-            }
-        }
-    }
-    private static void InspectInputCandidates()
-    {
-        string asmPath = @"H:\Sixtar Gate STARTRAIL custom mode\Sixtar Gate STARTRAIL_Data\Managed\Assembly-CSharp.dll";
-        if (!File.Exists(asmPath)) return;
-
-        var asm = System.Reflection.Assembly.LoadFrom(asmPath);
-        Console.WriteLine("\n=== CANDIDATE INPUT TYPES & METHOD BODY CHECK ===");
-
-        string[] typeNames = {
-            "RhythmGame.Play.RG_Gear",
-            "RhythmGame.Play.RG_Gear_Default",
-            "RhythmGame.Play.RG_Gear_Gothic",
-            "RhythmGame.Play.RG_Gear_Pianist",
-            "RhythmGame.Play.RG_Gear_Sherbet",
-            "RhythmGame.Play.RG_Gear_Stellar",
-            "RhythmGame.Play.RG_Gear_Voyager",
-            "RhythmGame.Play.RG_PS_Judgement"
-        };
-
-        foreach (var typeName in typeNames)
-        {
-            var type = asm.GetType(typeName);
-            if (type == null)
-            {
-                Console.WriteLine($"TYPE NOT FOUND: {typeName}");
-                continue;
-            }
-
-            Console.WriteLine($"\nTYPE: {type.FullName} (IsAbstract={type.IsAbstract})");
-            foreach (var m in type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static))
-            {
-                if (m.DeclaringType != type) continue;
-                var body = m.GetMethodBody();
-                Console.WriteLine($"   - {m.Name} (IsAbstract={m.IsAbstract}, HasBody={body != null})");
-            }
         }
     }
 }
