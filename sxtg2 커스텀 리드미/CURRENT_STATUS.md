@@ -19,7 +19,7 @@
 ## 알려진 문제 (2026-09-28 / 09-29 점검, 코드 미수정)
 
 디컴파일 원본(`sxtg2/`)과 대조하거나 파서를 직접 실행해서 확인한 것들입니다. "확인 필요"는 실게임 확인이 아직 없는 것입니다.
-#1~#12는 09-28, #13~#21은 09-29, #22~#25는 10-03, #26~#30은 10-05 재점검에서 추가했습니다. 수정된 항목은 행 앞에 **(날짜 수정됨)**으로 표시했습니다.
+#1~#12는 09-28, #13~#21은 09-29, #22~#25는 10-03, #26~#33은 10-05 재점검에서 추가했습니다. 수정된 항목은 행 앞에 **(날짜 수정됨)**으로 표시했습니다.
 
 | # | 문제 | 위치 | 영향 |
 | --- | --- | --- | --- |
@@ -53,6 +53,9 @@
 | 28 | `#BPM Infinity`가 `float.TryParse`를 통과(`> 0`만 검사)해 BPM이 ∞가 되고 모든 노트가 0초에 몰림(실행 확인: `bpm=∞ t=0`) | `Loaders/BmsParser.cs` `FindBaseBpm` | 노트가 한곳에 몰림 |
 | 29 | `TrackInfoParser`가 앨범마다 2~5줄을 `MelonLogger.Msg`로 직접 남겨서, 곡 선택 화면에 들어갈 때마다 로그 레벨과 무관하게 (앨범 수 × 수 줄)이 찍힘 | `Loaders/TrackInfoParser.cs` | 로그 증가 |
 | 30 | (확인 필요, 낮음) 자켓을 원본 해상도 RGBA32 + 밉맵 `Texture2D`로 읽고, 목록 썸네일에도 같은 스프라이트를 씀 → 앨범 수와 자켓 해상도에 따라 메모리가 커질 수 있음 | `Helpers/ModHelpers.cs` `ThumbnailLoader.LoadSprite` | 메모리 사용량 |
+| 31 | `tools/method_length_scan.py`가 모드(`sxtg2-mod`)가 아니라 `sxtg2/`(지금은 디컴파일된 게임 소스)를 스캔함(실행 확인). 모드 폴더 이름이 바뀐 뒤 갱신되지 않았고 `SKIP_DIRS`는 정의만 하고 안 씀. `tools/merge_partial_classes.py`는 첫 그룹의 파일이 없어 시작하자마자 `FileNotFoundError`로 멈춤(읽어서 확인, 실행은 안 함) | `tools/*.py` | 도구가 엉뚱한 결과를 냄 |
+| 32 | 모드의 긴 메서드(`method_length_scan` 휴리스틱, 60줄 이상, 10-05 측정): `LoadConfigFile` 160, `DrawJudgmentBar` 136, `BGABGMSyncHook.CheckAndSync` 81, `KeyViewer.Draw` 73, `LogResultOperatorLayer`(진단용) 72, `ParseColorSetting` 67, `InjectBmsNotesToLaneData` 64 | `Helpers/ModHelpers.cs`, `Features/*.cs`, `Hooks/AudioHooks.cs`, `Processors/CustomChartInjector.cs` | 읽기/수정이 어려움 |
+| 33 | (확인 필요) BGA 영상이 곡보다 짧으면 `CheckAndSync`가 영상이 끝난 뒤에도 "BGM은 재생 중인데 영상은 멈춤"으로 보고 매 프레임 `time = bgmTime; Play()`를 호출함. 조건이 "시작 전"과 "재생 끝"을 구분하지 못하고 `isLooping`/`length` 검사도 없음. `LogLevel=2`에서는 같은 로그가 프레임마다 찍힘. 화면에서 어떻게 보이는지(마지막 프레임 고정인지 처음부터 재생인지)는 미확인 | `Hooks/AudioHooks.cs` `BGABGMSyncHook.CheckAndSync` | 불필요한 호출, 영상 이상 가능 |
 
 사소한 것: 색상명 `핑크` 미인식(`핑`으로 오타), 기본 `config.txt` 머리말의 "게임 실행 시 적용" 문구가 옛 설명,
 켜기/끄기 값에 모르는 단어를 써도 경고 없음, `ParseFlexibleBool` 테스트가 실제 함수가 아닌 복사본을 검증,
@@ -99,6 +102,9 @@
 | 28 | BPM이 `float.IsInfinity`/`NaN`이거나 합리적 범위(예: 1~10000)를 벗어나면 무시하고 다음 `#BPM`/기본값 사용 |
 | 29 | `ModLog.Verbose`로 내리거나 "읽었음" 한 줄 요약만 남김 |
 | 30 | 로드 직후 `Texture2D.Compress`로 DXT 압축하거나 목록용은 한 변 512px 정도로 줄임. 밉맵은 끔 |
+| 31 | 스캔 대상을 `sxtg2-mod`로 바꾸고 `SKIP_DIRS`를 실제로 쓰거나 지움. `merge_partial_classes.py`는 삭제 |
+| 32 | `LoadConfigFile`은 #20(키→처리기 표)과 함께 쪼개고, `DrawJudgmentBar`는 배치 계산/배경/틱/라벨로 분리 |
+| 33 | `bgmTime >= videoPlayer.length`이면 시도하지 않거나, 한 번 재생한 뒤에는 `Play()`를 다시 부르지 않음 |
 | 4 | 채널부(`#`와 `:` 사이)에 공백이 있으면 헤더로 보고 건너뜀 |
 | 테스트 | `ParseFlexibleBool` 등 순수 함수를 Unity 무의존 파일로 빼서 모드와 테스트가 같은 소스를 링크. 위 회귀 케이스 추가 |
 
@@ -131,6 +137,13 @@
   코드라 커스텀 곡의 난이도 선택에 영향이 없음. `CheckCruiseMode`는 빈 함수, `SXGTData.totalTicks`는 쓰는 곳이 없음.
 - **문서 반영**: `BMS_FORMAT`(게이트/오픈 노트 절, 헤더 표 경고), `BMS_PARSING`, `NOTE_SYSTEM`, `GAME_LOGIC`(오픈 노트와 게이트 절),
   `INSTALL_AND_LAYOUT`, `TROUBLESHOOTING`(15번 신설), `BMS_SELECTION`, `MEDIA_SYSTEM`.
+- **같은 날 추가 점검**(#31~#33): `tools/` 스크립트 전체와 모드의 메서드 길이, BGA 동기화 훅을 봤습니다. 도구의 잘못된 스캔 대상은
+  실행해서 확인했고(`sxtg2/`에 `Assembly-CSharp.csproj`가 있음), 메서드 길이는 같은 도구로 `sxtg2-mod`를 측정한 값입니다.
+  문서에는 `CODE_STRUCTURE`(도구 설명), `MEDIA_SYSTEM`, `TROUBLESHOOTING`(7번)에 반영했습니다.
+- **원본 대조의 신뢰도**: 게임 `Assembly-CSharp.dll`(2025-11-15)이 디컴파일(2026-07-18)보다 오래돼서 디컴파일은 현재 게임
+  DLL과 같은 버전입니다.
+- **배포 상태(10-05 기준)**: 게임 `Mods\sxtg2.dll`은 2026-08-09 빌드(v1.1.0)입니다. 10-03/04에 고친 #18, #22, #24는 커밋되어
+  있지만 `build.bat`으로 배포하기 전에는 게임에 반영되지 않습니다(위 "수정" 절의 실게임 확인 항목도 배포 후에 할 수 있음).
 
 ## 2026-10-04 수정: 저장 차단 위치, 설정 파일 재작성, 주입 로그 (#22, #24, #23 일부)
 

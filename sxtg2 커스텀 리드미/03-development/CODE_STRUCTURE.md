@@ -75,7 +75,10 @@ sxtg2-mod/
   MelonLogger를 대체합니다. `run-logic-tests.bat`로 실행하며 현재 7개 테스트가 있습니다.
   - `ParseFlexibleBool` 테스트는 `ModHelpers.cs`가 Unity에 의존해 링크할 수 없어서 **함수 복사본**을
     테스트합니다. 실제 구현이 바뀌어도 테스트는 따라가지 않으니 주의하세요.
-- `tools/method_length_scan.py`: 메서드 길이 대략 측정 스크립트.
+- `tools/method_length_scan.py`: 메서드 길이 대략 측정 스크립트(60줄 이상을 보여 줌). ⚠️ 스캔 대상이 저장소 루트의 `sxtg2/`로
+  고정되어 있어서, 지금은 모드(`sxtg2-mod/`)가 아니라 디컴파일된 게임 소스를 측정합니다(알려진 문제 #31). 모드를 재려면 스크립트의
+  `root`를 `sxtg2-mod`로 바꿔야 합니다. 2026-10-05 측정(모드, 60줄 이상): `LoadConfigFile` 160, `DrawJudgmentBar` 136,
+  `CheckAndSync` 81, `KeyViewer.Draw` 73, `LogResultOperatorLayer` 72, `ParseColorSetting` 67, `InjectBmsNotesToLaneData` 64(알려진 문제 #32).
   `tools/merge_partial_classes.py`: 2026-07-21 partial 클래스 병합(`95674e8`)에 쓴 일회성 스크립트로,
   대상 파일이 이미 없어 지금은 쓸 일이 없습니다.
 

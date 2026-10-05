@@ -75,6 +75,11 @@ ReplacePlaySceneBGM(ManagerPlay.bgm, albumFolder)
 
 비교는 0.1초 간격으로 하며, 두 시간 중 하나라도 0 이하이면 건너뜁니다. 로그는 `LogLevel=2`(상세)일 때만 남습니다.
 
+> ⚠️ **알려진 문제 (확인 필요)**: 첫 줄의 "BGM 재생 중, BGA 멈춤" 판정(`!videoPlayer.isPlaying`)은 0.1초 간격 비교보다 **앞에서 매
+> 프레임** 실행되고, "아직 시작 안 함"과 "끝까지 재생됨"을 구분하지 못합니다. `isLooping`/`length` 검사도 없어서, BGA 영상이 곡보다
+> 짧으면 영상이 끝난 뒤에도 매 프레임 `time = BGM 시간; Play()`를 호출하고 `LogLevel=2`에서는 같은 로그가 프레임마다 찍힙니다. 화면에서
+> 어떻게 보이는지(마지막 프레임 고정/처음부터 재생)는 확인되지 않았습니다(알려진 문제 #33). 확실히 피하려면 BGA 영상 길이를 곡 길이 이상으로 맞추세요.
+
 ## 미리듣기 (Preview)
 
 ### 파일 선택 (`BgmFileResolver.FindPreviewForAlbum`)
