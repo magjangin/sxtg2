@@ -8,11 +8,9 @@
 - 표시 여부: `SaveCustomKey/config.txt`의 `EnableJudgmentBar`, `EnableKeyViewer`
   (설정 파일 전체 설명은 `01-user-guide/INSTALL_AND_LAYOUT.md` 6절 참고)
 
-두 오버레이 모두 `AutoPlayHook.IsPlayScene`이 참일 때만 갱신/렌더링됩니다. 이 플래그는
-`Main.UpdatePlaySceneState()`가 씬 이름(`play` / `rhythm` / `game` 포함 여부)으로 판별합니다.
-게임의 로딩 씬 이름이 `PlayLoading`이라 **로딩 화면에서도 참이 됩니다**(알려진 문제 — 로딩 화면에 빈 판정바/키뷰어가
-보일 수 있음. 정확히 `Play`와 비교하도록 고치면 해결).
-
+두 오버레이 모두 `Main.IsGameplayScene`이 참일 때만 갱신/렌더링됩니다. 이 플래그는 씬 이름이 정확히 `Play`일 때만
+참이라 `PlayLoading` 같은 **로딩 씬에서는 그려지지 않습니다**(예전에는 `play`/`rhythm`/`game` 포함 여부로 판별해 로딩 화면에도 빈 판정바/키뷰어가 보였음).
+설정 재로드용 플래그 `Main.IsPlayScene`은 의도적으로 더 넓게(로딩 씬 포함) 남아 있어, 로딩 씬에서 미리 `config.txt`를 읽어 둡니다.
 설정(`EnableJudgmentBar` 등)은 플레이 씬에 들어갈 때마다 `config.txt`를 다시 읽어 반영됩니다(v1.1.0). 한 판이
 진행되는 동안에는 바뀌지 않습니다.
 
@@ -89,9 +87,9 @@ RG_PS_Judgement.TryJudgeShortNote(judgeTime, note)
   BLUESTAR/WHITESTAR/YELLOWSTAR용 라이브 위젯은 없음 — 새로 만들 위젯은 이 4개 등급을 전부
   다루는 확장판 개념.
 - 구현 방향은 `JudgmentBar`처럼 `OnGUI`에서 직접 그리는 방식이 유력. 데이터 소스는
-  `FastSlowMeter_OnGetJudge_Patch`(같은 파일, `OnGetJudge(EJudges, float)` 후킹 — 아래 "알려진 주의점"의 중복 문제가 있음)를
-  그대로 재사용하거나, `RG_PS_Judgement.Instance.JudgeCount`를 매 프레임 직접 읽어도 됨.
-
+  `FastSlowMeter_OnGetJudge_Patch`(같은 파일, `OnGetJudge(EJudges, float)` 후킹)를
+  그대로 재사용하거나, `RG_PS_Judgement.Instance.JudgeCount`를 매 프레임 직접 읽어도 됨
+  (위젯을 장착하지 않으면 `OnGetJudge`가 오지 않으므로 후자가 더 안정적입니다 — 아래 "알려진 주의점").
 ### 정밀도 한계 (게임 원본 특성)
 
 `ManagerPlay.CurTime`은 오디오 클럭이 아니라 `Time.time` 기반으로 계산되고
@@ -104,15 +102,19 @@ RG_PS_Judgement.TryJudgeShortNote(judgeTime, note)
 `OnGetJudge`는 `WidgeInvoke`를 통해 **모든 `PlayWidget`에 브로드캐스트**됩니다. 또한
 `JudgeTextViewer`는 2-인자 버전을 오버라이드하지 않아, 후킹 대상 탐색 시 상속된
 `PlayWidget.OnGetJudge(EJudges, float)` 베이스 메서드가 잡힙니다. 그래서 히트 1회가
-**장착한 위젯 수만큼**(최대 5번) 등록됩니다. 반대로 게임에서 위젯을 **하나도 장착하지 않으면**
-`OnGetJudge`가 호출되지 않아 판정바에 틱과 텍스트가 전혀 나오지 않습니다(배경 바만 보임).
+**장착한 위젯 수만큼**(최대 5번) 호출됩니다.
 
-판정바는 같은 값이 같은 위치에 겹쳐 그려지므로(틱이 조금 더 진하게 보일 뿐) 표시상 큰 문제는 없지만, 앞으로 이 데이터를
-**통계(예: 결과 화면 평균 오차/표준편차)** 로 집계한다면 노트 수가 배수로 부풀 수 있습니다.
-그때는 후킹 지점을 `RG_PS_Judgement.TryJudgeShortNote`(노트당 1회 실행) 쪽으로 옮겨야 합니다.
+- **중복 호출 처리(고침)**: `TargetMethods`가 같은 메서드를 두 번 패치하지 않게 중복을 제거하고(대상이 하나도 없으면 경고),
+  `RegisterHit`이 **같은 프레임에 같은 판정 등급·같은 오차(초)** 로 들어온 호출을 한 번만 반영합니다. 한 판정이 위젯 수만큼
+  불려도 틱이 한 번만 기록되고, 히트 기록(`HitHistory`) 개수도 노트 수와 맞습니다. 같은 프레임에 똑같은 오차로 판정된
+  동시치기(같은 박자 노트 여러 개)도 한 번으로 합쳐지지만, 어차피 같은 자리에 겹쳐 그려지던 것이라 화면은 달라지지 않습니다.
+- **위젯 미장착(남은 제약)**: 게임에서 위젯을 **하나도 장착하지 않으면** `OnGetJudge`가 호출되지 않아 판정바에 틱과 텍스트가
+  전혀 나오지 않습니다(배경 바만 보임). 노트당 정확히 1회가 필요하면 후킹 지점을 `RG_PS_Judgement.TryJudgeShortNote` 쪽으로 옮겨야 합니다. 위젯을 하나만 장착해도 해결되므로
+  보류했습니다(`CURRENT_STATUS.md` 남은 문제 표의 11번).
+
+히트 기록이 노트 수를 넘어 커지던 문제(#18)는 이전에 고쳐서, 틱 기록(`HitHistory`)은 화면에 남는 1.5초치만 보관합니다.
 
 ---
-
 ## 2) 키뷰어 (KeyViewer)
 
 플레이 씬 하단 중앙에 7개 레인의 실시간 입력 상태를 표시합니다.
@@ -150,8 +152,7 @@ RG_PS_Judgement.TryJudgeShortNote(judgeTime, note)
   - HEX 헥스코드: `#00FFCC`, `#26BFD9D9`
   - RGBA 수치: `255,128,0`, `0.15,0.75,0.85,0.85`
   - **한글 색상명 지원**: `시안`, `마젠타`, `노랑`, `빨강`, `파랑`, `초록`, `흰색`, `검정`, `주황`, `보라`, `분홍`, `하늘색`, `민트` 등
-    (전체 목록은 `Helpers/ModHelpers.cs`의 `ParseColorSetting`. `민트`는 시안과, `분홍`/`pink`는 마젠타와 같은 색입니다.
-    `핑크`는 목록에 없어 인식되지 않으니 `분홍`이나 `pink`를 쓰세요.)
+    (전체 목록은 `Helpers/ModHelpers.cs`의 `NamedColors` 표. `민트`는 시안과, `분홍`/`핑크`/`pink`는 마젠타와 같은 색입니다. 이름이 목록에 없으면 경고가 남고 기본색이 쓰입니다.)
   - 영문/한글 색상명은 알파값이 0.85~0.9로 고정입니다. 투명도를 정하려면 `#RRGGBBAA`나 `R,G,B,A`를 쓰세요.
   - `R,G,B[,A]`는 값 중 하나라도 1보다 크면 0~255 범위로 보고, 모두 1 이하면 0~1 범위로 봅니다(`1,1,1`은 흰색).
 - 렌더링 순서상 판정바보다 나중에 그려지므로, 겹칠 경우 키뷰어가 위에 옵니다.

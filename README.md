@@ -11,20 +11,21 @@
 - 플레이 오버레이: 실시간 판정바(난이도별 실제 판정 범위), 키뷰어(색상 커스터마이징)
 - 연출/챌린지: 노트 흔들림(NoteSway), 노트별 속도 카오스(NoteSpeedChaos)
 - 오토플레이, 올퍼펙트, 점수 상한 변경(MaxScore), 기록/랭킹 저장 차단(BlockSave)
-- `CustomNotes` 폴더 PNG로 노트 스킨 교체 (현재 파일명 매칭에 알려진 문제 있음)
+- 커스텀 곡과 오토플레이/올퍼펙트/점수 상한 변경 플레이는 게임 기록·Steam 업적·플레이 횟수에서 항상 제외
+- `CustomNotes` 폴더 PNG로 노트 스킨 교체 (`blue.png`, `red.png` 등 노트 이름과 같은 파일명)
 - 모든 옵션은 `SaveCustomKey/config.txt` 하나로 설정하며, 플레이를 시작할 때마다 다시 읽어 게임 재시작 없이 반영
 
 ## 저장소 구조
 
 ```text
-sxtg2-mod/              # 메인 MelonLoader 모드 프로젝트 (C# 13개 파일)
-sxtg2.LogicTests/       # BMS 파서 로직 테스트 (.NET 8 콘솔)
+sxtg2-mod/              # 메인 MelonLoader 모드 프로젝트 (C# 16개 파일)
+sxtg2.LogicTests/       # BMS 파서/설정 파서 로직 테스트 (.NET 8 콘솔)
 sxtg2 커스텀 리드미/    # 프로젝트, 시스템, 사용자 문서
-tools/                  # 코드 분석/정리용 파이썬 스크립트
-release/                # 예전 배포 파일 (v0.1.x zip, v1.0.0 dll)
+tools/                  # 메서드 길이 측정 스크립트 (method_length_scan.py)
+release/                # 예전 배포 파일 (v0.1.x zip, sxtg2.dll) — 현재 버전과 무관한 옛 파일
 sxtg2.sln               # Visual Studio 솔루션 (메인 모드 프로젝트만 포함)
-build.bat               # Debug 빌드 및 로컬 Mods 복사 스크립트
-build-release.bat       # Release 빌드 및 로컬 Mods 복사 스크립트
+build.bat               # 빌드(Debug 기본, build.bat Release도 가능) 후 Mods 폴더로 복사
+build-release.bat       # build.bat Release를 부르는 래퍼
 run-logic-tests.bat     # 로직 테스트 실행
 ```
 
@@ -51,27 +52,27 @@ depotdownloader -app 1802720 -depot 1802721 -manifest 8524424218577615553
 
 ## 빌드
 
-빌드는 로컬 경로가 하드코딩된 세 곳을 자기 환경에 맞게 고친 뒤 실행하세요.
+빌드 전에 게임 설치 경로를 확인하세요.
 
-- `build.bat` / `build-release.bat` 상단의 `GAME_PATH`
-- 같은 파일의 `SOURCE_ROOT` (복사할 DLL 경로 계산에 사용)
-- `sxtg2-mod/sxtg2.csproj`의 게임 DLL 참조 경로 (`H:\Sixtar Gate STARTRAIL custom mode\...`)
-  — 스크립트가 넘기는 `GamePath` 속성은 csproj에서 쓰이지 않으므로 직접 고쳐야 합니다.
+- 게임 폴더(`Mods`로 복사할 위치)는 환경 변수 `GAME_PATH`로 바꿀 수 있습니다(기본 `H:\Sixtar Gate STARTRAIL custom mode`).
+- `sxtg2-mod/sxtg2.csproj`의 게임 DLL 참조 경로(`H:\Sixtar Gate STARTRAIL custom mode\...`)는 하드코딩이라, 게임이 다른 경로에 있으면
+  직접 고쳐야 합니다. `GAME_PATH`는 복사 위치만 바꿉니다.
+- 저장소 위치는 스크립트 위치에서 자동으로 구합니다.
 
 ```bat
 build.bat
 ```
 
-Release 빌드는 아래 스크립트를 사용합니다.
+Release 빌드는 아래 중 하나를 사용합니다.
 
 ```bat
+build.bat Release
 build-release.bat
 ```
 
-경로 설정이 올바르면 스크립트가 솔루션을 빌드하고 `sxtg2.dll`을 게임의 `Mods` 폴더로 복사합니다.
-
-> 알려진 문제: 스크립트가 `Any CPU` 플랫폼으로 빌드해서 csproj의 `x64` 구성 블록이 적용되지 않습니다
-> (Release 최적화 미적용). 자세한 내용은 `sxtg2 커스텀 리드미/03-development/CODE_STRUCTURE.md`.
+스크립트는 솔루션을 x64로 빌드하고 `sxtg2.dll`을 `{GAME_PATH}\Mods`에 **복사(배포)** 합니다. 배포 없이 빌드만 확인하려면 `GAME_PATH`를
+임시 폴더로 지정하세요(`set GAME_PATH=C:\temp\game` 후 `set NO_PAUSE=1`). 자세한 내용은
+`sxtg2 커스텀 리드미/03-development/CODE_STRUCTURE.md`.
 
 ## 커스텀 콘텐츠 배치
 
@@ -94,7 +95,7 @@ BGA는 `.mp4`만 찾습니다. 자세한 규칙과 `config.txt` 전체 항목은
 
 ## 테스트
 
-저장소 루트에서 로직 테스트 스크립트를 실행합니다(현재 7개).
+저장소 루트에서 로직 테스트 스크립트를 실행합니다(현재 13개).
 
 ```bat
 run-logic-tests.bat

@@ -1,11 +1,11 @@
 # 용어집(Glossary) - sxtg2 문서 공통
 
-문서가 늘어나면 용어가 헷갈리기 쉬워서, 공통 용어를 한 곳에 모아둡니다. (기준일: 2026-09-28)
+문서가 늘어나면 용어가 헷갈리기 쉬워서, 공통 용어를 한 곳에 모아둡니다. (기준일: 2026-10-05)
 
 ## 게임/데이터 구조
 
 - **TrackData**: 곡 메타데이터(ID, `DisplayName`, `Composer`, `Level` 등)와 리소스 경로를 담는 게임 쪽 타입
-- **CustomTrackData**: 모드가 만든 `TrackData` 파생 타입. `AlbumFolder`, `BmsPath`, `ResourceDonor`, `CustomJacket`을 가짐
+- **CustomTrackData**: 모드가 만든 `TrackData` 파생 타입. `AlbumFolder`, `BmsPath`, `ResourceDonor`, `CustomJacket`을 가짐. ID는 항상 `CUSTOM_` 접두(`CustomTrackData.IsCustomId`)
 - **도너 트랙(Resource Donor)**: 곡 목록의 첫 번째 원본 곡. 커스텀 트랙에 없는 게임 리소스(패턴 파일, 오디오, 로딩 영상)를 빌려줌
 - **DisplayName**: 곡 제목 표시용 값. 모드는 `CustomTrackData`를 만들 때 객체 초기화로 직접 넣음(리플렉션 없음)
 - **SXGTData**: 게임의 차트 데이터 객체(레인별 노트 리스트, BPM, 노트 수 등)
@@ -32,7 +32,10 @@
 - **Hook**: Harmony로 게임 메서드를 가로채는 패치 코드. sxtg2는 전부 `[HarmonyPatch]` 선언형
 - **Prefix/Postfix/Transpiler**: Harmony 패치 위치(원본 호출 전/후/IL 자체 수정)
 - **FetchBMSToModules**: 게임이 차트를 노트 생성기·판정 모듈에 넘기는 메서드. 모드가 이 직전(Prefix)에 커스텀 노트를 주입함
-- **IsPlayScene**: `AutoPlayHook.IsPlayScene`. 씬 이름에 `play`/`rhythm`/`game`이 들어 있으면 참. 오버레이와 설정 재로드의 기준
+- **IsPlayScene**: `Main.IsPlayScene`. 씬 이름에 `play`/`rhythm`/`game`이 들어 있으면 참(로딩 씬 `PlayLoading` 포함). 설정 재로드의 기준
+- **IsGameplayScene**: `Main.IsGameplayScene`. 씬 이름이 정확히 `Play`일 때만 참. 판정바/키뷰어 오버레이를 그릴지의 기준
+- **SafeAccess**: `GameplayHooks.cs`의 private 필드 접근 헬퍼. 필드를 못 찾으면 예외 대신 null과 경고를 돌려줌
+- **Taint(오염) 플레이**: 오토플레이/올퍼펙트/점수 상한 변경/커스텀 곡처럼 정상 기록으로 인정하면 안 되는 플레이. `ResultTaintHook`이 업적과 플레이 횟수를 막음
 
 ## 폴더/리소스
 

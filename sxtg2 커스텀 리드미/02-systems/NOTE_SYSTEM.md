@@ -34,22 +34,26 @@ RhythmGame.Note        // timing, nType, nColor, targetLane, referObject, luckyS
 ## 노트 생성과 주입 (`Processors/CustomChartInjector.cs`)
 
 `ManagerPlayHook.FetchBMSToModulesPrefix`가 `SetParsedChart(result)` 후 `InjectBmsNotesToLaneData(_bms)`를 호출합니다.
+이 메서드는 **성공하면 true**를 돌려주고, 실패하면 게임 데이터를 전혀 바꾸지 않습니다(도너 패턴 그대로).
 
 ```text
 InjectBmsNotesToLaneData(SXGTData data)
-  ├─ data 또는 파싱 결과가 비었으면 경고 후 종료
-  ├─ ClearLaneData: laneData의 모든 리스트 Clear, unfinished[레인] = null
+  ├─ data 또는 파싱 결과가 비었으면 경고 후 false
   ├─ bpm = 파싱 결과 BaseBpm (0 이하면 150)
-  ├─ 각 ParsedNote마다
-  │    ├─ CreateNote → ShortNote / HoldNote (끝 노트 종류면 null → 건너뜀)
-  │    ├─ data.laneData[Lane]에 추가 (그 레인이 없으면 건너뜀)
+  ├─ BuildLaneNotes: 게임 데이터는 건드리지 않고 임시 레인 목록에 노트를 만든다
+  │    ├─ 각 ParsedNote마다 CreateNote → ShortNote / HoldNote (끝 노트 종류면 null → 건너뜀)
+  │    ├─ 그 레인이 게임에 없으면 건너뜀(경고에 개수)
   │    └─ 레인 9/10이 아니면 totalNotes += 1,
   │         BLUE/RED 홀드면 totalNoteWithTicks += 1 + tickLength (아니면 += 1)
-  ├─ 레인별로 timing 기준 정렬
-  ├─ data.bpm = [bpm]
-  ├─ data.totalNotes, data.totalNoteWithTicks 덮어쓰기
-  ├─ data.scorePerNote = maxScore(1000000) / totalNotes   // 게임 판정식에서는 쓰이지 않음
-  └─ 로그: [CustomChartInjector] N개 주입, totalNotes=..., totalNoteWithTicks=..., BPM=..., trackStartTiming=...(도너 값)
+  │    레인별로 timing 기준 안정 정렬(같은 시각은 파일 순서 유지)
+  ├─ ApplyToGameData: 여기까지 예외가 없었을 때만 한 번에 반영
+  │    ├─ laneData[레인]을 Clear 후 AddRange, unfinished[레인] = null
+  │    ├─ data.bpm = [bpm]
+  │    ├─ data.totalNotes, data.totalNoteWithTicks 덮어쓰기
+  │    ├─ data.scorePerNote = maxScore(1000000) / totalNotes   // 게임 판정식에서는 쓰이지 않음
+  │    └─ data.trackStartTiming = 0   // BGM/BGA 시작 시각. 원래는 도너 패턴의 값이라 도너가 바뀌면 싱크가 밀림
+  ├─ 로그: [CustomChartInjector] N개 주입, totalNotes=..., totalNoteWithTicks=..., BPM=..., trackStartTiming=0
+  └─ 경고 로그(있을 때만): 끝 없는 홀드/오픈 노트, 시작 없는 끝 노트, 게임에 없는 레인 (레인/시각 예시 최대 5개)
 ```
 
 `SXGTData` 인스턴스는 게임이 도너 패턴을 읽어 만든 것을 그대로 쓰고, 내용만 바꿉니다. 게임은 이 직후
@@ -60,19 +64,20 @@ InjectBmsNotesToLaneData(SXGTData data)
 | `ParsedNote.NoteType` | 게임 노트 | 색 (`ResolveColor`) | 추가 처리 |
 | --- | --- | --- | --- |
 | `Normal` | `new ShortNote(Time, Lane)` | 레인 4/5 → `RED`, 그 외 → `BLUE` | — |
-| `Long` | `new HoldNote(Time, Lane)` | 레인 4/5 → `RED`, 그 외 → `BLUE` | `nAction = NONE`, `Length > 0`이면 `FinishHoldNote(Length, bpm)` |
-| `Open` | `new HoldNote(Time, 9)` | `OPEN` | 위와 같음 |
+| `Long` | `new HoldNote(Time, Lane)` | 레인 4/5 → `RED`, 그 외 → `BLUE` | `nAction = NONE`, `FinishHoldNote(Length, bpm)` |
+| `Long` (끝 없음, `Length = 0`) | `new ShortNote(Time, Lane)` | 위와 같음 | 일반 노트로 바꿈 + 경고 |
+| `Open` | `new HoldNote(Time, 9)` | `OPEN` | `nAction = NONE`, `FinishHoldNote(Length, bpm)` |
+| `Open` (끝 없음, `Length = 0`) | `new HoldNote(Time, 9)` | `OPEN` | 기본 길이 1초로 `FinishHoldNote` + 경고 |
 | 그 외 | 만들지 않음 | — | — |
 
-> ⚠️ **알려진 문제 (확인 필요)**: 끝(`03`/`05`)이 없는 홀드 시작은 `Length = 0`이라 `FinishHoldNote`가 호출되지 않고
-> `tickTime = null`인 `HoldNote`로 들어갑니다. 게임의 `RG_PS_Judgement.CheckHoldTick`은 헤드가 판정된 뒤
-> `holdNote.tickTime.Length`를 읽으므로, 그 순간부터 매 프레임 `NullReferenceException`이 나고 `Update`의 나머지 처리가 멈춥니다.
-> 짝 없는 시작을 `ShortNote`로 바꾸거나 버리고 경고를 남기도록 고치는 것이 좋습니다.
->
-> 오픈 노트(`04`)도 같습니다. 끝(`05`)이 없으면 `Length = 0`인 `HoldNote`가 되고(실행 확인: `Open L9 len=0`), 게임은 그 길이를
-> 게이트 애니메이션 시간으로 쓰므로 `animator.speed = 1f / 0f`가 됩니다(알려진 문제 #26). 오픈 노트의 의미는
-> `BMS_FORMAT.md`의 "게이트와 오픈 노트" 절 참고.
+끝(`03`/`05`)이 없는 노트를 처리하는 이유(2026-10-05 수정):
 
+- 끝이 없는 홀드를 `HoldNote`로 그대로 넣으면 `FinishHoldNote`가 호출되지 않아 `tickTime = null`이 됩니다. 게임의 `RG_PS_Judgement.CheckHoldTick`은
+  헤드가 판정된 뒤 `holdNote.tickTime.Length`를 읽으므로, 그 순간부터 매 프레임 `NullReferenceException`이 나고 `Update`의 나머지 처리(미스 판정,
+  점수 갱신, 오토플레이)가 멈춥니다. 그래서 일반 노트로 바꿉니다.
+- 오픈 노트는 판정 커서(`noteJudgeCursor[9]`)가 `HoldNote`여야 넘어가므로 일반 노트로 바꿀 수 없습니다. 길이가 0이면 게임이 게이트 애니메이션 속도를
+  `animator.speed = 1f / 0f`(무한대)로 만들기 때문에, 애니메이션 원래 속도가 되는 기본 길이 1초를 줍니다. 오픈 노트의 의미는
+  `BMS_FORMAT.md`의 "게이트와 오픈 노트" 절 참고.
 ### 홀드 틱 (게임 원본 `HoldNote.FinishHoldNote`)
 
 틱 간격은 16분음표 길이입니다.
@@ -114,7 +119,7 @@ tickLength == 1 인 짧은 홀드: tickTime = [timing + unit]
 ### 후킹 지점 (`Hooks/GameplayHooks.cs` `NoteSpriteHook`)
 
 `RhythmGame.NoteGenerator.Generate(LaneIndex, Note)` Postfix에서 반환된 `RG_NoteObject`의 private 필드를
-`AccessTools.FieldRefAccess`로 읽습니다.
+`SafeAccess.FieldRef`(= `AccessTools.FieldRefAccess`를 감싼 안전한 접근자)로 읽습니다. 필드를 못 찾으면 경고 후 그 기능만 건너뜁니다.
 
 ```csharp
 // RhythmGame.RG_NoteObject (디컴파일 기준)
@@ -126,45 +131,39 @@ tickLength == 1 인 짧은 홀드: tickTime = [timing + unit]
 
 ### 처리 순서
 
+0. 로드된 커스텀 스프라이트가 하나도 없으면 아무것도 하지 않습니다.
 1. 노트 GameObject 이름에서 타입 문자열을 뽑습니다(`CustomNoteSpriteLoader.ExtractNoteType`):
-   **첫 `_` 뒤부터 두 번째 `_` 앞까지**, 두 번째 `_`가 없으면 첫 `_` 뒤 전부.
+   **첫 `_` 뒤부터 두 번째 `_` 앞까지**, 두 번째 `_`가 없으면 첫 `_` 뒤 전부. 게임은 노트를 `Instantiate`하므로 이름이 `_Blue(Clone)`이 되는데,
+   끝의 **`(Clone)` 접미사를 떼서** `Blue`를 얻습니다.
 2. 각 자식의 `Image.sprite`를 교체합니다(스프라이트를 못 찾으면 그 자식은 그대로).
-   - `shortNote`: `{타입}` → 노트 이름 전체
+   - `shortNote`: `{타입}` → 노트 이름 전체(`(Clone)` 포함/제외 모두)
    - `tailNote`: `{타입}_tail` → `tailNote` → (없으면 `shortNote`와 같은 규칙)
    - `holdTexture`: `{타입}_hold` → `holdTexture` → (없으면 `shortNote`와 같은 규칙)
-3. `NoteRendererRecovery.RecoverNoteRenderer`가 노트 루트와 **직계 자식**의 `Image`마다
-   `SetNativeSize()` + `SetAllDirty()`를 호출합니다. 커스텀 스프라이트가 없어도 **모든 노트**에 대해 실행됩니다.
+3. **스프라이트를 적용한 이미지에만** `SetNativeSize()` + `SetAllDirty()`를 호출하고, 게임의 노트 크기 옵션을 다시 곱합니다. 원본 `RG_NoteObject.SetTiming`은
+   `SetSize(noteSize / 100)`로 `shortNote`/`tailNote`는 가로·세로, `holdTexture`는 가로만 곱해 두는데, `SetNativeSize()`가 이를 되돌리기 때문입니다.
+   스킨이 없는 노트는 건드리지 않습니다(예전에는 `NoteRendererRecovery`가 모든 노트에 `SetNativeSize`를 불러 노트 크기 옵션을 무시했음).
 
 ### 스프라이트 소스
 
 `CustomNoteSpriteLoader.Initialize()`(모드 초기화 시 1회)가 `{게임 설치 폴더}\CustomNotes\*.png`를 읽어
-`Sprite.Create`로 변환하고 **파일명(확장자 제외) 그대로**를 키로 저장합니다(대소문자 무시). 폴더가 없으면 만듭니다.
-게임 실행 중에 PNG를 추가/수정하면 재시작해야 반영됩니다.
+`Sprite.Create`로 변환하고 **파일명(확장자 제외)**을 키로 저장합니다(대소문자 무시). 예전 안내대로 `Blue(Clone).png`처럼 `(Clone)`이 붙은 파일은
+`(Clone)`을 뗀 이름(`Blue`)으로도 등록합니다. 폴더가 없으면 만듭니다. 게임 실행 중에 PNG를 추가/수정하면 재시작해야 반영됩니다.
 
-### ⚠️ 알려진 문제 — 현재 파일명 규칙이 실제 노트 이름과 맞지 않음 (확인 필요)
+### 파일 이름 규칙 (2026-10-05부터)
 
-게임은 노트 프리팹을 `Resources.Load("Rhythm Game Part/PlayScene/NoteSkin/{스킨}/_Blue")`처럼 불러와 `Instantiate`하므로,
-생성된 노트 이름은 `_Blue(Clone)` 형태가 됩니다(Unity는 복제본 이름 뒤에 `(Clone)`을 붙임). 여기서 1번 규칙으로 뽑히는
-타입은 `Blue`가 아니라 **`Blue(Clone)`**입니다. 그래서:
+생성된 노트 이름은 `_Blue(Clone)`, `_White(Clone)`, `_Red(Clone)`, `_Gate(Clone)` 형태입니다(스킨에 없는 종류는 게임이 Blue로 대체). 파일 이름은 이렇게 짓습니다:
 
-- `Blue.png`, `Red.png`, `Gate.png` 같은 이름은 **매칭되지 않습니다**.
-- 현재 코드에서 실제로 매칭되는 이름은 `Blue(Clone).png`(또는 전체 이름 `_Blue(Clone).png`), 끝/몸통은
-  `Blue(Clone)_tail.png`/`Blue(Clone)_hold.png` 또는 공용 `tailNote.png`/`holdTexture.png`입니다.
-  노트 종류: `_Blue`, `_White`(레인 L/R), `_Red`, `_Gate` (스킨에 없으면 게임이 Blue로 대체).
+| 대상 | 파일명 (우선순위순) |
+| --- | --- |
+| 노트 본체 | `Blue.png` (`White`, `Red`, `Gate`) → 전체 이름 `_Blue.png` |
+| 홀드 끝 | `Blue_tail.png` → `tailNote.png` → 노트 본체와 같은 이미지 |
+| 홀드 몸통 | `Blue_hold.png` → `holdTexture.png` → 노트 본체와 같은 이미지 |
+
 - 끝/몸통 스프라이트가 없으면 **헤드 스프라이트가 끝과 몸통에도 들어갑니다**.
-
-2026-07-18에 처음 이식했을 때의 로더는 이름에 `_blue`/`_red`/`_gate`가 들어 있는지로 판별하고(`Blue.png` 방식),
-Gate가 없으면 Blue로 대체하고, 끝/몸통은 `BlueTail`/`TailBlue`/`Tail`/`TailNote` 순서로 찾고 없으면 적용하지 않았습니다.
-2026-07-26 파일 통합(`12348f5`) 때 로더가 단순화되면서 이 규칙이 사라졌습니다. 이식 당시에도 실게임 확인은 되지 않았습니다.
-
-### ⚠️ 확인 필요 — 게임 노트 크기 옵션
-
-게임은 `SetTiming`에서 노트 크기 설정(`userData.noteSize`)을 `sizeDelta`에 곱해 둡니다. 그 뒤 모드의
-`SetNativeSize()`가 `Image` 크기를 스프라이트 원본 크기로 되돌리므로, 노트 크기를 100%가 아닌 값으로 설정한 경우
-설정이 무시될 수 있습니다. 게임에서 노트 크기를 바꿔 모드 유무로 비교해 보세요.
+- 이 규칙은 원래 이식 당시(2026-07-18)의 `Blue.png` 방식이었는데, 2026-07-26 파일 통합(`12348f5`)에서 로더가 단순화되며 이름 추출이 `Blue(Clone)`이 되어
+  한동안 매칭되지 않았고(스킨 파일은 로드만 되고 적용되지 않음), 2026-10-05에 `(Clone)`을 떼도록 고쳤습니다.
 
 ---
-
 ## 노트 흔들림 연출 (NoteSway, 2026-07-27 추가)
 
 노트가 눈송이처럼 좌우로 흔들리며 내려오는 순수 시각 효과입니다. `SaveCustomKey/config.txt`의

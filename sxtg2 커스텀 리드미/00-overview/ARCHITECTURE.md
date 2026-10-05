@@ -1,6 +1,6 @@
 # 현재 아키텍처
 
-기준일: 2026-09-28 (v1.1.0)
+기준일: 2026-10-05 (v1.1.0)
 
 ## 한 줄 요약
 
@@ -25,39 +25,41 @@ Models / Helpers          CustomTrackData, 로그, config.txt, 썸네일
 
 ### Main (`Main/Main.cs`)
 
-- 초기화: MelonPreferences 등록 → `config.txt` 로드 → `hwa` 폴더 생성 → `CustomNotes` 스프라이트 로드 → 씬 이벤트 구독
-- `activeSceneChanged`: 플레이 씬 여부 판단(`AutoPlayHook.IsPlayScene`), 플레이 씬이면 설정 재로드, 오버레이/연출 상태 초기화
-- `OnUpdate`: BGA↔BGM 동기화, (플레이 씬) 키 입력 폴링과 판정 범위 갱신
-- `OnGUI`: (플레이 씬) 판정바, 키뷰어 렌더링
+- 초기화: MelonPreferences 등록 → `config.txt` 로드 → `hwa` 폴더 생성 → 씬 이벤트 구독 → `CustomNotes` 스프라이트 로드(노트 스킨 초기화는 별도 `try`라 실패해도 씬 감지/오버레이는 계속 동작)
+- `activeSceneChanged`: 씬 판단 — `Main.IsPlayScene`(이름에 play/rhythm/game 포함, 로딩 씬도 포함 → 설정 재로드용)과 `Main.IsGameplayScene`(정확히 `Play` → 오버레이용). 플레이 계열 씬이면 설정 재로드, 오버레이/연출 상태 초기화
+- `OnUpdate`: BGA↔BGM 동기화, (`Play` 씬) 키 입력 폴링과 판정 범위 갱신
+- `OnGUI`: (`Play` 씬) 판정바, 키뷰어 렌더링 (`Repaint` 이벤트에서만 그림)
 
 ### Features
 
 - `MusicSelectFeature.cs`
-  - `TrackDataAnalyzer`: `hwa` 스캔 → `CustomTrackData` 생성 → 곡 목록에 추가
-  - `ManagerMusicSelectHook`: 곡 선택 씬 `Awake`/`PlayPreview` 훅 (+ 진단용 로깅 훅)
-  - `OperatorCharacterHook`, `ManagerResultHook`: 진단용 로깅만
-- `JudgmentBarFeature.cs`: 판정 데이터 수집 훅 + 판정바 렌더링
+  - `TrackDataAnalyzer`: `hwa` 스캔 → `CustomTrackData` 생성 → 곡 목록에 추가, 커스텀 트랙 등록부(`FindCustomTrack`)
+  - `ManagerMusicSelectHook`: 곡 선택 씬 `Awake`/`PlayPreview` 훅 (핵심 기능만)
+- `DiagnosticHooks.cs`: 진단용 로깅 훅 클래스 3개(`MusicSelectDiagnosticsHook`, `OperatorCharacterHook`, `ManagerResultHook`). **`LogLevel=2`일 때만 동작**
+- `JudgmentBarFeature.cs`: 판정 데이터 수집 훅(같은 프레임 중복 호출 제거) + 판정바 렌더링
 - `KeyViewerFeature.cs`: 키뷰어
-
 ### Hooks
 
-- `GameplayHooks.cs`: 플레이 씬 훅 9개 클래스 — 차트/미디어 교체(`ManagerPlayHook`), 도너 리소스와 자켓
-  (`TrackDataMediaHook`), 노트 스킨/연출(`NoteSpriteHook`, `NoteSwayHook`, `NoteSpeedChaosHook`), 치트/보호
-  (`AutoPlayHook`, `AllPerfectJudgeHook`, `ResultSaveBlockHook`), 점수 상한(`JudgeScoreMaxHook`)
-- `AudioHooks.cs`: BGM/BGA 파일 탐색·로드·동기화 헬퍼 (Harmony 패치 아님)
-
+- `GameplayHooks.cs`: 플레이 씬 훅 — 차트/미디어 교체(`ManagerPlayHook`), 도너 리소스와 자켓
+  (`TrackDataMediaHook`), 노트 스킨/연출(`NoteSpriteHook`, `NoteSwayHook`, `NoteSpeedChaosHook`), 치트
+  (`AutoPlayHook`, `AllPerfectJudgeHook`), 점수 상한(`JudgeScoreMaxHook`). 맨 위의 `SafeAccess`는 private 필드 접근이 실패해도
+  모드가 멈추지 않게 하는 헬퍼(실패하면 null + 경고)
+- `ResultGuardHooks.cs`: 기록·업적 차단 — `ResultSaveBlockHook`(저장/랭킹 전송), `ResultTaintHook`(플레이 횟수·업적),
+  `ServerGuardHook`(커스텀 곡의 서버 요청)
+- `AudioHooks.cs`: BGM/BGA 파일 탐색·로드·동기화 훅과 `MediaUrl`(file:// URL 변환)
 ### Loaders / Processors
 
 - `BmsParser`: BMS → `ParsedNote` (캐시 포함)
 - `TrackInfoParser`: 곡 정보 txt → 제목/아티스트/난이도
-- `CustomNoteSpriteLoader`, `NoteRendererRecovery`: 노트 스킨
+- `CustomNoteSpriteLoader`: 노트 스킨 이미지 로드(`NoteSpriteHook`이 적용)
 - `CustomChartInjector`: `ParsedNote` → `ShortNote`/`HoldNote`, `SXGTData` 갱신
 
 ### Models / Helpers
 
 - `CustomTrackData`: `TrackData` 파생. `AlbumFolder`, `BmsPath`, `ResourceDonor`(도너 트랙), `CustomJacket`
 - `ModLog`: MelonPreferences `LogLevel`(0/1/2)에 따라 로그 출력, 예외 포맷
-- `SaveCustomKeyConfig`: `config.txt` 생성·파싱·재로드·누락 항목 자동 추가(누락 항목 추가는 게임 시작 때만)
+- `SaveCustomKeyConfig`: `config.txt` 생성·파싱(표 기반)·재로드·누락 항목 자동 추가(누락 항목 추가는 게임 시작 때만). 모르는 키/잘못된 값은 경고
+- `ConfigParsing`: 설정 값 파서(`#`/`//` 주석 제거, 불리언·실수·색 해석). Unity에 의존하지 않아 `sxtg2.LogicTests`가 그대로 링크해 테스트함
 - `ThumbnailLoader`: 앨범 폴더 자켓 PNG → `Sprite`
 
 ## 핵심 설계
@@ -86,28 +88,30 @@ MusicSelect
   -> ManagerMusicSelectHook.AwakePostfix -> TrackDataAnalyzer.InjectCustomTracks
   -> ManagerMusicSelectHook.PlayPreviewPrefix (커스텀 트랙 미리듣기)
   -> TrackDataMediaHook (자켓)
+  -> ServerGuardHook (랭킹 화면의 커스텀 곡 조회 보호)
 
 Play
   -> ManagerPlay.Set: 도너 패턴/오디오 로드 (TrackDataMediaHook)
   -> ManagerPlayHook.FetchBMSToModulesPrefix
        -> BmsParser -> CustomChartInjector (노트 교체, 노트 수 갱신)
        -> BGMPlayerHook / BGAPlayerHook (미디어 교체)
-  -> 매 프레임: 게임 판정 + AutoPlayHook, 노트 연출 훅, BGABGMSyncHook, 오버레이
+  -> InitializePlayScene Postfix: AutoPlayHook이 게임의 autoPlay 플래그 설정
+  -> 매 프레임: 게임 판정, 노트 연출 훅, BGABGMSyncHook, 오버레이
 
 Result
-  -> ResultSaveBlockHook (조건부 저장 차단)
+  -> ResultTaintHook: ManagerResult.Start 전후로 플레이 횟수 등을 되돌리고 업적 요청 차단
+  -> ResultSaveBlockHook: SavePlayData / PostUserScore 차단 (오토/올퍼펙트/점수 상한 변경/커스텀 곡은 항상, 그 밖엔 BlockSave 설정)
 ```
 
 자세한 순서는 [DOCUMENTATION.md](DOCUMENTATION.md), 훅 목록은 [../02-systems/HOOK_SYSTEM.md](../02-systems/HOOK_SYSTEM.md).
 
 ## 남은 리스크
 
-- 게임 업데이트로 private 필드/메서드 이름(`bgaPlayer`, `shortNote`, `notePreGenerateTime`, `AutoPlayJudge` 등)이나
-  판정 메서드 안의 `1000000f` 리터럴이 바뀌면 해당 기능이 조용히 꺼지거나 경고만 남깁니다.
-- 진단용 로깅 훅 4개가 켜져 있어 곡 선택 확인창/결과 화면마다 로그가 많이 쌓이고, 결과 화면에서
-  `FindObjectsOfType<GameObject>()` 전체 스캔을 합니다.
-- 게임 버전 가드가 없습니다. 업데이트로 훅 대상이 바뀌어도 어떤 훅이 적용됐는지 요약이 로그에 남지 않고, 정적 `FieldRefAccess`
-  초기화 실패가 씬 감지 구독을 건너뛰게 할 수도 있습니다(알려진 문제 #15, #16). 시작 시 게임 버전과 적용된 패치 수를 로그로 남기는
-  것이 좋습니다.
-- `BlockSave`는 이름과 달리 기록/랭킹 전송만 막고 Steam 업적, 플레이 횟수, 서버 플레이 카운트는 막지 않습니다(#13, #14).
-- 알려진 버그 목록은 [../CURRENT_STATUS.md](../CURRENT_STATUS.md)의 "알려진 문제" 절에 모았습니다.
+- 게임 업데이트로 private 필드/메서드 이름(`bgaPlayer`, `shortNote`, `notePreGenerateTime` 등)이나 판정 메서드 안의
+  `1000000f` 리터럴이 바뀌면 해당 기능이 꺼지거나 경고만 남깁니다. 필드 접근은 `SafeAccess`를 거쳐 실패해도 모드 전체가 멈추지는
+  않고(해당 기능만 꺼지고 경고), 패치 대상을 못 찾으면 `[ResultSaveBlock]` 같은 훅별 경고가 남습니다.
+- **게임 버전 가드는 아직 없습니다.** 시작 시 게임 버전과 적용된 패치 수를 한 줄로 요약하는 로그를 남기고, 기대와 다른 버전이면
+  경고하는 것을 제안합니다(`CURRENT_STATUS.md`의 남은 문제 표). 디컴파일 소스(`sxtg2/`)는 2025-11-15 게임 DLL 기준입니다.
+- 마디 길이(`#xxx02:`)와 BPM 변경 채널은 지원하지 않습니다(`CURRENT_STATUS.md`의 남은 문제 12번).
+- 자켓 PNG는 원본 해상도 그대로 읽어 메모리를 씁니다(보류, 남은 문제 30번).
+- 알려진 버그 목록은 [../CURRENT_STATUS.md](../CURRENT_STATUS.md)의 "남은 문제" 절에 모았습니다.

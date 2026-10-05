@@ -1,6 +1,6 @@
 # 🐛 디버깅 가이드
 
-기준일: 2026-09-28 (v1.1.0)
+기준일: 2026-10-05 (v1.1.0)
 
 **sxtg2 모드 디버깅 방법 및 도구**
 
@@ -32,8 +32,13 @@ LogLevel = 1   # 0 = 오류만, 1 = 보통(기본), 2 = 상세/대량 덤프
 | `MelonLogger.*` 직접 호출 | 항상 (레벨 무관) |
 
 `LogLevel = 2`에서만 나오는 대표 로그: 노트마다 `[NoteSpriteHook] 노트 생성: name=...`, 판정마다
-`[JudgmentBar] 히트 감지: ...`, `[BGABGMSyncHook]` 싱크 보정, 설정 재로드 `변경 없음`, 키뷰어 키 바인딩.
-대량으로 찍히므로 조사할 때만 켜세요.
+`[JudgmentBar] 히트 감지: ...`, `[BGABGMSyncHook]` 싱크 보정, 설정 재로드 `변경 없음`, 키뷰어 키 바인딩, 곡 정보 파일 파싱 로그, 업적 요청 차단
+(`[ResultTaint]`), 그리고 **진단용 훅**(`MusicSelectDiagnosticsHook`, `OperatorCharacterHook`, `ManagerResultHook`)이 남기는 곡 선택 확인창/
+오퍼레이터 계층/결과 화면 덤프. 진단용 훅은 `LogLevel`이 2가 아니면 아무것도 하지 않으므로(결과 화면의 전체 `GameObject` 스캔도 안 함)
+평소에는 로그가 조용합니다. 대량으로 찍히므로 조사할 때만 켜세요.
+
+기능이 조용히 꺼졌을 때 찾아볼 로그 접두어: `[SafeAccess]`(private 필드를 못 찾음 — 게임 업데이트 의심), `[ResultSaveBlock]`(저장 차단 대상 메서드를
+못 찾음), `[ResultTaint]`(결과 화면 사전 처리/플레이 횟수 되돌리기 실패), `[SaveCustomKey]`(모르는 키, 값이 틀린 줄 등 설정 경고).
 
 `ModLog.BeginCorrelation(operation, hint)`를 `using`으로 감싸면 그 안의 로그 앞에 `[cid:작업:힌트]`가 붙습니다
 (현재 코드에서 사용하는 곳은 없음).
@@ -60,7 +65,7 @@ findstr "sxtg2" MelonLoader\Latest.log
 | 게임 시작 | `[SaveCustomKey] 설정 로드 완료 - ...`, `[CustomNoteSpriteLoader] 총 N개 ...`, `[Main] sxtg2 모드 초기화 완료` |
 | 곡 선택 진입 | `[TrackDataAnalyzer] 커스텀 트랙 N개 추가 완료` |
 | 플레이 진입 | `[SaveCustomKey] 설정 재로드 #n ...`(바뀐 항목이 있을 때), `[CustomChartInjector] N개 주입, totalNotes=...`, `[BGMPlayerHook] BGM 교체 완료: ...` |
-| 결과 화면 | (저장 차단 시) `[차단] 하이스코어 및 랭킹 저장 차단: ...` |
+| 결과 화면 | (저장 차단 시) `[차단] 하이스코어 및 랭킹 저장 차단(사유): ...`, (커스텀 곡/오토/올퍼펙트/점수 상한 변경 시) `[ResultTaint] 이번 결과는 업적/플레이 횟수에 반영하지 않습니다 (...)` |
 
 증상별 확인 방법은 [../01-user-guide/TROUBLESHOOTING.md](../01-user-guide/TROUBLESHOOTING.md)에 모았습니다.
 
@@ -72,8 +77,8 @@ findstr "sxtg2" MelonLoader\Latest.log
 (Unity 플레이어의 Mono 디버그 에이전트가 꺼져 있음). 이 프로젝트는 주로 **로그 + 디컴파일 소스 대조**로 디버깅합니다.
 디버거가 꼭 필요하면 dnSpy의 Unity 디버그용 Mono 교체 방식 등 별도 준비가 필요합니다.
 
-csproj는 Debug 빌드에서 `DebugType=portable` PDB를 만듭니다. 다만 현재 빌드 스크립트는 `Any CPU` 플랫폼으로 빌드해서
-csproj의 `Debug|x64` 블록(`DEBUG` 상수, `DebugSymbols`)이 적용되지 않는 문제가 있습니다(`CODE_STRUCTURE.md` 참고).
+csproj는 Debug 빌드에서 `DebugType=portable` PDB를 만듭니다. 빌드 스크립트가 `x64` 플랫폼으로 빌드하므로 csproj의
+`Debug|x64` 블록(`DEBUG` 상수, `DebugSymbols`)과 `Release|x64`의 최적화가 적용됩니다(`CODE_STRUCTURE.md` 참고).
 
 ---
 

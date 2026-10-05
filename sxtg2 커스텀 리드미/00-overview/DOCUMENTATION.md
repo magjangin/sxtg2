@@ -1,13 +1,13 @@
 # sxtg2 종합 문서 (전체 흐름)
 
-기준일: 2026-09-28 (v1.1.0, 커밋 `2093826`)
+기준일: 2026-10-05 (v1.1.0, 일괄 수정 브랜치 `fix/known-issues-batch`)
 
 모드가 게임 실행부터 결과 화면까지 **언제 무엇을 하는지**를 시간 순서로 정리합니다.
 구조는 [ARCHITECTURE.md](ARCHITECTURE.md), 데이터 변환은 [DATA_FLOW.md](DATA_FLOW.md)를 보세요.
 
 ## 현재 코드의 핵심 원칙
 
-- 실제 빌드 대상은 `sxtg2-mod/`(C# 13개 파일)입니다.
+- 실제 빌드 대상은 `sxtg2-mod/`(C# 16개 파일)입니다.
 - 게임 어셈블리를 직접 참조하고, 훅은 전부 `[HarmonyPatch]` 선언형(MelonLoader 자동 적용)입니다.
 - 커스텀 트랙은 **도너 트랙**(곡 목록 첫 곡)의 리소스를 빌려 정상 흐름을 타고, 노트/미디어만 교체합니다.
 - 설정은 `SaveCustomKey/config.txt` 하나, 플레이 씬에 들어갈 때마다 다시 읽습니다.
@@ -22,9 +22,8 @@ Main.OnInitializeMelon
   ├─ ModLog.RegisterPreferences            // MelonPreferences [sxtg2] 항목 등록
   ├─ SaveCustomKeyConfig.Initialize        // config.txt 없으면 생성, 읽기, 누락 항목 추가
   ├─ {게임}\hwa 폴더 생성
-  ├─ NoteSpriteHook.Initialize → CustomNoteSpriteLoader.Initialize   // CustomNotes\*.png 로드
-  ├─ SceneManager.activeSceneChanged 구독
-  └─ 현재 씬으로 UpdatePlaySceneState (이때는 설정 재로드 안 함)
+  ├─ SceneManager.activeSceneChanged 구독 + 현재 씬으로 UpdatePlaySceneState (이때는 설정 재로드 안 함)
+  └─ NoteSpriteHook.Initialize → CustomNoteSpriteLoader.Initialize   // CustomNotes\*.png 로드 (실패해도 위 구독은 이미 끝나 있음)
 ```
 
 ## 2. 곡 선택 화면 (`MusicSelect`)
@@ -37,12 +36,14 @@ ManagerMusicSelect.Awake (원본: 곡 목록 새로 만듦)
             로그: [TrackDataAnalyzer] 커스텀 트랙 N개 추가 완료
 
 곡 커서 이동 → ManagerMusicSelect.PlayPreview
-  └─ PlayPreviewPrefix: 커스텀 트랙이면 demo.* → music.* → 첫 오디오를 재생 (원본 미리듣기 차단)
+  └─ PlayPreviewPrefix: 커스텀 트랙이면 demo.* → music.* → 가장 큰 오디오 파일을 재생 (원본 미리듣기 차단, 이전 커스텀 클립은 해제)
 
 곡 목록/확인창이 자켓 요청 → TrackData.GetJacketSprite()/GetThumbSprite()
-  └─ TrackDataMediaHook: 앨범 폴더 thumb.png 등 (없으면 원본 자켓 + 경고)
+  └─ TrackDataMediaHook: 앨범 폴더 thumb.png 등 (없으면 원본 자켓 + 곡마다 한 번만 경고)
 
-확인창 열기 → OpenConfirmWindowPostfix (진단 로깅만)
+확인창 열기 → 진단 로깅 훅 (LogLevel=2에서만 동작)
+
+랭킹 화면 → ServerGuardHook: 커스텀 ID 조회는 빈 목록으로 응답, Util.FindTrackByID는 커스텀 트랙을 찾아 줌
 ```
 
 자세한 규칙: [../02-systems/BMS_SELECTION.md](../02-systems/BMS_SELECTION.md), [../02-systems/MEDIA_SYSTEM.md](../02-systems/MEDIA_SYSTEM.md)
@@ -51,7 +52,8 @@ ManagerMusicSelect.Awake (원본: 곡 목록 새로 만듦)
 
 ```text
 activeSceneChanged("PlayLoading"), activeSceneChanged("Play")
-  └─ Main.UpdatePlaySceneState: 이름에 "play"가 들어 있어 둘 다 플레이 씬으로 판정
+  └─ Main.UpdatePlaySceneState: 이름에 "play"가 들어 있어 둘 다 IsPlayScene(설정 재로드용)으로 판정.
+       오버레이용 IsGameplayScene은 정확히 "Play"일 때만 참 (로딩 화면에는 그리지 않음)
        ├─ SaveCustomKeyConfig.Reload(...)   // 바뀐 항목만 로그: [SaveCustomKey] 설정 재로드 #n ...
        └─ KeyViewer/NoteSway/NoteSpeedChaos 상태 초기화
 
@@ -60,15 +62,18 @@ ManagerPlay.Set(track, lv, ps)              // PlayLoading이 Play 씬 로드 �
   ├─ SetBGM(track) → GetAudioClip → (도너 오디오)
   └─ SetJudgeRange(난이도별 판정 범위)
 
+ManagerPlay.Start → InitializePlayScene (원본) → AutoPlayHook Postfix: EnableAutoPlay면 ManagerPlay.autoPlay = true
+
 ManagerPlay 초기화 → FetchBMSToModules(bms)
   └─ ManagerPlayHook.FetchBMSToModulesPrefix (커스텀 트랙만)
        ├─ BmsParser.ParseBmsFileWithStatistics(BmsPath)
        │    └─ 실패/노트 0개면 경고 후 도너 패턴으로 플레이
        ├─ CustomChartInjector.InjectBmsNotesToLaneData(bms)
-       │    레인 비우기 → 노트 추가 → 정렬 → bpm/totalNotes/totalNoteWithTicks 갱신
-       │    로그: [CustomChartInjector] N개 주입, totalNotes=..., totalNoteWithTicks=..., BPM=..., trackStartTiming=...(도너 값)
+       │    임시 리스트에 노트 생성 → 성공하면 레인에 적용(정렬) → bpm/totalNotes/totalNoteWithTicks/trackStartTiming 갱신
+       │    로그: [CustomChartInjector] N개 주입, totalNotes=..., totalNoteWithTicks=..., BPM=..., trackStartTiming=0
+       │    실패하면 도너 패턴을 그대로 쓰고 게임 데이터는 건드리지 않음
        ├─ BGMPlayerHook.ReplacePlaySceneBGM → music.* 비동기 로드 시작
-       └─ (게임 BGA 설정 ON) BGAPlayerHook.ReplacePlaySceneBGA → 첫 *.mp4로 VideoPlayer.url 교체
+       └─ (게임 BGA 설정 ON) BGAPlayerHook.ReplacePlaySceneBGA → 이름순 첫 *.mp4로 VideoPlayer.url 교체
 
 NoteGenerator.Start → NoteSpeedChaosHook (켜져 있으면 선행 생성 시간 연장)
 ```
@@ -77,14 +82,12 @@ NoteGenerator.Start → NoteSpeedChaosHook (켜져 있으면 선행 생성 시�
 
 ```text
 ManagerPlay.Update
-  ├─ CheckBGMStart → CheckBGMStartPrefix: 커스텀 BGM 로드 중이면 시작 보류
-  └─ CheckGameFinished → AutoPlayHook Prefix: CurrentTimeSeconds 기록
+  └─ CheckBGMStart → CheckBGMStartPrefix: 커스텀 BGM 로드 중이면 시작 보류
 
 NoteGenerator.Update → Generate → NoteSpriteHook.GeneratePostfix (스킨 + SetNativeSize)
 RG_NoteObject.Update → CalculatePosition → NoteSwayHook / NoteSpeedChaosHook Postfix
-RG_PS_Judgement.Update (JudgeScoreMaxHook으로 만점 상수 교체됨)
-  └─ AutoPlayHook Postfix: 오토플레이면 레인마다 AutoPlayJudge
-판정 발생 → AllPerfectJudgeHook (올퍼펙트면 BLUESTAR로) → OnGetJudge → 판정바 RegisterHit
+RG_PS_Judgement.Update (JudgeScoreMaxHook으로 만점 상수 교체됨; 오토플레이는 게임의 autoPlay 플래그로 원래 경로 그대로 처리)
+판정 발생 → AllPerfectJudgeHook (올퍼펙트면 BLUESTAR로) → OnGetJudge → 판정바 RegisterHit (같은 프레임 중복 호출은 한 번만 반영)
 
 Main.OnUpdate: BGABGMSyncHook.CheckAndSync, KeyViewer.Poll, JudgmentBar.RefreshJudgeRange
 Main.OnGUI:    JudgmentBar.DrawJudgmentBar, KeyViewer.Draw
@@ -97,10 +100,12 @@ Main.OnGUI:    JudgmentBar.DrawJudgmentBar, KeyViewer.Draw
 
 ```text
 ManagerResult.Start
+  ├─ ResultTaintHook Prefix     → (커스텀 곡 또는 오토/올퍼펙트/점수 상한 변경이면) 플레이 횟수 등을 저장해 두고,
+  │                               끝나면 Finalizer가 되돌림. 그동안 업적 해금 요청(RequestAchievementUnlock)은 막음
   ├─ ComparePlayResultHighScore → 안의 UserAccountModule.SavePlayData를 ResultSaveBlockHook이 차단 조건이면 건너뜀
   ├─ PostRequestPlayResult      → 안의 LyrebirdServer.PostUserScore를 ResultSaveBlockHook이 차단 조건이면 건너뜀
-  └─ ManagerResultHook Postfix  → 진단 로깅(오퍼레이터 계층, 전체 GameObject 스캔)
-차단 조건: config BlockSave(또는 MelonPreferences BlockSaveBestRanking) || 오토플레이 || 올퍼펙트
+  └─ ManagerResultHook Postfix  → 진단 로깅(오퍼레이터 계층, 전체 GameObject 스캔) — LogLevel=2에서만
+저장 차단 조건(먼저 맞는 사유가 로그에 남음): 오토플레이 || 올퍼펙트 || MaxScore 변경 || 커스텀 곡 || config BlockSave
 ```
 
 ## 스코어 보정 요약

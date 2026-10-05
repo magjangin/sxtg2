@@ -1,6 +1,6 @@
 # 프로젝트 개요
 
-기준일: 2026-09-28 (v1.1.0)
+기준일: 2026-10-05 (v1.1.0)
 
 `sxtg2`는 Sixtar Gate STARTRAIL을 위한 MelonLoader 기반 모드입니다.
 
@@ -26,11 +26,11 @@
 - 노트 흔들림(NoteSway), 노트별 속도 카오스(NoteSpeedChaos)
 - 오토플레이, 올퍼펙트(모든 판정을 BLUESTAR로)
 - 점수 상한 변경(MaxScore)
-- 기록/랭킹 저장 차단(BlockSave, 기본 켜짐)
+- 기록/랭킹 저장 차단: 커스텀 곡·오토플레이·올퍼펙트·점수 상한 변경 플레이는 항상 기록/업적/플레이 횟수에서 제외, 원곡 플레이는 `BlockSave`(기본 켜짐)를 따름
 
 ### 스킨
 
-- `CustomNotes` 폴더 PNG로 노트 스프라이트 교체 (현재 파일명 매칭에 알려진 문제가 있음 — `02-systems/NOTE_SYSTEM.md`)
+- `CustomNotes` 폴더 PNG로 노트 스프라이트 교체 (노트 이름의 `(Clone)`을 떼고 파일명과 매칭 — `02-systems/NOTE_SYSTEM.md`)
 
 ### 설정
 
@@ -42,15 +42,15 @@
 ```text
 sxtg2-mod/
 ├── Main/          # MelonMod 진입점, 씬 전환 감지, 매 프레임 호출 분배
-├── Features/      # 곡 선택(커스텀 트랙/미리듣기), 판정바, 키뷰어
-├── Hooks/         # 플레이 씬 Harmony 훅, BGM/BGA 처리
+├── Features/      # 곡 선택(커스텀 트랙/미리듣기), 판정바, 키뷰어, 진단용 로깅 훅
+├── Hooks/         # 플레이 씬 Harmony 훅, 기록·업적 차단, BGM/BGA 처리
 ├── Loaders/       # BMS/트랙 정보 파서, 커스텀 노트 스프라이트 로더
 ├── Processors/    # 파싱된 노트 → 게임 노트 주입
 ├── Models/        # CustomTrackData
-└── Helpers/       # 로그, config.txt 설정, 썸네일 로더
+└── Helpers/       # 로그, config.txt 설정과 값 파서, 썸네일 로더
 ```
 
-C# 파일 13개입니다. 파일별 설명은 [../03-development/CODE_STRUCTURE.md](../03-development/CODE_STRUCTURE.md).
+C# 파일 16개입니다. 파일별 설명은 [../03-development/CODE_STRUCTURE.md](../03-development/CODE_STRUCTURE.md).
 
 ## 최근 큰 변화
 
@@ -58,6 +58,8 @@ C# 파일 13개입니다. 파일별 설명은 [../03-development/CODE_STRUCTURE.
   `FetchBMSToModules` Prefix 하나로 단순화
 - 2026-07-26 ~ 08-03: 판정바/키뷰어, MaxScore, NoteSway, NoteSpeedChaos, 판정바 모양/위치, 키뷰어 색상 추가
 - 2026-08-09 (v1.1.0): `config.txt`를 플레이 씬 진입 때마다 다시 읽음
+- 2026-10-05: 알려진 문제 #1~#34 일괄 수정 — 커스텀 곡·치트 플레이의 기록/업적 차단, 노트 스킨 적용, 오토플레이를 게임 플래그로 교체, 진단 로그를 상세 모드로 제한 등
+  (`CURRENT_STATUS.md`의 "일괄 수정 내역")
 
 자세한 이력은 [../CURRENT_STATUS.md](../CURRENT_STATUS.md).
 

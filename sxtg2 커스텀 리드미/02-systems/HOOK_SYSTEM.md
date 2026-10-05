@@ -83,36 +83,38 @@ private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstructi
 | --- | --- | --- | --- | --- |
 | `ManagerPlayHook` (GameplayHooks) | `ManagerPlay.FetchBMSToModules(SXGTData)` | Prefix | 커스텀 트랙 | BMS 파싱 → 노트 주입, BGM/BGA 교체 |
 | | `ManagerPlay.CheckBGMStart` | Prefix | 커스텀 트랙 BGM 로딩 중 | BGM 시작을 보류(원본 실행 건너뜀) |
-| `NoteSpriteHook` (GameplayHooks) | `NoteGenerator.Generate` | Postfix | 항상 | 커스텀 노트 스프라이트 적용 + `NoteRendererRecovery` |
+| `NoteSpriteHook` (GameplayHooks) | `NoteGenerator.Generate` | Postfix | 커스텀 스프라이트가 있을 때 | 커스텀 노트 스프라이트 적용, 그 이미지에만 `SetNativeSize` + `noteSize` 재적용 |
 | `NoteSwayHook` (GameplayHooks) | `RG_NoteObject.CalculatePosition` | Postfix | `NoteSway=1` | 노트 루트 x를 사인파로 흔듦 |
 | `NoteSpeedChaosHook` (GameplayHooks) | `RG_NoteObject.CalculatePosition` | Postfix | `NoteSpeedChaos=1` | 자식 y/홀드 길이에 배율 적용 |
 | | `NoteGenerator.Start` | Postfix | `NoteSpeedChaos=1`, 최저배율 < 1 | `notePreGenerateTime`을 `3 / 최저배율`로 늘림 |
-| `AutoPlayHook` (GameplayHooks) | `ManagerPlay.CheckGameFinished(float)` | Prefix | 항상 | 현재 곡 시간을 `CurrentTimeSeconds`에 저장 |
-| | `RG_PS_Judgement.Update` | Postfix | 오토플레이 켜짐 + 플레이 씬 | 레인마다 원본 `AutoPlayJudge(curTime, lane)` 호출 |
+| `AutoPlayHook` (GameplayHooks) | `ManagerPlay.InitializePlayScene` | Postfix | 오토플레이 켜짐 | 게임의 `ManagerPlay.autoPlay` 플래그를 켬 |
 | `AllPerfectJudgeHook` (GameplayHooks) | `TargetMethods()` 참고 | Prefix | 올퍼펙트 켜짐 | 첫 인자 `EJudges`를 `BLUESTAR`로 바꿈 |
-| `ResultSaveBlockHook` (GameplayHooks) | `UserAccountModule.SavePlayData`, `LyrebirdServer.PostUserScore` | Prefix | `BlockSave` 또는 오토/올퍼펙트 | 원본 실행 건너뜀(하이스코어 저장·서버 전송 차단) |
 | `JudgeScoreMaxHook` (GameplayHooks) | `RG_PS_Judgement.Update`, `CalculateJudgeScore(float)` | Transpiler | 항상 | `ldc.r4 1000000` → `GetMaxScore()` 호출 |
-| `TrackDataMediaHook` (GameplayHooks) | `TrackData.GetJacketSprite()`, `GetThumbSprite` | Prefix | 커스텀 트랙 | 앨범 폴더 자켓 PNG 반환 (없으면 원본) |
+| `TrackDataMediaHook` (GameplayHooks) | `TrackData.GetJacketSprite()`, `GetThumbSprite` | Prefix | 커스텀 트랙 | 앨범 폴더 자켓 PNG 반환(곡마다 한 번만 찾음, 없으면 원본) |
 | | `TrackData.GetAudioClip()`, `GetLoadingAnimation` | Prefix | 커스텀 트랙 | 도너 트랙 리소스 반환 |
 | | `TrackData.GetSixtarPatternDirectory` (2개 오버로드) | Prefix | 커스텀 트랙 | 도너 트랙 패턴 경로 반환 |
+| `ResultSaveBlockHook` (ResultGuardHooks) | `UserAccountModule.SavePlayData`, `LyrebirdServer.PostUserScore` | Prefix | 오토/올퍼펙트/점수 상한 변경/커스텀 곡 또는 `BlockSave` | 원본 실행 건너뜀(하이스코어 저장·서버 전송 차단) |
+| `ResultTaintHook` (ResultGuardHooks) | `ManagerResult.Start` | Prefix + Finalizer | 오토/올퍼펙트/점수 상한 변경/커스텀 곡 | 플레이 횟수/실패 횟수/마지막 플레이 곡을 되돌림 |
+| | `UserAccountModule.RequestAchievementUnlock` | Prefix | 위와 같은 결과 화면 중 | Steam 업적 해금 요청을 막음 |
+| `ServerGuardHook` (ResultGuardHooks) | `LyrebirdServer.IncreaseTrackPlayCount` | Prefix | 커스텀 곡 ID | 서버로 플레이 카운트를 보내지 않음 |
+| | `LyrebirdServer.GetHighScoreList` | Prefix | 커스텀 곡 ID | 서버에 묻지 않고 빈 랭킹 목록을 바로 돌려줌 |
+| | `Util.FindTrackByID` | Postfix | 못 찾았고 커스텀 곡 ID일 때 | 커스텀 곡 목록에서 찾아 줌(랭킹 창 NRE 방지) |
 | `ManagerMusicSelectHook` (MusicSelectFeature) | `ManagerMusicSelect.Awake` | Postfix | 항상 | `TrackDataAnalyzer.InjectCustomTracks` |
 | | `ManagerMusicSelect.PlayPreview` | Prefix | 커스텀 트랙 | 앨범 폴더 오디오로 미리듣기 (원본 실행 건너뜀) |
-| | `ManagerMusicSelect.OpenConfirmWindow` | Postfix | 항상 | **진단 로깅**: 확인창 `characterLayer` 계층 덤프 |
-| | `ManagerMusicSelect.instantiateOperatorCharacter` | Postfix | 항상 | **진단 로깅** |
-| `OperatorCharacterHook` (MusicSelectFeature) | `OperatorCharacter.SetUp`, `ShowDialogue` | Prefix | 항상 | **진단 로깅** |
-| `ManagerResultHook` (MusicSelectFeature) | `ManagerResult.Start` | Postfix | 항상 | **진단 로깅**: 오퍼레이터 계층 + `FindObjectsOfType<GameObject>()` 전체 스캔 |
-| `FastSlowMeter_OnGetJudge_Patch` (JudgmentBarFeature) | `OnGetJudge(EJudges, float)` | Postfix | 항상 | 판정 등급·오차를 `JudgmentBar.RegisterHit`로 전달 |
+| `MusicSelectDiagnosticsHook` (DiagnosticHooks) | `ManagerMusicSelect.OpenConfirmWindow`, `instantiateOperatorCharacter` | Postfix | `LogLevel=2` | **진단 로깅**: 확인창 `characterLayer` 계층 |
+| `OperatorCharacterHook` (DiagnosticHooks) | `OperatorCharacter.SetUp`, `ShowDialogue` | Prefix | `LogLevel=2` | **진단 로깅** |
+| `ManagerResultHook` (DiagnosticHooks) | `ManagerResult.Start` | Postfix | `LogLevel=2` | **진단 로깅**: 오퍼레이터 계층 + `FindObjectsOfType<GameObject>()` 전체 스캔 |
+| `FastSlowMeter_OnGetJudge_Patch` (JudgmentBarFeature) | `OnGetJudge(EJudges, float)` | Postfix | 판정바 켜짐 | 판정 등급·오차를 `JudgmentBar.RegisterHit`로 전달(같은 프레임 중복은 한 번만) |
 
-"진단 로깅" 훅 4개는 2026-08-03 시이(Shii) 조사용으로 추가한 것으로, 게임 동작은 바꾸지 않지만 로그 레벨과
-무관하게 `MelonLogger.Msg`로 많은 줄을 남깁니다. `CURRENT_STATUS.md`에 정리 대상으로 기록되어 있습니다.
+"진단 로깅" 훅 3개 클래스는 2026-08-03 시이(Shii) 조사용으로 추가한 것으로 게임 동작은 바꾸지 않습니다. 2026-10-05부터 `DiagnosticHooks.cs`로
+분리했고 **`LogLevel=2`(상세)일 때만** 동작합니다(예전에는 로그 레벨과 무관하게 확인창을 열 때마다 수백 줄, 결과 화면마다 전체 스캔과 수백 줄이
+찍혔음). 핵심 훅(`ManagerMusicSelectHook`)과 분리돼 있어서 진단용 필드/메서드가 게임 업데이트로 바뀌어도 커스텀 곡 등록과 미리듣기가 같이
+깨지지 않습니다.
 
-주의: 진단 훅 중 `OpenConfirmWindow`/`instantiateOperatorCharacter`는 핵심 훅(`Awake`, `PlayPreview`)과 **같은 클래스**
-(`ManagerMusicSelectHook`)에 있고, 진단 전용 `confirmWindow` 필드 접근자도 그 클래스의 정적 필드입니다. 게임 업데이트로
-진단용 필드/메서드 이름이 바뀌면 핵심 훅까지 영향받을 수 있습니다(`CURRENT_STATUS.md` 알려진 문제 #16, 확인 필요).
-같은 이유로 `NoteSpriteHook`의 정적 `FieldRefAccess`가 실패하면 `Main.OnInitializeMelon`이 씬 이벤트 구독을 건너뜁니다(#15).
+게임의 private 필드는 `SafeAccess.FieldRef`로 접근합니다. 필드 이름이 바뀌어 못 찾으면 `[SafeAccess] … 필드를 찾지 못해 …` 경고만 남기고 그 기능만
+건너뜁니다(예전에는 `static readonly FieldRefAccess`가 `TypeInitializationException`을 던져 씬 이벤트 구독까지 못 하는 경우가 있었음).
 
 ---
-
 ## 주요 훅 상세
 
 ### ManagerPlayHook — 커스텀 차트와 미디어 교체
@@ -145,40 +147,44 @@ FetchBMSToModulesPrefix(__instance, _bms, ___playTrack, ___bgaPlayer, ___default
 ### NoteSpriteHook — 노트 스킨
 
 `NoteGenerator.Generate`가 만든 `RG_NoteObject`의 `shortNote`/`tailNote`/`holdTexture` 자식 `Image.sprite`를
-`CustomNotes` 폴더 스프라이트로 바꾼 뒤, `NoteRendererRecovery`가 루트와 직계 자식 `Image`에
-`SetNativeSize()` + `SetAllDirty()`를 호출합니다. 파일 이름 매칭 규칙과 **현재 알려진 문제**는
-`NOTE_SYSTEM.md`의 "노트 스킨" 절 참고.
+`CustomNotes` 폴더 스프라이트로 바꿉니다. 노트 이름 `_Blue(Clone)`의 `(Clone)` 접미사를 떼고 `Blue`로 찾으며, **스프라이트를 적용한 이미지에만**
+`SetNativeSize()`를 호출한 뒤 게임의 노트 크기 옵션(`noteSize/100`, 원본 `RG_NoteObject.SetSize`와 같은 규칙)을 다시 곱합니다. 스킨이 없는 노트는
+건드리지 않습니다(예전에는 모든 노트에 `SetNativeSize`를 불러 노트 크기 옵션을 무시했음). 파일 이름 규칙은 `NOTE_SYSTEM.md`의 "노트 스킨" 절 참고.
 
-### AutoPlayHook / AllPerfectJudgeHook / ResultSaveBlockHook
+### AutoPlayHook / AllPerfectJudgeHook
 
-- **오토플레이**: 원본에 있는 `RG_PS_Judgement.AutoPlayJudge(float, int)`를 `AccessTools.MethodDelegate`로
-  캐시해 매 프레임 레인 수만큼 호출합니다. 레인 수는 `noteJudgeCursor` 리스트 길이 → `numLanes` → 10 순으로 결정.
-  `RG_PS_Judgement.Update`가 예외로 중단되면 Postfix도 실행되지 않습니다.
+- **오토플레이**: 게임에 원래 있는 `ManagerPlay.autoPlay`(public bool)를 `ManagerPlay.InitializePlayScene` Postfix에서 켭니다. 그러면
+  `RG_PS_Judgement.Update`가 `CheckMissBreak` 대신 원본 `AutoPlayJudge`를 부르고, 홀드 틱 판정과 홀드 종료 때의 `OnLaneKeyUp`,
+  키 입력 무시(`KeyInputAction`)도 게임 원래 경로로 처리됩니다. 예전에는 private `AutoPlayJudge`를 `RG_PS_Judgement.Update` Postfix에서 직접
+  불렀는데, 그러면 이 처리가 빠져 홀드가 끝나도 레인이 눌린 채 남았고 시간 캐시(`CurrentTimeSeconds`)가 리트라이 때 이전 판 값으로 남았습니다.
+  게임은 원본 차트의 `98` 오픈 노트로도 이 플래그를 직접 켜고 끕니다(`CheckOpenState`).
 - **올퍼펙트**: `TargetMethods()`가 아래 타입×메서드 이름 조합 중 **첫 인자가 `EJudges`인 메서드**만 골라 패치합니다.
   - 타입: `RhythmGame.Play.RG_PS_Judgement`, `JudgeCounter`, `JudgeTextViewer`, `RedStarCounter`, `FastSlowMeter`
   - 메서드: `JudgeAction`, `JudgeDivergence`, `TryJudgeShortNote`, `AddJudge`, `OnGetJudge`
-  - `TryJudgeShortNote(float, Note)`는 첫 인자가 `float`라 실제로는 제외됩니다. 파생 위젯 타입에서
-    `GetMethods()`로 찾기 때문에 상속된 `PlayWidget.OnGetJudge` 베이스 메서드도 대상에 들어갑니다.
-- **저장 차단**: `ModLog.BlockSaveBestRanking || ModLog.EnableAutoPlay || ModLog.EnableAllPerfect`이면
-  `UserAccountModule.SavePlayData`(하이스코어 파일 저장)와 `LyrebirdServer.PostUserScore`(서버 전송)를 건너뜁니다.
-  예전에는 이 두 메서드를 부르는 래퍼 `ManagerResult.ComparePlayResultHighScore`/`PostRequestPlayResult`를
-  통째로 건너뛰었는데, 그러면 래퍼 끝의 베스트 점수 표시 갱신(`ManagerResult.cs:300-301`)까지 같이 사라져서 말단으로 옮겼습니다.
-  이제 결과 화면은 원본처럼 베스트 점수를 표시하고(메모리에서만 계산, 저장 안 함), 두 말단 메서드는 원본에서 `ManagerResult`
-  말고는 부르는 곳이 없습니다. 차단되면 `[차단] ... 저장 차단: UserAccountModule.SavePlayData`/`LyrebirdServer.PostUserScore`
-  로그가 남습니다(`SavePlayData`는 새 기록이 있을 때만 불립니다). 대상 메서드를 못 찾으면 시작 시 경고 로그가 남습니다.
-  세 값은 모두 **`config.txt` 값 OR MelonPreferences 값**입니다(`ModHelpers.cs`). MelonPreferences의
-  `BlockSaveBestRanking` 기본값이 `true`라서, `config.txt`에 `BlockSave=0`을 써도 차단이 풀리지 않습니다
-  (알려진 문제 — `01-user-guide/TROUBLESHOOTING.md` 참고).
-- **차단 범위**: 막는 것은 위 두 메서드뿐입니다. `ManagerResult.Start`의 나머지(`playCount++`, `failCount++`,
-  `CheckResultSceneAchievements`의 `lastPlayedTrackID` 저장과 Steam 업적, 초반의 `PUREBLUE_FIRST`/`FULLCOMBO_FIRST`)와
-  `MoveToPlayLoadingScene`의 `LyrebirdServer.IncreaseTrackPlayCount`는 그대로 실행됩니다
-  (`CURRENT_STATUS.md` 알려진 문제 #13, #14). 두 대상 메서드는 `void`라 Prefix로 건너뛰어도 반환값 문제는 없습니다.
-  `TrackPlayData`는 곡 ID와 무관하게 레벨 4칸을 만들므로, 커스텀 곡에서도 래퍼가 그대로 실행돼도 예외가 나지 않습니다.
-- **오토플레이의 시간 캐시**: `CurrentTimeSeconds`는 플레이가 아닌 씬으로 갈 때만 -1로 리셋되므로, 씬 이름이 그대로인
-  리트라이에서는 이전 판의 값이 남습니다(알려진 문제 #19, 확인 필요). 게임에는 `ManagerPlay.autoPlay`(public bool)가
-  이미 있어 `RG_PS_Judgement.Update`가 그 값으로 `AutoPlayJudge`를 부르는데, 모드는 이 플래그를 쓰지 않고 Postfix에서
-  private 메서드를 직접 호출합니다.
+  - `TryJudgeShortNote(float, Note)`는 첫 인자가 `float`라 실제로는 제외됩니다. 파생 위젯 타입에서 `GetMethods()`로 찾기 때문에
+    상속된 `PlayWidget.OnGetJudge` 베이스 메서드도 대상에 들어가며, 같은 메서드가 여러 타입에서 잡혀도 **한 번만** 패치합니다.
+  - 시작 시 `[AllPerfect] 판정 메서드 N개를 패치합니다`를 남기고, 하나도 못 찾으면 경고를 남깁니다.
 
+### ResultSaveBlockHook / ResultTaintHook / ServerGuardHook — 기록 보호 (`Hooks/ResultGuardHooks.cs`)
+
+결과 화면과 서버로 나가는 것을 막는 훅 모음입니다(2026-10-05 정리).
+
+- **저장/전송 차단 (`ResultSaveBlockHook`)**: `UserAccountModule.SavePlayData`(하이스코어 파일 저장)와 `LyrebirdServer.PostUserScore`(서버 전송)를
+  건너뜁니다. 예전에는 이 두 메서드를 부르는 래퍼 `ManagerResult.ComparePlayResultHighScore`/`PostRequestPlayResult`를 통째로 건너뛰어, 래퍼 끝의
+  베스트 점수 표시 갱신(`ManagerResult.cs:300-301`)까지 사라졌습니다. 이제 결과 화면은 원본처럼 베스트 점수를 표시하고(메모리에서만 계산, 저장 안 함),
+  두 말단 메서드는 원본에서 `ManagerResult` 말고는 부르는 곳이 없습니다.
+  - 차단 사유 우선순위: 오토플레이 → 올퍼펙트 → 점수 상한 변경(`MaxScore`≠1000000) → **커스텀 곡**(`SavePlayData`의 `CustomTrackData` 또는
+    `PostUserScore`의 `CUSTOM_…` ID) → `BlockSave`. 앞의 네 가지는 `BlockSave`와 무관하게 항상 막고, 원본 곡은 `config.txt`의 `BlockSave`만 따릅니다.
+    MelonPreferences의 `BlockSaveBestRanking`은 더 이상 읽지 않습니다.
+  - 차단되면 `[차단] 하이스코어 및 랭킹 저장 차단(사유): …` 로그가 남습니다(`SavePlayData`는 새 기록이 있을 때만 불림). 대상 메서드를 못 찾으면
+    시작 시 경고 로그가 남습니다. 두 대상은 `void`라 Prefix로 건너뛰어도 반환값 문제가 없습니다.
+- **업적/카운터 보호 (`ResultTaintHook`)**: `ManagerResult.Start`는 `playCount++`, `failCount++`, `lastPlayedTrackID`/`sameTrackPlayCount` 갱신과
+  Steam 업적(`PUREBLUE_FIRST`, `FULLCOMBO_FIRST` 등)을 `ResultSaveBlockHook` 밖에서 처리합니다. 오토/올퍼펙트/점수 상한 변경/커스텀 곡일 때
+  Prefix에서 값을 기록해 두고 **Finalizer**(예외가 나도 실행됨)에서 되돌리며, 그동안 `UserAccountModule.RequestAchievementUnlock`을 막습니다.
+  평범한 원본 곡 플레이는 건드리지 않습니다. 로그: `[ResultTaint] 이번 결과는 업적/플레이 횟수에 반영하지 않습니다`.
+- **서버 보호 (`ServerGuardHook`)**: 곡을 시작할 때 원본이 서버에 보내는 `IncreaseTrackPlayCount`에서 커스텀 곡 ID를 막고, 랭킹 조회
+  (`GetHighScoreList`)는 서버에 묻지 않고 빈 목록을 바로 돌려줍니다. `Util.FindTrackByID`가 커스텀 ID를 못 찾아 랭킹 창
+  (`RG_RankingView.ShowFetch`)에서 `NullReferenceException`이 나던 것은 Postfix로 커스텀 곡 목록에서 찾아 주어 해결했습니다.
 ### JudgeScoreMaxHook — 점수 상한
 
 `RG_PS_Judgement.Update()`와 `CalculateJudgeScore(float)` 안의 `ldc.r4 1000000`을 전부
@@ -197,10 +203,11 @@ Chaos는 자식(`shortNote`/`holdMask`/`holdTexture`/`tailNote`)의 y와 홀드 
 
 게임은 판정이 확정되면 `ManagerPlay.WidgeInvoke`로 **장착된 PlayWidget 전부**에 `OnGetJudge(EJudges, float)`를
 호출합니다. 이 패치는 `FastSlowMeter`의 오버라이드와, `JudgeTextViewer`를 통해 잡히는 베이스
-`PlayWidget.OnGetJudge(EJudges, float)`를 함께 패치합니다. 그 결과:
+`PlayWidget.OnGetJudge(EJudges, float)`를 함께 패치합니다(같은 메서드는 한 번만, 하나도 못 찾으면 경고). 그 결과:
 
-- 히트 1회가 **장착한 위젯 수만큼** 중복 등록됩니다(같은 위치에 겹쳐 그려져 표시상 문제는 적음).
-- 위젯을 **하나도 장착하지 않으면** 호출 자체가 없어 판정바에 틱이 나오지 않습니다.
+- 히트 1회가 **장착한 위젯 수만큼** 들어오지만, `JudgmentBar.RegisterHit`이 **같은 프레임의 같은 (판정, 오차)**를 한 번만 받아서 틱이 겹쳐 진하게
+  보이거나 히트 수가 부풀려지지 않습니다.
+- 위젯을 **하나도 장착하지 않으면** 호출 자체가 없어 판정바에 틱이 나오지 않습니다(남은 문제).
 
 정확히 노트당 1회가 필요하면 `RG_PS_Judgement.TryJudgeShortNote`(및 홀드 틱 판정 경로)로 옮겨야 합니다.
 자세한 내용은 `PLAY_OVERLAY.md`.
@@ -211,11 +218,16 @@ Chaos는 자식(`shortNote`/`holdMask`/`holdTexture`/`tailNote`)의 y와 홀드 
 
 `Main`이 `SceneManager.activeSceneChanged`를 구독해 `UpdatePlaySceneState(sceneName)`을 호출합니다.
 
-- 씬 이름을 소문자로 바꿔 `play`/`rhythm`/`game`이 들어 있으면 `AutoPlayHook.IsPlayScene = true`.
-  게임 씬 이름은 `MainTitle`, `MusicSelect`, `PlayLoading`, `Play`, `Result` 등이므로 **`PlayLoading`도
-  플레이 씬으로 판정됩니다**(알려진 문제: 로딩 화면에서도 오버레이가 그려지고 설정 재로드가 두 번 일어날 수 있음).
+- 씬 이름을 소문자로 바꿔 `play`/`rhythm`/`game`이 들어 있으면 `Main.IsPlayScene = true`(설정 재로드 대상).
+  게임 씬 이름은 `MainTitle`, `MusicSelect`, `PlayLoading`, `Play`, `Result` 등이므로 `PlayLoading`도 포함됩니다. 로딩 씬에서 미리 읽어 두면
+  Play 씬의 Awake/Start가 항상 최신 값을 보기 때문에 일부러 그대로 둡니다.
+- **오버레이를 그릴 씬은 따로 판단합니다**: 씬 이름이 정확히 `Play`일 때만 `Main.IsGameplayScene = true`. 그래서 로딩 화면(`PlayLoading`)에는
+  빈 판정바/키뷰어가 나오지 않습니다.
 - 플레이 씬이면 `SaveCustomKeyConfig.Reload(...)`로 `config.txt`를 다시 읽습니다(v1.1.0).
 - 매번 `KeyViewer.Reset()`, `NoteSwayHook.Reset()`, `NoteSpeedChaosHook.Reset()` 호출.
 
-`Main.OnUpdate`는 매 프레임 `BGABGMSyncHook.CheckAndSync()`를 호출하고, 플레이 씬이면 `KeyViewer.Poll()`,
-`JudgmentBar.RefreshJudgeRange()`를 호출합니다. `Main.OnGUI`는 플레이 씬에서 판정바와 키뷰어를 그립니다.
+`Main.OnUpdate`는 매 프레임 `BGABGMSyncHook.CheckAndSync()`를 호출하고, 오버레이 씬이면 `KeyViewer.Poll()`,
+`JudgmentBar.RefreshJudgeRange()`를 호출합니다. `Main.OnGUI`는 오버레이 씬에서 판정바와 키뷰어를 그립니다(`Repaint` 이벤트에서만).
+
+초기화 순서(`Main.OnInitializeMelon`): 설정 읽기 → `hwa` 폴더 → **씬 감지 구독** → 노트 스킨 초기화(별도 `try`). 선택 기능인 노트 스킨 초기화가
+실패해도 씬 감지와 오버레이, 설정 재로드는 계속 동작합니다.

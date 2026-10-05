@@ -88,8 +88,8 @@ public int totalNotes, totalNoteWithTicks, totalTicks;
 일반 플레이는 `MusicSelect` → `PlayLoading` → `Play` → `Result` 순서입니다. 리트라이는
 `ManagerPlay.RestartGame()`이 `Play` 씬을 **다시 로드**하고 콜백에서 `Set(playTrack, lv, ps)`를 다시 호출합니다.
 
-**모드 개입**: `Main`이 `activeSceneChanged`로 씬 이름을 보고 플레이 씬 여부를 판단합니다(이름에 `play`/`rhythm`/`game`
-포함). 이 규칙은 `PlayLoading`도 플레이 씬으로 봅니다(`HOOK_SYSTEM.md` 참고).
+**모드 개입**: `Main`이 `activeSceneChanged`로 씬 이름을 보고 두 가지를 판단합니다. 설정 재로드 대상(이름에 `play`/`rhythm`/`game` 포함,
+`PlayLoading`도 포함)과 오버레이를 그릴 씬(정확히 `Play`만)입니다(`HOOK_SYSTEM.md` 참고).
 
 ---
 
@@ -174,8 +174,8 @@ JudgeRatio 합산 → JudgeScore = Lerp(0, 1000000, JudgeRatio / totalNotes) →
 ```
 
 이 메서드 안에서 예외가 나면 그 프레임의 뒤쪽 처리가 전부 건너뛰어집니다. 예를 들어 `CheckHoldTick`은 헤드가
-판정된 홀드의 `tickTime.Length`를 읽으므로, `tickTime`이 null인 홀드가 있으면 매 프레임 여기서 멈춥니다
-(모드의 "홀드 끝 누락" 알려진 문제의 원인).
+판정된 홀드의 `tickTime.Length`를 읽으므로, `tickTime`이 null인 홀드가 있으면 매 프레임 여기서 멈춥니다.
+(모드는 끝이 없는 홀드를 `HoldNote`로 넣지 않고 일반 노트로 바꿔서 이 상황을 만들지 않습니다. `NOTE_SYSTEM.md` 참고.)
 
 ### 입력 판정 (`TryJudgeShortNote(judgeTime, note)`)
 
@@ -205,14 +205,14 @@ SuperNova/Quasar 36ms — 전체 표는 `PLAY_OVERLAY.md`).
 - `RG_Gear.IsGateOpened`는 기본 `false`이고, `ManagerPlay.OnLaneKeyDown/Up`은 `GATE` 레인 입력을 게이트가 닫혀 있으면 무시합니다.
   그래서 GATE 노트는 앞서 오픈 노트로 게이트를 열어 둬야 칠 수 있습니다.
 - `nAction == EnableAutoPlay`(원본 차트의 값 `98`)인 오픈 노트는 게이트 대신 `ManagerPlay.autoPlay = true`를 켜고, 끝 시각에 끕니다.
-  게임에 원래 있는 오토플레이 플래그입니다(`HOOK_SYSTEM.md`의 AutoPlayHook과 알려진 문제 #19 참고).
+  게임에 원래 있는 오토플레이 플래그입니다. 모드의 오토플레이도 이 플래그를 켜는 방식입니다(`HOOK_SYSTEM.md`의 AutoPlayHook 참고).
 - `AutoPlayJudge`는 `OPEN`/`ACTION` 색 노트를 치지 않습니다. 오픈 노트의 모드 쪽 의미는 `BMS_FORMAT.md`의 "게이트와 오픈 노트" 절.
 
 ### 판정 기록 (`JudgeDivergence`)
 
 미스면 `JudgeAction_Miss`, 아니면 `JudgeAction`을 호출하고 `elapsedNote++`, `JudgeCount.AddJudge(등급)`.
 
-**모드 개입**: `AutoPlayHook`(Update Postfix에서 `AutoPlayJudge` 호출), `AllPerfectJudgeHook`(등급을 BLUESTAR로),
+**모드 개입**: `AutoPlayHook`(`ManagerPlay.autoPlay` 플래그를 켜서 원본 오토플레이 경로 사용), `AllPerfectJudgeHook`(등급을 BLUESTAR로),
 `FastSlowMeter_OnGetJudge_Patch`(판정바 데이터).
 
 ---
@@ -243,20 +243,21 @@ StartCoroutine(SetBackable(2.5f))
 PostRequestPlayResult()                  // 서버 전송
 ```
 
-**모드 개입**: `ResultSaveBlockHook`이 조건에 따라 이 래퍼들이 부르는 말단 메서드인 `UserAccountModule.SavePlayData`(`ComparePlayResultHighScore`
-안, 298행)와 `LyrebirdServer.PostUserScore`(`PostRequestPlayResult` 안, 262행)를 건너뜁니다. 래퍼 자체는 실행되므로 래퍼 끝의
-베스트 점수 표시 갱신(300~301행)은 그대로 동작합니다. `ManagerResultHook`(진단 로깅)은 `Start` Postfix입니다.
+**모드 개입** (`Hooks/ResultGuardHooks.cs`):
 
-**모드가 막지 않는 것**: `ManagerResult.Start`는 위 흐름 앞뒤로 `userData.playCount++`(113행), 점수 1,000,000 이상/풀콤보일 때
-`RequestAchievementUnlock("PUREBLUE_FIRST"/"FULLCOMBO_FIRST")`(150~161행), 실패 시 `failCount++`(182행)을 실행하고,
-`CheckResultSceneAchievements()`는 플레이 횟수/난이도/실패 횟수 업적과 `lastPlayedTrackID`/`sameTrackPlayCount` 갱신을
-합니다(236~253행). 모두 `ResultSaveBlockHook` 밖입니다. 곡을 시작할 때는 `ManagerMusicSelect.MoveToPlayLoadingScene`이
-`lastSelectedSongIndex = 트랙 ID`를 저장하고 `LyrebirdServer.IncreaseTrackPlayCount`로 서버에 곡 ID를 보냅니다(540~544행).
-저장은 전부 `UserAccountModule.SaveRequest` → `FSForSteam.SaveData` → `SteamRemoteStorage.FileWrite`(Steam 클라우드)입니다.
-자세한 영향은 `CURRENT_STATUS.md` 알려진 문제 #13, #14.
+- `ResultSaveBlockHook`이 이 래퍼들이 부르는 말단 메서드인 `UserAccountModule.SavePlayData`(`ComparePlayResultHighScore` 안, 298행)와
+  `LyrebirdServer.PostUserScore`(`PostRequestPlayResult` 안, 262행)를 조건에 따라 건너뜁니다. 래퍼 자체는 실행되므로 래퍼 끝의 베스트 점수 표시 갱신
+  (300~301행)은 그대로 동작합니다. 차단 조건은 오토플레이/올퍼펙트/점수 상한 변경/커스텀 곡(항상)과 `BlockSave`(원본 곡)입니다.
+- `ResultTaintHook`이 `ManagerResult.Start`에서 `userData.playCount++`(113행), 점수 1,000,000 이상/풀콤보일 때
+  `RequestAchievementUnlock("PUREBLUE_FIRST"/"FULLCOMBO_FIRST")`(150~161행), 실패 시 `failCount++`(182행), `CheckResultSceneAchievements()`의
+  플레이 횟수/난이도/실패 횟수 업적과 `lastPlayedTrackID`/`sameTrackPlayCount` 갱신(236~253행)을, 오토/올퍼펙트/점수 상한 변경/커스텀 곡일 때 되돌리고
+  막습니다(Prefix에서 값을 기록, Finalizer에서 복원, 그동안 `RequestAchievementUnlock` 차단).
+- `ServerGuardHook`이 곡을 시작할 때 `ManagerMusicSelect.MoveToPlayLoadingScene`이 부르는 `LyrebirdServer.IncreaseTrackPlayCount`(540~544행)에서 커스텀 곡 ID를
+  막습니다. 이 메서드는 `lastSelectedSongIndex = 트랙 ID`도 저장하는데, 곡 목록에 없는 ID면 곡 선택 화면이 0번 곡으로 폴백하므로 안전합니다.
+- 저장은 전부 `UserAccountModule.SaveRequest` → `FSForSteam.SaveData` → `SteamRemoteStorage.FileWrite`(Steam 클라우드)입니다.
+  `ManagerResultHook`(진단 로깅, `LogLevel=2`에서만)은 `Start` Postfix입니다.
 
 ---
-
 ## 모드 개입 지점 요약
 
 | 게임 쪽 지점 | 모드 코드 | 목적 |
@@ -268,11 +269,13 @@ PostRequestPlayResult()                  // 서버 전송
 | `ManagerPlay.CheckBGMStart` | `ManagerPlayHook.CheckBGMStartPrefix` | 커스텀 BGM 로드 대기 |
 | `NoteGenerator.Generate` / `Start` | `NoteSpriteHook`, `NoteSpeedChaosHook` | 스킨, 선행 생성 시간 |
 | `RG_NoteObject.CalculatePosition` | `NoteSwayHook`, `NoteSpeedChaosHook` | 노트 연출 |
-| `RG_PS_Judgement.Update` | `AutoPlayHook`(Postfix), `JudgeScoreMaxHook`(Transpiler) | 오토플레이, 점수 상한 |
-| `ManagerPlay.CheckGameFinished` | `AutoPlayHook`(Prefix) | 현재 시간 기록 |
+| `RG_PS_Judgement.Update` | `JudgeScoreMaxHook`(Transpiler) | 점수 상한 |
+| `ManagerPlay.InitializePlayScene` | `AutoPlayHook`(Postfix) | `autoPlay` 플래그 켜기(오토플레이) |
 | 판정 관련 메서드들 | `AllPerfectJudgeHook` | 등급 조작 |
 | `PlayWidget.OnGetJudge(EJudges, float)` | `FastSlowMeter_OnGetJudge_Patch` | 판정바 |
 | `UserAccountModule.SavePlayData` / `LyrebirdServer.PostUserScore` (결과 화면이 부름) | `ResultSaveBlockHook` | 저장/전송 차단 |
+| `ManagerResult.Start`, `UserAccountModule.RequestAchievementUnlock` | `ResultTaintHook` | 업적/플레이 횟수 보호 |
+| `LyrebirdServer.IncreaseTrackPlayCount`/`GetHighScoreList`, `Util.FindTrackByID` | `ServerGuardHook` | 커스텀 곡 서버 유출 방지, 랭킹 창 오류 방지 |
 
 ## 관련 문서
 
