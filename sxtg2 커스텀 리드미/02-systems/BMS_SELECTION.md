@@ -68,6 +68,9 @@ ManagerMusicSelect.Awake (원본)
 
 키를 "포함" 여부로 비교하므로 `subtitle:`처럼 `title`이 들어간 다른 키가 뒤에 있으면 제목을 덮어씁니다.
 
+로그: 파일을 찾으면 `[TrackInfoParser] 곡 정보 파일 발견`, 읽은 필드마다 `제목`/`아티스트`/`난이도` 줄이 `MelonLogger.Msg`로 직접 찍힙니다.
+곡 선택 화면에 들어갈 때마다 앨범마다 반복되고 로그 레벨과 무관합니다(알려진 문제 #29).
+
 ## 만들어지는 트랙 (`CreateCustomTrack`)
 
 | 필드 | 값 |

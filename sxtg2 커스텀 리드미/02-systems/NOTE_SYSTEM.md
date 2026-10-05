@@ -68,6 +68,10 @@ InjectBmsNotesToLaneData(SXGTData data)
 > `tickTime = null`인 `HoldNote`로 들어갑니다. 게임의 `RG_PS_Judgement.CheckHoldTick`은 헤드가 판정된 뒤
 > `holdNote.tickTime.Length`를 읽으므로, 그 순간부터 매 프레임 `NullReferenceException`이 나고 `Update`의 나머지 처리가 멈춥니다.
 > 짝 없는 시작을 `ShortNote`로 바꾸거나 버리고 경고를 남기도록 고치는 것이 좋습니다.
+>
+> 오픈 노트(`04`)도 같습니다. 끝(`05`)이 없으면 `Length = 0`인 `HoldNote`가 되고(실행 확인: `Open L9 len=0`), 게임은 그 길이를
+> 게이트 애니메이션 시간으로 쓰므로 `animator.speed = 1f / 0f`가 됩니다(알려진 문제 #26). 오픈 노트의 의미는
+> `BMS_FORMAT.md`의 "게이트와 오픈 노트" 절 참고.
 
 ### 홀드 틱 (게임 원본 `HoldNote.FinishHoldNote`)
 

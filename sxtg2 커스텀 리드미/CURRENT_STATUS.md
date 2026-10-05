@@ -19,7 +19,7 @@
 ## 알려진 문제 (2026-09-28 / 09-29 점검, 코드 미수정)
 
 디컴파일 원본(`sxtg2/`)과 대조하거나 파서를 직접 실행해서 확인한 것들입니다. "확인 필요"는 실게임 확인이 아직 없는 것입니다.
-#1~#12는 09-28, #13~#21은 09-29, #22~#25는 10-03 재점검에서 추가했습니다. 수정된 항목은 행 앞에 **(날짜 수정됨)**으로 표시했습니다.
+#1~#12는 09-28, #13~#21은 09-29, #22~#25는 10-03, #26~#30은 10-05 재점검에서 추가했습니다. 수정된 항목은 행 앞에 **(날짜 수정됨)**으로 표시했습니다.
 
 | # | 문제 | 위치 | 영향 |
 | --- | --- | --- | --- |
@@ -48,6 +48,11 @@
 | 23 | (확인 필요) 모드가 `SXGTData.trackStartTiming`을 세팅하지 않아, BGM/BGA 시작 시각(`CurTime >= trackStartTiming`)이 **도너 패턴의 `0A` 마커 값**에 묶임. 0이 아니면 차트(BMS 0초)와 그만큼 어긋나고, 도너 곡이 바뀌면 모든 커스텀 곡의 싱크가 같이 바뀜. 값은 아직 모름(10-04에 주입 로그에 `trackStartTiming=`을 추가해 확인할 수 있게 함) | `Processors/CustomChartInjector.cs`, 원본 `ManagerPlay.cs:252,256`, `SXGTReader.cs:254-257` | 싱크 어긋남 가능 |
 | 24 | **(2026-10-04 수정됨)** 누락 항목 자동 추가(`AppendSectionsMissingFrom`)가 플레이 씬 진입 재로드마다 실행되어, 사용자가 지우거나 주석 처리한 묶음을 모드가 다시 써 넣고 편집기에서 열어 둔 파일과 충돌함 | `Helpers/ModHelpers.cs` `LoadConfigFile` | 설정 파일이 멋대로 바뀜 |
 | 25 | (확인 필요, 낮음) `.wav`는 항상 `streamAudio=true`로 로드하는데, 게임은 곡 종료를 `bgm.clip.length`로 판단(`ManagerPlay.cs:179,300`). 스트리밍 클립의 `length`가 처음부터 실제 길이로 나오는지 미확인 | `Hooks/AudioHooks.cs` `BGMPlayerHook.CreateRequest` | `.wav` 앨범에서 곡이 일찍/즉시 끝날 가능성 |
+| 26 | 오픈/게이트의 실제 동작이 문서에 없었음(10-05에 문서 반영): 게이트는 닫힌 채 시작하고 GATE 입력은 열려 있을 때만 받으며(`ManagerPlay.cs:497,529`), 오픈 노트 한 쌍(`04`~`05`)은 게이트를 **한 번 토글**하고 길이는 열리는 애니메이션 시간일 뿐임(`RG_PS_Judgement.cs:325`, `RG_Gear_Default.cs:41`). 끝(`05`) 없는 오픈 노트는 파싱 결과가 `Open L9 len=0`(실행 확인)이라 `animator.speed = 1f / 0f`(무한대)가 설정됨(#1의 오픈 노트판, Unity가 무한대를 어떻게 처리하는지는 확인 필요) | `Loaders/BmsParser.cs`, `Processors/CustomChartInjector.cs`, 원본 `RG_PS_Judgement.cs:312-357` | 오픈 노트 없이는 18채널 노트를 칠 수 없음, 길이 0 오픈 노트의 게이트 애니메이션 이상 가능 |
+| 27 | `DetectNoteValueWidth`가 `#WAV` 키 길이가 6이면 무조건 3글자 모드로 바꿈. `#WAVCMD` 같은 6글자 명령 줄이 하나라도 있으면 모든 데이터 줄을 3글자로 잘못 읽어 노트가 0개가 됨(실행 확인). 로그에는 "차트를 읽지 못해 원본 패턴을 유지합니다"만 나옴 | `Loaders/BmsParser.cs` `DetectNoteValueWidth` | 차트가 통째로 도너 패턴으로 대체됨 |
+| 28 | `#BPM Infinity`가 `float.TryParse`를 통과(`> 0`만 검사)해 BPM이 ∞가 되고 모든 노트가 0초에 몰림(실행 확인: `bpm=∞ t=0`) | `Loaders/BmsParser.cs` `FindBaseBpm` | 노트가 한곳에 몰림 |
+| 29 | `TrackInfoParser`가 앨범마다 2~5줄을 `MelonLogger.Msg`로 직접 남겨서, 곡 선택 화면에 들어갈 때마다 로그 레벨과 무관하게 (앨범 수 × 수 줄)이 찍힘 | `Loaders/TrackInfoParser.cs` | 로그 증가 |
+| 30 | (확인 필요, 낮음) 자켓을 원본 해상도 RGBA32 + 밉맵 `Texture2D`로 읽고, 목록 썸네일에도 같은 스프라이트를 씀 → 앨범 수와 자켓 해상도에 따라 메모리가 커질 수 있음 | `Helpers/ModHelpers.cs` `ThumbnailLoader.LoadSprite` | 메모리 사용량 |
 
 사소한 것: 색상명 `핑크` 미인식(`핑`으로 오타), 기본 `config.txt` 머리말의 "게임 실행 시 적용" 문구가 옛 설명,
 켜기/끄기 값에 모르는 단어를 써도 경고 없음, `ParseFlexibleBool` 테스트가 실제 함수가 아닌 복사본을 검증,
@@ -55,7 +60,7 @@
 
 사소한 것 (2026-09-29 추가):
 
-- BMS: `#BPM Infinity`가 `float.TryParse`를 통과함(`> 0`만 검사) → 모든 노트가 0초에 몰림.
+- BMS: `#BPM Infinity`가 `float.TryParse`를 통과함(`> 0`만 검사) → 모든 노트가 0초에 몰림(10-05에 실행 확인, #28로 승격).
 - 로그: `ModLog.Verbose($"…")`의 보간 문자열이 로그 레벨과 무관하게 매번 만들어짐(노트 생성/판정마다).
   `AllPerfectJudgeHook`/`FastSlowMeter_OnGetJudge_Patch`의 `TargetMethods()`는 대상이 0개여도 경고가 없음.
 - 연출: NoteSway는 진폭이 0이 돼도 x를 `BaseX`로 되돌리지 않음. NoteSpeedChaos 레인별 모드의 시드는
@@ -89,8 +94,43 @@
 | 21 | 필드를 하나도 못 읽었으면 경고, 기본 제목은 폴더 이름, BMS 헤더 `#TITLE`/`#ARTIST`/`#PLAYLEVEL` 읽기 |
 | 23 | 값을 확인한 뒤(주입 로그의 `trackStartTiming=`), 0이 아니면 주입 때 `data.trackStartTiming = 0f`로 명시(또는 BMS에서 오프셋을 받음). 0이어도 도너 곡이 바뀔 때를 대비해 명시하는 편이 안전 |
 | 25 | `.wav` 앨범으로 곡 종료 시점 확인. 문제면 `.wav`는 스트리밍하지 않고 통째로 로드 |
+| 26 | 길이 0인 오픈 노트(끝 없음)는 경고 로그를 남기고 기본 애니메이션 길이를 주거나 버림. #1과 함께 처리(`MissingEndNotes`가 오픈 노트도 포함함) |
+| 27 | 3글자 모드는 `#WAV` + 숫자/영문 3자리 키(`#WAV001`)일 때만 켬(키 길이 6만 보지 말고 형식을 검사) |
+| 28 | BPM이 `float.IsInfinity`/`NaN`이거나 합리적 범위(예: 1~10000)를 벗어나면 무시하고 다음 `#BPM`/기본값 사용 |
+| 29 | `ModLog.Verbose`로 내리거나 "읽었음" 한 줄 요약만 남김 |
+| 30 | 로드 직후 `Texture2D.Compress`로 DXT 압축하거나 목록용은 한 변 512px 정도로 줄임. 밉맵은 끔 |
 | 4 | 채널부(`#`와 `:` 사이)에 공백이 있으면 헤더로 보고 건너뜀 |
 | 테스트 | `ParseFlexibleBool` 등 순수 함수를 Unity 무의존 파일로 빼서 모드와 테스트가 같은 소스를 링크. 위 회귀 케이스 추가 |
+
+## 2026-10-05 재점검 (코드 미수정, 문서만 기록)
+
+2026-10-04 수정(`7a3beec`)을 다시 읽어 검증하고, 아직 안 본 부분을 원본(`sxtg2/`)과 대조했습니다. 결과는 위 "알려진 문제" #26~#30.
+
+- **10-04 수정 검증**: 문제 없음.
+  - 저장 차단을 말단 메서드로 옮긴 뒤 래퍼가 끝까지 실행되는데, `PostRequestPlayResult`가 역참조하는 `LyrebirdServer.Instance`는
+    곡 선택 화면(`ManagerMusicSelect.cs:544`)도 똑같이 역참조하므로 정상 흐름에서는 항상 존재함. `GetUserName()`은
+    `SteamClient.SteamId`라 Steam이 필수인 게임에서는 예외가 없고, `GetPlayData`는 저장소를 읽기만 함.
+  - 설정 누락 섹션 추가는 시작 때 `JudgeScoreMaxHook.Prepare`와 `Main.OnInitializeMelon`에서 `Initialize`가 두 번 불려도
+    멱등(두 번째는 이미 추가된 키를 봄). 새 모드 버전에서 키가 늘어나면 다음 게임 시작 때 정상 추가됨.
+- **실행으로 확인한 것**(`BmsParser.cs`를 링크한 임시 콘솔 프로젝트, 저장소 밖):
+
+  | 입력 | 결과 |
+  | --- | --- |
+  | `#BPM 150` + `#00111:0100` | 노트 1개, t=1.6 (정상) |
+  | `#BPM Infinity` + `#00111:0100` | `bpm=∞`, t=0 (#28) |
+  | `#WAVCMD 01 01 x` 줄 + `#00111:0100` | 노트 0개 (#27) |
+  | `#WAV01 a.wav` 줄 + `#00111:0100` | 노트 1개 (2글자 키는 정상) |
+  | `#00104:0400` (끝 없는 오픈) | `Open L9 len=0` (#26) |
+  | `#00111:0200` (끝 없는 홀드) | `Long L1 len=0` (#1) |
+- **원본 대조로 확인한 것**
+  - `RG_Gear.IsGateOpened`는 기본 `false`, `ManagerPlay.OnLaneKeyDown/Up`은 게이트가 닫혀 있으면 GATE 입력을 무시함.
+    오픈 노트(`nAction == NONE`)는 `CheckOpenState`에서 `SwitchGateOpenState(holdNote.duration)`로 게이트를 토글하고 곧바로
+    판정 커서를 넘김(끝 시각은 쓰지 않고 `duration`은 애니메이션 길이). `98` 값 노트(`EnableAutoPlay`)는 게임이 직접
+    `ManagerPlay.autoPlay`를 켜고 끔(#19 제안의 근거).
+- **문제없음으로 확인한 것**: 레벨 잠금 UI(`RG_MS_UnlockLevel`, `IndicatorSelectableLevels.SetUnlocked`)는 호출하는 곳이 없는 죽은
+  코드라 커스텀 곡의 난이도 선택에 영향이 없음. `CheckCruiseMode`는 빈 함수, `SXGTData.totalTicks`는 쓰는 곳이 없음.
+- **문서 반영**: `BMS_FORMAT`(게이트/오픈 노트 절, 헤더 표 경고), `BMS_PARSING`, `NOTE_SYSTEM`, `GAME_LOGIC`(오픈 노트와 게이트 절),
+  `INSTALL_AND_LAYOUT`, `TROUBLESHOOTING`(15번 신설), `BMS_SELECTION`, `MEDIA_SYSTEM`.
 
 ## 2026-10-04 수정: 저장 차단 위치, 설정 파일 재작성, 주입 로그 (#22, #24, #23 일부)
 

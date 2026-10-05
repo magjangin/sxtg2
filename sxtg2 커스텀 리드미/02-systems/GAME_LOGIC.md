@@ -196,6 +196,18 @@ SuperNova/Quasar 36ms — 전체 표는 `PLAY_OVERLAY.md`).
 `BLUESTAR`/`REDSTAR`(모드에 따라 `WHITESTAR`)로 `JudgeDivergence`를 호출합니다. 틱을 다 쓰고 `timing + duration`이
 지나면 노트 오브젝트를 지우고 커서를 넘깁니다.
 
+### 오픈 노트와 게이트 (`CheckOpenState`)
+
+- 오픈 노트는 레인 9의 `HoldNote`입니다. 매 프레임 `CheckOpenState`가 레인 9의 다음 노트 시각이 되었는지 보고, `nAction == NONE`이면
+  `gear.SwitchGateOpenState(holdNote.duration)`로 **게이트를 토글**(닫혀 있으면 열고, 열려 있으면 닫음)한 뒤 바로
+  `noteJudgeCursor[9]++`로 넘어갑니다. `duration`은 열리고 닫히는 애니메이션 길이(`animator.speed = 1f / t`)로만 쓰이고, 노트의 끝 시각까지
+  게이트가 열려 있는 것이 아닙니다.
+- `RG_Gear.IsGateOpened`는 기본 `false`이고, `ManagerPlay.OnLaneKeyDown/Up`은 `GATE` 레인 입력을 게이트가 닫혀 있으면 무시합니다.
+  그래서 GATE 노트는 앞서 오픈 노트로 게이트를 열어 둬야 칠 수 있습니다.
+- `nAction == EnableAutoPlay`(원본 차트의 값 `98`)인 오픈 노트는 게이트 대신 `ManagerPlay.autoPlay = true`를 켜고, 끝 시각에 끕니다.
+  게임에 원래 있는 오토플레이 플래그입니다(`HOOK_SYSTEM.md`의 AutoPlayHook과 알려진 문제 #19 참고).
+- `AutoPlayJudge`는 `OPEN`/`ACTION` 색 노트를 치지 않습니다. 오픈 노트의 모드 쪽 의미는 `BMS_FORMAT.md`의 "게이트와 오픈 노트" 절.
+
 ### 판정 기록 (`JudgeDivergence`)
 
 미스면 `JudgeAction_Miss`, 아니면 `JudgeAction`을 호출하고 `elapsedNote++`, `JudgeCount.AddJudge(등급)`.
