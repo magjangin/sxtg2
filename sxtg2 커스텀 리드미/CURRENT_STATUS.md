@@ -86,7 +86,7 @@
 | 30 | (보류, 낮음) 자켓을 원본 해상도 RGBA32 + 밉맵 `Texture2D`로 읽음 | 압축은 크기가 4의 배수가 아니면 안 되고(1952×1098 등), 축소는 GPU 읽기가 필요해 효과 대비 위험이 커서 보류 |
 | 사소 | NoteSpeedChaos 레인별 모드의 시드가 `InstanceID % 1000`(음수 가능, 실행마다 다름) | 레인 계층 구조를 확인한 뒤 레인 인덱스 기반으로 바꾸는 것이 좋음 |
 | 제안 | 게임 버전 가드가 없음 | 시작 시 게임 버전과 `Assembly-CSharp` 해시, 적용된 패치 수 요약을 로그로 남기는 것을 권장 |
-| 정리 | `release/`의 zip/dll 바이너리와 `list_managed_games.txt`(개인 Steam 라이브러리 목록)가 저장소에 있음 | 삭제 여부는 사용자 판단 |
+| 정리 (해결) | `release/` 바이너리와 `list_managed_games.txt`를 저장소에서 삭제 | 2026-10-08 삭제 |
 | 정리 | `sxtg2.LogicTests`가 `sxtg2.sln`에 없음 | `build.bat`이 sln을 빌드하므로, .NET 8 SDK 프로젝트를 넣으면 빌드 환경 의존이 늘어서 일부러 뺌 |
 | 문서 | `DEBUGGING_GUIDE.md` 115행 이후의 범용 예시 코드(약 250줄), `CURRENT_STATUS.md`의 이력/문제/계획 혼재 | 구조 정리가 필요 |
 
