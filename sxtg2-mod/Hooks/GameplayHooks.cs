@@ -416,18 +416,46 @@ namespace sxtg2.Hooks
             }
         }
 
+        /// <summary>
+        /// 노트가 붙은 레인 번호(LaneIndex 값)를 찾는다. 노트는 NoteGenerator.Generate에서 해당 레인의 NoteGroup 아래에 생성된다.
+        /// 못 찾으면 -1.
+        /// </summary>
+        private static int FindLaneIndex(RG_NoteObject note)
+        {
+            Transform noteGroup = note.transform.parent;
+            ManagerPlay manager = ManagerPlay.Instance;
+            if (noteGroup == null || manager == null || manager.gear == null || manager.gear.laneGroup == null)
+                return -1;
+
+            foreach (var pair in manager.gear.laneGroup.laneDic)
+            {
+                if (pair.Value != null && pair.Value.NoteGroup == noteGroup)
+                    return (int)pair.Key;
+            }
+
+            return -1;
+        }
+
         private static float GetMultiplier(RG_NoteObject note)
         {
             int id = note.GetInstanceID();
             if (Multipliers.TryGetValue(id, out float cached))
                 return cached;
 
-            // 레인별 모드에서는 같은 레인(같은 NoteGroup 부모)의 노트가 같은 배율을 받는다.
+            // 레인별 모드에서는 같은 레인의 노트가 같은 배율을 받는다. 시드는 레인 번호(LaneIndex)를 쓴다.
+            // 예전에는 부모 Transform의 InstanceID % 1000을 써서, 값이 음수일 수 있고 실행할 때마다 달라졌다.
             float seed;
             if (SaveCustomKeyConfig.NoteSpeedChaosPerLane)
-                seed = note.transform.parent != null ? note.transform.parent.GetInstanceID() % 1000 : 0f;
+            {
+                int lane = FindLaneIndex(note);
+                if (lane < 0)
+                    ModLog.WarningThrottled("NoteSpeedChaos.Lane", "[NoteSpeedChaos] 노트의 레인을 찾지 못해 레인 0의 배율을 씁니다.");
+                seed = lane < 0 ? 0f : lane;
+            }
             else
+            {
                 seed = note.Timing;
+            }
 
             float random = Mathf.Abs(Mathf.Sin(seed * 12.9898f) * 43758.5453f);
             random -= Mathf.Floor(random);
