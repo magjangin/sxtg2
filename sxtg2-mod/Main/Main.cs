@@ -81,7 +81,7 @@ namespace sxtg2
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[Main] 게임 버전 정보를 읽지 못했습니다: {ex.Message}");
+                ModLog.Warning($"[Main] 게임 버전 정보를 읽지 못했습니다: {ex.Message}");
             }
         }
 
