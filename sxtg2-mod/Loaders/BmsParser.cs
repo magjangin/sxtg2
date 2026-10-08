@@ -67,16 +67,6 @@ namespace sxtg2.Loaders
                 { "18", 6 }
             };
 
-        private static readonly Dictionary<string, NoteType> NoteTypeMapping =
-            new Dictionary<string, NoteType>
-            {
-                { "01", NoteType.Normal },
-                { "02", NoteType.Long },
-                { "03", NoteType.HoldEnd },
-                { "04", NoteType.Open },
-                { "05", NoteType.Close }
-            };
-
         private static readonly object CacheLock = new object();
         private static readonly Dictionary<string, (long Version, ParseResult Result)> FileCache =
             new Dictionary<string, (long, ParseResult)>(StringComparer.OrdinalIgnoreCase);
@@ -299,17 +289,18 @@ namespace sxtg2.Loaders
                     out measure);
             }
 
+            // 값마다 문자열을 새로 만들지 않고 글자로 직접 본다. 차트 한 곡에 값이 수십만 개라 이 루프가 파싱 시간의 대부분이다.
+            // 문자열은 노트로 확정된 값에만 만든다(OriginalNoteValue).
             int objectCount = data.Length / valueWidth;
             for (int index = 0; index < objectCount; index++)
             {
-                string value = data.Substring(index * valueWidth, valueWidth);
-                if (value.All(character => character == '0'))
+                int start = index * valueWidth;
+                if (IsAllZero(data, start, valueWidth))
                     continue;
 
-                string typeKey = valueWidth == ExtendedNoteValueWidth && value[0] == '0'
-                    ? value.Substring(1)
-                    : value;
-                if (!NoteTypeMapping.TryGetValue(typeKey, out var noteType) ||
+                // 3글자 값(`001`)은 첫 글자가 0이면 뒤 두 글자로 종류를 본다.
+                int typeStart = valueWidth == ExtendedNoteValueWidth && data[start] == '0' ? start + 1 : start;
+                if (!TryGetNoteType(data, typeStart, start + valueWidth - typeStart, out NoteType noteType) ||
                     !TryResolveLane(noteType, channelNumber, out int lane))
                 {
                     continue;
@@ -321,8 +312,37 @@ namespace sxtg2.Loaders
                     Time = measurePosition * 240f / bpm,
                     Lane = lane,
                     NoteType = noteType,
-                    OriginalNoteValue = value
+                    OriginalNoteValue = data.Substring(start, valueWidth)
                 });
+            }
+        }
+
+        private static bool IsAllZero(string data, int start, int length)
+        {
+            for (int i = start; i < start + length; i++)
+            {
+                if (data[i] != '0')
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>두 글자 종류 값(`01`~`05`)을 종류로 바꾼다. 문자열을 새로 만들지 않고 글자를 직접 본다.</summary>
+        private static bool TryGetNoteType(string data, int start, int length, out NoteType noteType)
+        {
+            noteType = NoteType.Normal;
+            if (length != 2 || data[start] != '0')
+                return false;
+
+            switch (data[start + 1])
+            {
+                case '1': noteType = NoteType.Normal; return true;
+                case '2': noteType = NoteType.Long; return true;
+                case '3': noteType = NoteType.HoldEnd; return true;
+                case '4': noteType = NoteType.Open; return true;
+                case '5': noteType = NoteType.Close; return true;
+                default: return false;
             }
         }
 
