@@ -20,10 +20,8 @@ namespace sxtg2.Features
     public static class JudgmentBar
     {
         private static readonly List<HitTick> HitHistory = new List<HitTick>();
-        private static float _lastHitOffsetMs = 0f;
         private static float _lastHitTime = -999f;
         private static Color _lastHitColor = Color.white;
-        private static int _lastHitJudge = -1;
 
         /// <summary>마지막 히트의 라벨 문자열. 히트가 들어올 때 한 번만 만들고, 라벨이 보이는 동안 매 그리기마다 새로 만들지 않는다.</summary>
         private static string _lastHitText = "";
@@ -123,10 +121,8 @@ namespace sxtg2.Features
                 float offsetMs = gapInSeconds * 1000f;
                 Color tickColor = JudgeColor(judgeIndex);
 
-                _lastHitOffsetMs = offsetMs;
                 _lastHitTime = Time.time;
                 _lastHitColor = tickColor;
-                _lastHitJudge = judgeIndex;
                 _lastHitText = FormatHitLabel(offsetMs, judgeIndex);
 
                 HitHistory.Add(new HitTick
