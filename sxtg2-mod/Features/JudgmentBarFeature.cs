@@ -25,6 +25,9 @@ namespace sxtg2.Features
         private static Color _lastHitColor = Color.white;
         private static int _lastHitJudge = -1;
 
+        /// <summary>마지막 히트의 라벨 문자열. 히트가 들어올 때 한 번만 만들고, 라벨이 보이는 동안 매 그리기마다 새로 만들지 않는다.</summary>
+        private static string _lastHitText = "";
+
         // EJudges 순서: BLUESTAR / WHITESTAR / YELLOWSTAR / REDSTAR
         private static readonly string[] JudgeNames = { "BLUESTAR", "WHITESTAR", "YELLOWSTAR", "REDSTAR" };
 
@@ -74,6 +77,14 @@ namespace sxtg2.Features
             }
         }
 
+        private static string FormatHitLabel(float offsetMs, int judgeIndex)
+        {
+            string sign = offsetMs >= 0f ? "+" : "";
+            string judgeName = (judgeIndex >= 0 && judgeIndex < JudgeNames.Length) ? JudgeNames[judgeIndex] : "?";
+            string tag = offsetMs >= 0f ? "FAST" : "SLOW";
+            return $"{sign}{offsetMs:F1} ms · {judgeName} ({tag})";
+        }
+
         private static Color JudgeColor(int judgeIndex)
         {
             switch (judgeIndex)
@@ -116,6 +127,7 @@ namespace sxtg2.Features
                 _lastHitTime = Time.time;
                 _lastHitColor = tickColor;
                 _lastHitJudge = judgeIndex;
+                _lastHitText = FormatHitLabel(offsetMs, judgeIndex);
 
                 HitHistory.Add(new HitTick
                 {
@@ -278,11 +290,6 @@ namespace sxtg2.Features
             if (textElapsed >= HitFadeSeconds)
                 return;
 
-            string sign = _lastHitOffsetMs >= 0f ? "+" : "";
-            string judgeName = (_lastHitJudge >= 0 && _lastHitJudge < JudgeNames.Length) ? JudgeNames[_lastHitJudge] : "?";
-            string tag = _lastHitOffsetMs >= 0f ? "FAST" : "SLOW";
-            string msText = $"{sign}{_lastHitOffsetMs:F1} ms · {judgeName} ({tag})";
-
             float alpha = Mathf.Clamp01(1f - (textElapsed / HitFadeSeconds));
 
             if (_labelStyle == null)
@@ -309,14 +316,14 @@ namespace sxtg2.Features
             // 그림자
             _labelStyle.normal.textColor = new Color(0f, 0f, 0f, alpha * 0.8f);
             float offset = 1.5f;
-            GUI.Label(new Rect(labelRect.x - offset, labelRect.y - offset, labelRect.width, labelRect.height), msText, _labelStyle);
-            GUI.Label(new Rect(labelRect.x + offset, labelRect.y - offset, labelRect.width, labelRect.height), msText, _labelStyle);
-            GUI.Label(new Rect(labelRect.x - offset, labelRect.y + offset, labelRect.width, labelRect.height), msText, _labelStyle);
-            GUI.Label(new Rect(labelRect.x + offset, labelRect.y + offset, labelRect.width, labelRect.height), msText, _labelStyle);
+            GUI.Label(new Rect(labelRect.x - offset, labelRect.y - offset, labelRect.width, labelRect.height), _lastHitText, _labelStyle);
+            GUI.Label(new Rect(labelRect.x + offset, labelRect.y - offset, labelRect.width, labelRect.height), _lastHitText, _labelStyle);
+            GUI.Label(new Rect(labelRect.x - offset, labelRect.y + offset, labelRect.width, labelRect.height), _lastHitText, _labelStyle);
+            GUI.Label(new Rect(labelRect.x + offset, labelRect.y + offset, labelRect.width, labelRect.height), _lastHitText, _labelStyle);
 
             // 메인 텍스트
             _labelStyle.normal.textColor = new Color(_lastHitColor.r, _lastHitColor.g, _lastHitColor.b, alpha);
-            GUI.Label(labelRect, msText, _labelStyle);
+            GUI.Label(labelRect, _lastHitText, _labelStyle);
         }
 
         private static void DrawRangeBox(float centerX, float centerY, float barW, float barH, bool isVertical, float size, Color color, int shapeType)
