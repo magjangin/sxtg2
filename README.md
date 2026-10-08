@@ -22,7 +22,6 @@ sxtg2-mod/              # 메인 MelonLoader 모드 프로젝트 (C# 16개 파�
 sxtg2.LogicTests/       # BMS 파서/설정 파서 로직 테스트 (.NET 8 콘솔)
 sxtg2 커스텀 리드미/    # 프로젝트, 시스템, 사용자 문서
 tools/                  # 메서드 길이 측정 스크립트 (method_length_scan.py)
-release/                # 예전 배포 파일 (v0.1.x zip, sxtg2.dll) — 현재 버전과 무관한 옛 파일
 sxtg2.sln               # Visual Studio 솔루션 (메인 모드 프로젝트만 포함)
 build.bat               # 빌드(Debug 기본, build.bat Release도 가능) 후 Mods 폴더로 복사
 build-release.bat       # build.bat Release를 부르는 래퍼

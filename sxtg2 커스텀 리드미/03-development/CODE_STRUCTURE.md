@@ -91,8 +91,7 @@ sxtg2-mod/
 
 ### 저장소에 남은 정리 후보
 
-- `release/`에 옛 배포물(`sxtg2-v0.1.0.zip`, `sxtg2-v0.1.1.zip`, `sxtg2.dll`)이 Git에 추적되어 있고, 루트의 `list_managed_games.txt`도 용도가
-  불분명합니다. 지울지 여부는 사용자가 정하도록 그대로 두었습니다.
+- `release/`의 옛 배포물과 루트의 `list_managed_games.txt`(개인 Steam 라이브러리 목록)는 저장소에서 삭제했습니다.
 - 버전 문자열은 `AssemblyInfo.cs`의 `ModInfo.Version` 한 곳이 `MelonInfo`와 `AssemblyVersion`/`FileVersion`에 모두 쓰입니다. README의 버전 표기만 따로
   고치면 됩니다.
 ## 이전 구조와의 관계
