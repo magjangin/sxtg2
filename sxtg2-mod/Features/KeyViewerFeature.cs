@@ -58,7 +58,7 @@ namespace sxtg2.Features
             }
             catch (Exception ex)
             {
-                ModLog.Warning($"[KeyViewer] 입력 폴링 에러: {ex.Message}");
+                ModLog.WarningThrottled("KeyViewer.Poll", $"[KeyViewer] 입력 폴링 에러: {ex.Message}");
             }
         }
 
@@ -114,7 +114,7 @@ namespace sxtg2.Features
             }
             catch (Exception ex)
             {
-                ModLog.Warning($"[KeyViewer] OnGUI 드로우 에러: {ex.Message}");
+                ModLog.WarningThrottled("KeyViewer.Draw", $"[KeyViewer] OnGUI 드로우 에러: {ex.Message}");
             }
         }
 
@@ -174,9 +174,9 @@ namespace sxtg2.Features
 
             string name = kc.ToString();
 
-            if (name.StartsWith("Alpha") && name.Length == 6)
+            if (name.StartsWith("Alpha", StringComparison.Ordinal) && name.Length == 6)
                 return name.Substring(5);
-            if (name.StartsWith("Keypad"))
+            if (name.StartsWith("Keypad", StringComparison.Ordinal))
                 return "#" + name.Substring(6);
 
             switch (kc)

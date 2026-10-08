@@ -36,9 +36,16 @@ namespace sxtg2.Features
         private static readonly Dictionary<(int, int), Texture2D> CapsuleTexCache = new Dictionary<(int, int), Texture2D>();
         private static readonly Dictionary<(int, int), Texture2D> TriangleTexCache = new Dictionary<(int, int), Texture2D>();
 
+        /// <summary>캐시에서 밀려난 텍스처. 밀려난 프레임에 이미 그려졌을 수 있어서 다음 OnGUI에서 해제한다.</summary>
+        private static readonly List<Texture2D> RetiredTextures = new List<Texture2D>();
+
         /// <summary>난이도별로 다른 실제 판정 범위를 게임에서 읽어온다.</summary>
         public static void RefreshJudgeRange()
         {
+            // 판정바가 꺼져 있으면 눈금 범위를 쓰지 않으므로 매 프레임 게임 객체를 읽을 필요가 없다.
+            if (!SaveCustomKeyConfig.EnableJudgmentBar)
+                return;
+
             try
             {
                 ManagerPlay manager = ManagerPlay.Instance;
@@ -60,9 +67,10 @@ namespace sxtg2.Features
                         RangeMs[i] = ms;
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // 판정 모듈이 아직 준비되지 않은 프레임은 폴백 값 유지
+                // 판정 모듈이 아직 준비되지 않은 프레임은 폴백 값을 유지한다. 원인 확인용으로 상세 로그에만 남긴다.
+                ModLog.Verbose($"[JudgmentBar] 판정 범위 읽기 실패(폴백 값 유지): {ex.Message}");
             }
         }
 
@@ -118,7 +126,7 @@ namespace sxtg2.Features
             }
             catch (Exception ex)
             {
-                ModLog.Warning($"[JudgmentBar] 히트 데이터 등록 중 에러: {ex.Message}");
+                ModLog.WarningThrottled("JudgmentBar.RegisterHit", $"[JudgmentBar] 히트 데이터 등록 중 에러: {ex.Message}");
             }
         }
 
@@ -154,6 +162,7 @@ namespace sxtg2.Features
                 // 상수 필드만 쓰므로 이 람다는 변수를 캡처하지 않아 호출마다 클로저가 할당되지 않는다.
                 HitHistory.RemoveAll(tick => Time.time - tick.timeAdded > HitFadeSeconds);
 
+                DestroyRetiredTextures();
                 EnsureWhiteTexture();
 
                 BarLayout layout = ComputeLayout();
@@ -167,7 +176,7 @@ namespace sxtg2.Features
             }
             catch (Exception ex)
             {
-                ModLog.Warning($"[JudgmentBar] OnGUI 드로우 에러: {ex.Message}");
+                ModLog.WarningThrottled("JudgmentBar.Draw", $"[JudgmentBar] OnGUI 드로우 에러: {ex.Message}");
             }
         }
 
@@ -354,6 +363,26 @@ namespace sxtg2.Features
             GUI.color = Color.white;
         }
 
+        /// <summary>캐시를 비우되 텍스처는 바로 해제하지 않고 폐기 목록에 넣는다. Clear만 하면 네이티브 텍스처가 남는다.</summary>
+        private static void RetireCache(Dictionary<(int, int), Texture2D> cache)
+        {
+            foreach (var tex in cache.Values)
+            {
+                if (tex != null)
+                    RetiredTextures.Add(tex);
+            }
+
+            cache.Clear();
+        }
+
+        /// <summary>밀려난 텍스처를 해제한다. 밀려난 OnGUI가 끝난 뒤의 Repaint에서만 부른다.</summary>
+        private static void DestroyRetiredTextures()
+        {
+            foreach (var tex in RetiredTextures)
+                UnityEngine.Object.Destroy(tex);
+            RetiredTextures.Clear();
+        }
+
         /// <summary>양끝이 반원인 알약(스타디움) 모양의 알파 마스크 텍스처를 생성/캐시한다.</summary>
         private static Texture2D GetCapsuleTexture(int w, int h)
         {
@@ -363,7 +392,7 @@ namespace sxtg2.Features
 
             // 판정 범위가 자잘하게 바뀔 때마다 캐시가 무한정 쌓이는 걸 막는 안전장치
             if (CapsuleTexCache.Count > 64)
-                CapsuleTexCache.Clear();
+                RetireCache(CapsuleTexCache);
 
             var tex = new Texture2D(w, h, TextureFormat.ARGB32, false)
             {
@@ -411,7 +440,7 @@ namespace sxtg2.Features
                 return cached;
 
             if (TriangleTexCache.Count > 64)
-                TriangleTexCache.Clear();
+                RetireCache(TriangleTexCache);
 
             var tex = new Texture2D(w, h, TextureFormat.ARGB32, false)
             {
@@ -492,7 +521,7 @@ namespace sxtg2.Features
             }
 
             if (targets.Count == 0)
-                MelonLogger.Warning("[JudgmentBar] OnGetJudge 판정 메서드를 하나도 찾지 못해 판정바에 틱이 나오지 않습니다 (게임 업데이트로 바뀌었을 수 있음).");
+                ModLog.Warning("[JudgmentBar] OnGetJudge 판정 메서드를 하나도 찾지 못해 판정바에 틱이 나오지 않습니다 (게임 업데이트로 바뀌었을 수 있음).");
 
             return targets;
         }
@@ -531,7 +560,7 @@ namespace sxtg2.Features
             }
             catch (Exception ex)
             {
-                ModLog.Warning($"[JudgmentBar.Hook] OnGetJudge Postfix 에러: {ex.Message}");
+                ModLog.WarningThrottled("JudgmentBar.Hook", $"[JudgmentBar.Hook] OnGetJudge Postfix 에러: {ex.Message}");
             }
         }
     }

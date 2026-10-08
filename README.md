@@ -54,9 +54,8 @@ depotdownloader -app 1802720 -depot 1802721 -manifest 8524424218577615553
 
 빌드 전에 게임 설치 경로를 확인하세요.
 
-- 게임 폴더(`Mods`로 복사할 위치)는 환경 변수 `GAME_PATH`로 바꿀 수 있습니다(기본 `H:\Sixtar Gate STARTRAIL custom mode`).
-- `sxtg2-mod/sxtg2.csproj`의 게임 DLL 참조 경로(`H:\Sixtar Gate STARTRAIL custom mode\...`)는 하드코딩이라, 게임이 다른 경로에 있으면
-  직접 고쳐야 합니다. `GAME_PATH`는 복사 위치만 바꿉니다.
+- 게임 설치 폴더는 환경 변수 `GAME_PATH`로 바꿀 수 있습니다(기본 `H:\Sixtar Gate STARTRAIL custom mode`). 이 값은 DLL 참조 경로(csproj의 `GamePath`)와 `Mods` 복사 위치에 모두 쓰입니다.
+- Visual Studio에서 csproj를 직접 빌드할 때는 csproj의 `GamePath` 기본값(같은 `H:\...` 경로)이 쓰입니다. 다른 경로에 설치했다면 `GAME_PATH`로 빌드하거나 `GamePath` 기본값을 고치세요.
 - 저장소 위치는 스크립트 위치에서 자동으로 구합니다.
 
 ```bat
@@ -70,8 +69,8 @@ build.bat Release
 build-release.bat
 ```
 
-스크립트는 솔루션을 x64로 빌드하고 `sxtg2.dll`을 `{GAME_PATH}\Mods`에 **복사(배포)** 합니다. 배포 없이 빌드만 확인하려면 `GAME_PATH`를
-임시 폴더로 지정하세요(`set GAME_PATH=C:\temp\game` 후 `set NO_PAUSE=1`). 자세한 내용은
+스크립트는 솔루션을 x64로 빌드하고 `sxtg2.dll`을 `{GAME_PATH}\Mods`에 **복사(배포)** 합니다. 배포 없이 빌드만 확인하려면 `NO_DEPLOY=1`을
+설정하세요(`set NO_DEPLOY=1` 후 `set NO_PAUSE=1`). 참조하는 DLL은 항상 `GAME_PATH`의 게임 설치본입니다. 자세한 내용은
 `sxtg2 커스텀 리드미/03-development/CODE_STRUCTURE.md`.
 
 ## 커스텀 콘텐츠 배치

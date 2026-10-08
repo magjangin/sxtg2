@@ -2,7 +2,8 @@
 setlocal enabledelayedexpansion
 
 :: Usage: build.bat [Debug|Release]   (default: Debug)
-::   Set the GAME_PATH environment variable to override the game folder; set NO_PAUSE=1 to skip the final pause.
+::   Set the GAME_PATH environment variable to override the game folder (used for the DLL references and the Mods copy); set NO_PAUSE=1 to skip the final pause.
+::   Set NO_DEPLOY=1 to build without copying the DLL into the Mods folder.
 ::   build-release.bat is a thin wrapper that calls this script with Release.
 
 set "CONFIG=%~1"
@@ -114,6 +115,13 @@ if !FILE_SIZE! LSS 1024 (
     echo [ERROR] DLL file size is too small: !FILE_SIZE! bytes
     call :pause_if_interactive
     exit /b 1
+)
+
+:: NO_DEPLOY=1이면 빌드까지만 하고 Mods 폴더로는 복사하지 않는다(게임 폴더를 건드리지 않고 컴파일만 확인할 때 쓴다).
+if defined NO_DEPLOY (
+    echo [INFO] NO_DEPLOY is set: skipping the copy to the Mods folder.
+    call :pause_if_interactive
+    exit /b 0
 )
 
 :: Copy to Mods directory

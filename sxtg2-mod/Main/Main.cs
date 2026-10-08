@@ -44,7 +44,7 @@ namespace sxtg2
                 }
                 catch (Exception ex)
                 {
-                    MelonLogger.Warning($"[Main] 씬 감지 이벤트 등록 실패: {ex.Message}");
+                    ModLog.Warning($"[Main] 씬 감지 이벤트 등록 실패: {ex.Message}");
                 }
 
                 try
@@ -53,10 +53,10 @@ namespace sxtg2
                 }
                 catch (Exception ex)
                 {
-                    MelonLogger.Warning($"[Main] 노트 스킨 초기화 실패(스킨 없이 계속합니다): {ex.Message}");
+                    ModLog.Warning($"[Main] 노트 스킨 초기화 실패(스킨 없이 계속합니다): {ex.Message}");
                 }
 
-                MelonLogger.Msg("[Main] sxtg2 모드 초기화 완료");
+                ModLog.Msg("[Main] sxtg2 모드 초기화 완료");
             }
             catch (Exception ex)
             {
@@ -113,7 +113,7 @@ namespace sxtg2
 
         public override void OnApplicationQuit()
         {
-            MelonLogger.Msg("[Main] sxtg2 모드 종료됨");
+            ModLog.Msg("[Main] sxtg2 모드 종료됨");
         }
     }
 }

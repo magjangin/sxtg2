@@ -11,6 +11,11 @@ namespace sxtg2.Helpers
     public static class ConfigParsing
     {
         /// <summary>
+        /// 경고 출력기. 게임 안에서는 ModLog.Warning(LogLevel 적용)으로 바뀌고, 테스트 프로젝트는 기본값(MelonLogger)을 쓴다.
+        /// </summary>
+        public static Action<string> Warn = message => MelonLogger.Warning(message);
+
+        /// <summary>
         /// 값 뒤에 붙은 줄 끝 주석(`AutoPlay=1 # 메모`, `Side=Left // 메모`)을 떼어낸다.
         /// `#`/`//`는 앞에 공백이 있을 때만 주석으로 본다. 그래서 `#RRGGBB` 색상 값은 그대로 남는다.
         /// </summary>
@@ -71,7 +76,7 @@ namespace sxtg2.Helpers
             if (TryParseFlexibleBool(val, out bool parsed))
                 return parsed;
 
-            MelonLogger.Warning($"[SaveCustomKey] {key} 값을 켜기/끄기로 읽지 못했습니다: \"{val}\" → 기본값 {(defaultValue ? 1 : 0)} 유지");
+            Warn($"[SaveCustomKey] {key} 값을 켜기/끄기로 읽지 못했습니다: \"{val}\" → 기본값 {(defaultValue ? 1 : 0)} 유지");
             return defaultValue;
         }
 
@@ -82,13 +87,13 @@ namespace sxtg2.Helpers
 
             if (!float.TryParse(val.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float parsed))
             {
-                MelonLogger.Warning($"[SaveCustomKey] {key} 값을 숫자로 읽지 못했습니다: \"{val}\" → 기본값 {defaultValue:0.###} 유지");
+                Warn($"[SaveCustomKey] {key} 값을 숫자로 읽지 못했습니다: \"{val}\" → 기본값 {defaultValue:0.###} 유지");
                 return defaultValue;
             }
 
             if (parsed < min || parsed > max)
             {
-                MelonLogger.Warning($"[SaveCustomKey] {key}는 {min:0.###} ~ {max:0.###} 범위여야 합니다: {parsed:0.###} → 기본값 {defaultValue:0.###} 유지");
+                Warn($"[SaveCustomKey] {key}는 {min:0.###} ~ {max:0.###} 범위여야 합니다: {parsed:0.###} → 기본값 {defaultValue:0.###} 유지");
                 return defaultValue;
             }
 
@@ -111,7 +116,7 @@ namespace sxtg2.Helpers
             if (s == "center" || s == "c" || s == "중앙" || s == "가운데" || s == "default" || s == "기본" || s == "0")
                 return "Center";
 
-            MelonLogger.Warning($"[SaveCustomKey] {key} 값을 알 수 없습니다: \"{val}\" (Left/Right/Center 중 하나) → 기본값 {defaultValue} 유지");
+            Warn($"[SaveCustomKey] {key} 값을 알 수 없습니다: \"{val}\" (Left/Right/Center 중 하나) → 기본값 {defaultValue} 유지");
             return defaultValue;
         }
 
@@ -137,7 +142,7 @@ namespace sxtg2.Helpers
             if (int.TryParse(s, out int parsedInt) && parsedInt >= -1 && parsedInt <= 2)
                 return parsedInt;
 
-            MelonLogger.Warning($"[SaveCustomKey] {key} 모양 설정 값을 알 수 없습니다: \"{val}\" (0=사각, 1=알약, 2=삼각) → 기본값 유지");
+            Warn($"[SaveCustomKey] {key} 모양 설정 값을 알 수 없습니다: \"{val}\" (0=사각, 1=알약, 2=삼각) → 기본값 유지");
             return defaultValue;
         }
     }

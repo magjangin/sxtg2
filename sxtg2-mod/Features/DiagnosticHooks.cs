@@ -33,7 +33,7 @@ namespace sxtg2.Features
             try
             {
                 TrackData track = __instance.trackDatas[__instance.TrackCursor];
-                MelonLogger.Msg(
+                ModLog.Msg(
                     $"[MusicSelectDiagnostics] OpenConfirmWindow 호출: track={track?.DisplayName}, " +
                     $"level={__instance.LevelCursor}, style={__instance.playStyle}, willFetchKey={willFetchKey}");
 
@@ -41,7 +41,7 @@ namespace sxtg2.Features
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[MusicSelectDiagnostics] OpenConfirmWindow 로깅 실패: {ex.Message}");
+                ModLog.Warning($"[MusicSelectDiagnostics] OpenConfirmWindow 로깅 실패: {ex.Message}");
             }
         }
 
@@ -51,22 +51,22 @@ namespace sxtg2.Features
             GameObject layer = confirmWindow?.characterLayer;
             if (layer == null)
             {
-                MelonLogger.Msg("[MusicSelectDiagnostics] characterLayer가 비어있습니다.");
+                ModLog.Msg("[MusicSelectDiagnostics] characterLayer가 비어있습니다.");
                 return;
             }
 
-            MelonLogger.Msg($"[MusicSelectDiagnostics] characterLayer 오브젝트: {layer.name} (active={layer.activeSelf})");
+            ModLog.Msg($"[MusicSelectDiagnostics] characterLayer 오브젝트: {layer.name} (active={layer.activeSelf})");
             LogHierarchy(layer.transform, 1);
 
             OperatorCharacter[] operators = layer.GetComponentsInChildren<OperatorCharacter>(includeInactive: true);
             if (operators.Length == 0)
             {
-                MelonLogger.Msg("[MusicSelectDiagnostics]   -> OperatorCharacter 컴포넌트를 찾지 못했습니다.");
+                ModLog.Msg("[MusicSelectDiagnostics]   -> OperatorCharacter 컴포넌트를 찾지 못했습니다.");
             }
 
             foreach (OperatorCharacter op in operators)
             {
-                MelonLogger.Msg(
+                ModLog.Msg(
                     $"[MusicSelectDiagnostics]   -> Operator 발견: name={op.OperatorName} " +
                     $"(type={op.GetType().Name}, object={op.gameObject.name}, active={op.gameObject.activeInHierarchy})");
             }
@@ -79,7 +79,7 @@ namespace sxtg2.Features
 
             foreach (Transform child in t)
             {
-                MelonLogger.Msg(
+                ModLog.Msg(
                     $"[MusicSelectDiagnostics] {new string(' ', depth * 2)}- {child.name} (active={child.gameObject.activeSelf})");
                 LogHierarchy(child, depth + 1);
             }
@@ -94,13 +94,13 @@ namespace sxtg2.Features
 
             try
             {
-                MelonLogger.Msg(
+                ModLog.Msg(
                     $"[MusicSelectDiagnostics] instantiateOperatorCharacter 호출: opCharID={opCharID}, " +
                     $"result={__result?.OperatorName ?? "null"} (object={__result?.gameObject.name ?? "null"})");
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[MusicSelectDiagnostics] instantiateOperatorCharacter 로깅 실패: {ex.Message}");
+                ModLog.Warning($"[MusicSelectDiagnostics] instantiateOperatorCharacter 로깅 실패: {ex.Message}");
             }
         }
     }
@@ -117,13 +117,13 @@ namespace sxtg2.Features
 
             try
             {
-                MelonLogger.Msg(
+                ModLog.Msg(
                     $"[OperatorCharacterHook] SetUp 호출: name={__instance.OperatorName} " +
                     $"(type={__instance.GetType().Name}, object={__instance.gameObject.name})");
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[OperatorCharacterHook] SetUp 로깅 실패: {ex.Message}");
+                ModLog.Warning($"[OperatorCharacterHook] SetUp 로깅 실패: {ex.Message}");
             }
         }
 
@@ -136,13 +136,13 @@ namespace sxtg2.Features
 
             try
             {
-                MelonLogger.Msg(
+                ModLog.Msg(
                     $"[OperatorCharacterHook] ShowDialogue 호출: name={__instance.OperatorName}, " +
                     $"status={os} (type={__instance.GetType().Name}, object={__instance.gameObject.name})");
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[OperatorCharacterHook] ShowDialogue 로깅 실패: {ex.Message}");
+                ModLog.Warning($"[OperatorCharacterHook] ShowDialogue 로깅 실패: {ex.Message}");
             }
         }
     }
@@ -164,12 +164,12 @@ namespace sxtg2.Features
 
             try
             {
-                MelonLogger.Msg("[ManagerResultHook] ManagerResult.Start Postfix 실행 감지");
+                ModLog.Msg("[ManagerResultHook] ManagerResult.Start Postfix 실행 감지");
                 LogResultOperatorLayer(__instance);
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[ManagerResultHook] 결과 씬 로깅 실패: {ex.Message}");
+                ModLog.Warning($"[ManagerResultHook] 결과 씬 로깅 실패: {ex.Message}");
             }
         }
 
@@ -177,15 +177,15 @@ namespace sxtg2.Features
         {
             if (instance == null)
             {
-                MelonLogger.Msg("[ManagerResultHook] ManagerResult 인스턴스가 null입니다.");
+                ModLog.Msg("[ManagerResultHook] ManagerResult 인스턴스가 null입니다.");
                 return;
             }
 
-            MelonLogger.Msg("[ManagerResultHook] === 결과 씬 오퍼레이터 레이어 스캔 시작 ===");
+            ModLog.Msg("[ManagerResultHook] === 결과 씬 오퍼레이터 레이어 스캔 시작 ===");
             LogOperatorAnimator(instance);
             LogOperatorCharacters(instance);
             int matched = LogMatchingObjects();
-            MelonLogger.Msg($"[ManagerResultHook] === 결과 씬 오퍼레이터 레이어 스캔 완료 (매칭 오브젝트 {matched}개) ===");
+            ModLog.Msg($"[ManagerResultHook] === 결과 씬 오퍼레이터 레이어 스캔 완료 (매칭 오브젝트 {matched}개) ===");
         }
 
         private static void LogOperatorAnimator(RhythmGame.Result.ManagerResult instance)
@@ -193,15 +193,15 @@ namespace sxtg2.Features
             Animator animator = SafeAccess.Get(OperatorAnimatorField, instance);
             if (animator == null)
             {
-                MelonLogger.Msg("[ManagerResultHook] operatorAnimator 필드가 null입니다.");
+                ModLog.Msg("[ManagerResultHook] operatorAnimator 필드가 null입니다.");
                 return;
             }
 
             GameObject animObj = animator.gameObject;
-            MelonLogger.Msg($"[ManagerResultHook] operatorAnimator 오브젝트: {animObj.name} (activeSelf={animObj.activeSelf}, activeInHierarchy={animObj.activeInHierarchy})");
+            ModLog.Msg($"[ManagerResultHook] operatorAnimator 오브젝트: {animObj.name} (activeSelf={animObj.activeSelf}, activeInHierarchy={animObj.activeInHierarchy})");
             if (animObj.transform.parent != null)
             {
-                MelonLogger.Msg($"[ManagerResultHook] operatorAnimator 부모: {animObj.transform.parent.name}");
+                ModLog.Msg($"[ManagerResultHook] operatorAnimator 부모: {animObj.transform.parent.name}");
                 LogHierarchy(animObj.transform.parent, 1);
             }
             else
@@ -218,10 +218,10 @@ namespace sxtg2.Features
                 operators = UnityEngine.Object.FindObjectsOfType<OperatorCharacter>();
             }
 
-            MelonLogger.Msg($"[ManagerResultHook] 씬 내 OperatorCharacter 수: {operators.Length}");
+            ModLog.Msg($"[ManagerResultHook] 씬 내 OperatorCharacter 수: {operators.Length}");
             foreach (OperatorCharacter op in operators)
             {
-                MelonLogger.Msg(
+                ModLog.Msg(
                     $"[ManagerResultHook]   -> Operator 발견: name={op.OperatorName} " +
                     $"(type={op.GetType().Name}, object={op.gameObject.name}, activeSelf={op.gameObject.activeSelf}, activeInHierarchy={op.gameObject.activeInHierarchy})");
                 LogHierarchy(op.transform, 1);
@@ -240,7 +240,7 @@ namespace sxtg2.Features
                     objName.IndexOf("character", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     matchedCount++;
-                    MelonLogger.Msg($"[ManagerResultHook] 매칭 오브젝트: {obj.name} (activeSelf={obj.activeSelf}, activeInHierarchy={obj.activeInHierarchy})");
+                    ModLog.Msg($"[ManagerResultHook] 매칭 오브젝트: {obj.name} (activeSelf={obj.activeSelf}, activeInHierarchy={obj.activeInHierarchy})");
                 }
             }
 
@@ -252,7 +252,7 @@ namespace sxtg2.Features
             if (t == null || depth > MaxHierarchyDepth) return;
             foreach (Transform child in t)
             {
-                MelonLogger.Msg(
+                ModLog.Msg(
                     $"[ManagerResultHook] {new string(' ', depth * 2)}- {child.name} (activeSelf={child.gameObject.activeSelf}, activeInHierarchy={child.gameObject.activeInHierarchy})");
                 LogHierarchy(child, depth + 1);
             }

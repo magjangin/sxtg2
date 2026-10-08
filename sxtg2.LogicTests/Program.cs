@@ -63,7 +63,7 @@ internal static class Program
 #00211:0003
 """;
 
-        var result = BmsParser.ParseBmsFromText(bms, "inline");
+        var result = BmsParser.ParseBmsFromText(bms);
         Assert.NotNull(result, "결과가 null입니다.");
         Assert.True(result!.BaseBpm == 150f, $"예상 BPM 150, 실제 {result.BaseBpm}");
         Assert.True(result!.Notes.Count == 2, $"예상 노트 수 2, 실제 {result.Notes.Count}");
@@ -88,7 +88,7 @@ internal static class Program
 #00211:000003
 """;
 
-        var result = BmsParser.ParseBmsFromText(bms, "inline extended wav");
+        var result = BmsParser.ParseBmsFromText(bms);
         Assert.NotNull(result, "결과가 null입니다.");
         Assert.True(result!.Notes.Count == 2, $"예상 노트 수 2, 실제 {result.Notes.Count}");
 

@@ -33,7 +33,7 @@ namespace sxtg2.Hooks.Audio
                 var albumFile = FindFirstMp4(albumFolder);
                 if (!string.IsNullOrEmpty(albumFile))
                 {
-                    MelonLogger.Msg($"[BGAPlayerHook] 앨범 폴더에서 BGA 파일 발견: {Path.GetFileName(albumFile)}");
+                    ModLog.Msg($"[BGAPlayerHook] 앨범 폴더에서 BGA 파일 발견: {Path.GetFileName(albumFile)}");
                     return albumFile;
                 }
 
@@ -41,7 +41,7 @@ namespace sxtg2.Hooks.Audio
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[BGAPlayerHook] BGA 파일 검색 실패: {ex.Message}");
+                ModLog.Warning($"[BGAPlayerHook] BGA 파일 검색 실패: {ex.Message}");
                 return null;
             }
         }
@@ -78,7 +78,7 @@ namespace sxtg2.Hooks.Audio
                     albumFile = FindLargestAudioFile(albumFolder);
                     if (!string.IsNullOrEmpty(albumFile))
                     {
-                        MelonLogger.Warning(
+                        ModLog.Warning(
                             $"[BGMPlayerHook] music.ogg/mp3/wav가 없어 폴더에서 가장 큰 오디오 파일을 BGM으로 씁니다: {Path.GetFileName(albumFile)} " +
                             "(곡 음원은 music.ogg 같은 이름으로 두는 것을 권장합니다)");
                     }
@@ -86,7 +86,7 @@ namespace sxtg2.Hooks.Audio
 
                 if (!string.IsNullOrEmpty(albumFile))
                 {
-                    MelonLogger.Msg($"[BGMPlayerHook] 앨범 폴더에서 BGM 파일 발견: {Path.GetFileName(albumFile)}");
+                    ModLog.Msg($"[BGMPlayerHook] 앨범 폴더에서 BGM 파일 발견: {Path.GetFileName(albumFile)}");
                     return albumFile;
                 }
 
@@ -94,7 +94,7 @@ namespace sxtg2.Hooks.Audio
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[BGMPlayerHook] BGM 파일 검색 실패: {ex.Message}");
+                ModLog.Warning($"[BGMPlayerHook] BGM 파일 검색 실패: {ex.Message}");
                 return null;
             }
         }
@@ -206,7 +206,7 @@ namespace sxtg2.Hooks.Audio
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[BGABGMSyncHook] 동기화 체크 실패: {ex.Message}");
+                ModLog.WarningThrottled("BGABGMSyncHook.Check", $"[BGABGMSyncHook] 동기화 체크 실패: {ex.Message}");
             }
         }
 
@@ -296,11 +296,11 @@ namespace sxtg2.Hooks.Audio
             {
                 if (string.IsNullOrEmpty(customAlbumFolder))
                 {
-                    MelonLogger.Msg("[BGAPlayerHook] 커스텀 앨범 폴더가 없어 BGA 교체를 건너뜁니다.");
+                    ModLog.Msg("[BGAPlayerHook] 커스텀 앨범 폴더가 없어 BGA 교체를 건너뜁니다.");
                     return false;
                 }
 
-                MelonLogger.Msg($"[BGAPlayerHook] ReplacePlaySceneBGA 호출: albumFolder={customAlbumFolder}");
+                ModLog.Msg($"[BGAPlayerHook] ReplacePlaySceneBGA 호출: albumFolder={customAlbumFolder}");
 
                 string bgaFile = BgaFileResolver.FindForAlbum(customAlbumFolder);
 
@@ -311,7 +311,7 @@ namespace sxtg2.Hooks.Audio
 
                 if (videoPlayer == null)
                 {
-                    MelonLogger.Warning("[BGAPlayerHook] 대상 VideoPlayer가 없습니다.");
+                    ModLog.Warning("[BGAPlayerHook] 대상 VideoPlayer가 없습니다.");
                     return false;
                 }
 
@@ -319,7 +319,7 @@ namespace sxtg2.Hooks.Audio
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[BGAPlayerHook] BGA 교체 실패: {ex.Message}");
+                ModLog.Warning($"[BGAPlayerHook] BGA 교체 실패: {ex.Message}");
                 return false;
             }
         }
@@ -348,13 +348,13 @@ namespace sxtg2.Hooks.Audio
                 }
                 catch (Exception ex)
                 {
-                    MelonLogger.Warning($"[BGAPlayerHook] VideoPlayer.Prepare 실패 (계속 진행): {ex.Message}");
+                    ModLog.Warning($"[BGAPlayerHook] VideoPlayer.Prepare 실패 (계속 진행): {ex.Message}");
                 }
 
                 _currentVideoPlayer = videoPlayer;
                 _bgaFilePath = bgaFilePath;
                 _isReplaced = true;
-                MelonLogger.Msg($"[BGAPlayerHook] BGA 교체 완료: {Path.GetFileName(_bgaFilePath)}");
+                ModLog.Msg($"[BGAPlayerHook] BGA 교체 완료: {Path.GetFileName(_bgaFilePath)}");
                 return true;
             }
             catch (Exception ex)
@@ -394,7 +394,7 @@ namespace sxtg2.Hooks.Audio
             string filePath = BgmFileResolver.FindForAlbum(albumFolder);
             if (target == null || string.IsNullOrEmpty(filePath))
             {
-                MelonLogger.Warning("[BGMPlayerHook] BGM 대상 또는 파일을 찾을 수 없습니다.");
+                ModLog.Warning("[BGMPlayerHook] BGM 대상 또는 파일을 찾을 수 없습니다.");
                 return;
             }
 
@@ -423,7 +423,7 @@ namespace sxtg2.Hooks.Audio
 
                 if (request.result != UnityWebRequest.Result.Success)
                 {
-                    MelonLogger.Warning($"[BGMPlayerHook] BGM 로드 실패: {request.error}");
+                    ModLog.Warning($"[BGMPlayerHook] BGM 로드 실패: {request.error}");
                     yield break;
                 }
 
@@ -436,7 +436,7 @@ namespace sxtg2.Hooks.Audio
 
                 target.clip = clip;
                 target.loop = false;
-                MelonLogger.Msg($"[BGMPlayerHook] BGM 교체 완료: {Path.GetFileName(filePath)}");
+                ModLog.Msg($"[BGMPlayerHook] BGM 교체 완료: {Path.GetFileName(filePath)}");
             }
             finally
             {
@@ -461,7 +461,7 @@ namespace sxtg2.Hooks.Audio
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[BGMPlayerHook] BGM 요청 생성 실패: {ex.Message}");
+                ModLog.Warning($"[BGMPlayerHook] BGM 요청 생성 실패: {ex.Message}");
                 return null;
             }
         }

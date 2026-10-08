@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using HarmonyLib;
 using MelonLoader;
+using sxtg2.Helpers;
 using RhythmGame.MusicSelect;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -36,7 +37,7 @@ namespace sxtg2.Features
         {
             if (trackDatas == null || trackDatas.Count == 0)
             {
-                MelonLogger.Warning($"{LogPrefix} 복제할 원본 TrackData가 없습니다.");
+                ModLog.Warning($"{LogPrefix} 복제할 원본 TrackData가 없습니다.");
                 return;
             }
 
@@ -77,12 +78,12 @@ namespace sxtg2.Features
                 }
                 catch (Exception ex)
                 {
-                    MelonLogger.Warning(
+                    ModLog.Warning(
                         $"{LogPrefix} 앨범 추가 실패 ({Path.GetFileName(albumFolder)}): {ex.Message}");
                 }
             }
 
-            MelonLogger.Msg($"{LogPrefix} 커스텀 트랙 {addedCount}개 추가 완료");
+            ModLog.Msg($"{LogPrefix} 커스텀 트랙 {addedCount}개 추가 완료");
         }
 
         private static IEnumerable<string> EnumerateAlbumFolders(string hwaFolder)
@@ -243,7 +244,7 @@ namespace sxtg2.Features
                 if (string.IsNullOrEmpty(previewFile))
                 {
                     RestoreMenuBgm(___bgmSource);
-                    MelonLogger.Warning(
+                    ModLog.Warning(
                         $"[ManagerMusicSelectHook] 프리뷰 파일을 찾지 못했습니다: {customTrack.DisplayName}");
                     return false;
                 }
@@ -291,7 +292,7 @@ namespace sxtg2.Features
 
                 if (request.result != UnityWebRequest.Result.Success)
                 {
-                    MelonLogger.Warning(
+                    ModLog.Warning(
                         $"[ManagerMusicSelectHook] 프리뷰 로드 실패: {request.error}");
                     RestoreMenuBgm(bgmSource);
                     yield break;
@@ -313,7 +314,7 @@ namespace sxtg2.Features
 
                 previewSource.volume = Util.GetGameplayVolume();
                 previewSource.Play();
-                MelonLogger.Msg(
+                ModLog.Msg(
                     $"[ManagerMusicSelectHook] 프리뷰 재생: {Path.GetFileName(filePath)}");
 
                 yield return new WaitForSeconds(clip.length);

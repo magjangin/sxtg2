@@ -21,8 +21,6 @@ def strip_line_comment(line: str) -> str:
         if not in_dq and not in_sq and c == "/" and i + 1 < len(line) and line[i + 1] == "/":
             break
         if c == '"' and not in_sq:
-            if in_dq and i > 0 and line[i - 1] == "@":
-                pass
             in_dq = not in_dq
         elif c == "'" and not in_dq:
             in_sq = not in_sq

@@ -26,13 +26,13 @@ namespace sxtg2.Hooks
             if (save != null)
                 yield return save;
             else
-                MelonLogger.Warning("[ResultSaveBlock] UserAccountModule.SavePlayData를 찾지 못해 기록 저장 차단이 적용되지 않습니다.");
+                ModLog.Warning("[ResultSaveBlock] UserAccountModule.SavePlayData를 찾지 못해 기록 저장 차단이 적용되지 않습니다.");
 
             var post = AccessTools.Method(typeof(LyrebirdServer), nameof(LyrebirdServer.PostUserScore));
             if (post != null)
                 yield return post;
             else
-                MelonLogger.Warning("[ResultSaveBlock] LyrebirdServer.PostUserScore를 찾지 못해 랭킹 전송 차단이 적용되지 않습니다.");
+                ModLog.Warning("[ResultSaveBlock] LyrebirdServer.PostUserScore를 찾지 못해 랭킹 전송 차단이 적용되지 않습니다.");
         }
 
         [HarmonyPrefix]
@@ -123,7 +123,7 @@ namespace sxtg2.Hooks
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[ResultTaint] 결과 화면 사전 처리 실패: {ex.Message}");
+                ModLog.Warning($"[ResultTaint] 결과 화면 사전 처리 실패: {ex.Message}");
             }
         }
 
@@ -148,7 +148,7 @@ namespace sxtg2.Hooks
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[ResultTaint] 플레이 횟수 되돌리기 실패: {ex.Message}");
+                ModLog.Warning($"[ResultTaint] 플레이 횟수 되돌리기 실패: {ex.Message}");
             }
 
             _tainted = false;

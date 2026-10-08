@@ -88,11 +88,6 @@ namespace sxtg2.Loaders
         // float.TryParse는 "Infinity"도 받아들인다. 그대로 쓰면 모든 노트 시각이 0초가 되므로 상한을 둔다.
         private const float MaxBpm = 100000f;
 
-        public static List<ParsedNote> ParseBmsFile(string filePath)
-        {
-            return ParseBmsFileWithStatistics(filePath)?.Notes ?? new List<ParsedNote>();
-        }
-
         public static ParseResult ParseBmsFileWithStatistics(string filePath)
         {
             if (string.IsNullOrEmpty(filePath))
@@ -124,7 +119,7 @@ namespace sxtg2.Loaders
             return result;
         }
 
-        public static ParseResult ParseBmsFromText(string text, string sourceName = "inline")
+        public static ParseResult ParseBmsFromText(string text)
         {
             if (string.IsNullOrEmpty(text))
                 return null;

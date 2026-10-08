@@ -35,7 +35,7 @@ namespace sxtg2.Hooks
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[SafeAccess] {typeof(T).Name}.{fieldName} 필드를 찾지 못해 관련 기능을 건너뜁니다 (게임 업데이트로 바뀌었을 수 있음): {ex.Message}");
+                ModLog.Warning($"[SafeAccess] {typeof(T).Name}.{fieldName} 필드를 찾지 못해 관련 기능을 건너뜁니다 (게임 업데이트로 바뀌었을 수 있음): {ex.Message}");
                 return null;
             }
         }
@@ -59,6 +59,11 @@ namespace sxtg2.Hooks
             VideoPlayer ___bgaPlayer,
             GameObject ___defaultBGAcanvas)
         {
+            // 원곡 플레이에서도 이전 커스텀 곡의 BGM/BGA 상태를 지운다. 예전에는 커스텀 곡일 때만 지워서,
+            // 원곡 플레이에 직전 커스텀 곡의 VideoPlayer/AudioSource 참조가 그대로 남았다.
+            BGMPlayerHook.ResetReplacementFlag();
+            BGAPlayerHook.ResetReplacementFlag();
+
             if (!(___playTrack is CustomTrackData customTrack))
                 return;
 
@@ -67,7 +72,7 @@ namespace sxtg2.Hooks
                 var chart = BmsParser.ParseBmsFileWithStatistics(customTrack.BmsPath);
                 if (chart?.Notes == null || chart.Notes.Count == 0)
                 {
-                    MelonLogger.Warning(
+                    ModLog.Warning(
                         $"[ManagerPlayHook] 차트를 읽지 못해 원본 패턴을 유지합니다: {customTrack.BmsPath}");
                 }
                 else
@@ -83,10 +88,8 @@ namespace sxtg2.Hooks
 
             try
             {
-                BGMPlayerHook.ResetReplacementFlag();
                 BGMPlayerHook.ReplacePlaySceneBGM(__instance.bgm, customTrack.AlbumFolder);
 
-                BGAPlayerHook.ResetReplacementFlag();
                 if (UserAccountModule.Instance.userData.bgaMode == BGAMode.ON &&
                     BGAPlayerHook.ReplacePlaySceneBGA(___bgaPlayer, customTrack.AlbumFolder))
                 {
@@ -127,7 +130,7 @@ namespace sxtg2.Hooks
             }
 
             CustomNoteSpriteLoader.Initialize();
-            MelonLogger.Msg("[NoteSpriteHook] Initialize() - 자동 HarmonyPatch 적용 상태");
+            ModLog.Msg("[NoteSpriteHook] Initialize() - 자동 HarmonyPatch 적용 상태");
             _isInitialized = true;
         }
 
@@ -150,7 +153,7 @@ namespace sxtg2.Hooks
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[NoteSpriteHook] Generate 후처리 오류: {ex.Message}");
+                ModLog.WarningThrottled("NoteSpriteHook.Generate", $"[NoteSpriteHook] Generate 후처리 오류: {ex.Message}");
             }
         }
 
@@ -196,8 +199,9 @@ namespace sxtg2.Hooks
                 var userData = UserAccountModule.Instance?.userData;
                 return userData != null ? userData.noteSize / 100f : 1f;
             }
-            catch
+            catch (Exception ex)
             {
+                ModLog.WarningThrottled("NoteSize", $"[NoteSpriteHook] 노트 크기 옵션을 읽지 못해 원래 크기로 그립니다: {ex.Message}");
                 return 1f;
             }
         }
@@ -265,9 +269,10 @@ namespace sxtg2.Hooks
                 var pos = state.Root.anchoredPosition;
                 state.Root.anchoredPosition = new Vector2(state.BaseX + offset, pos.y);
             }
-            catch
+            catch (Exception ex)
             {
-                // 플레이 중 프레임 예외 방지
+                // 프레임마다 도는 코드라 예외로 플레이를 멈추지 않고, 같은 경고는 간격을 두고만 남긴다.
+                ModLog.WarningThrottled("NoteSway", $"[NoteSwayHook] 흔들림 계산 중 예외: {ex.Message}");
             }
         }
 
@@ -371,9 +376,10 @@ namespace sxtg2.Hooks
                     tail.anchoredPosition = new Vector2(tail.anchoredPosition.x, headY + length);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // 플레이 중 프레임 예외 방지
+                // 프레임마다 도는 코드라 예외로 플레이를 멈추지 않고, 같은 경고는 간격을 두고만 남긴다.
+                ModLog.WarningThrottled("NoteSpeedChaos", $"[NoteSpeedChaosHook] 노트 위치 계산 중 예외: {ex.Message}");
             }
         }
 
@@ -406,7 +412,7 @@ namespace sxtg2.Hooks
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[NoteSpeedChaos] 선행 생성 시간 조정 실패: {ex.Message}");
+                ModLog.Warning($"[NoteSpeedChaos] 선행 생성 시간 조정 실패: {ex.Message}");
             }
         }
 
@@ -474,7 +480,10 @@ namespace sxtg2.Hooks
                     _bluestarValue = Enum.ToObject(_eJudgesType, 0);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                ModLog.Warning($"[AllPerfect] EJudges 타입 확인 중 오류: {ex.Message}");
+            }
         }
 
         private static IEnumerable<MethodBase> TargetMethods()
@@ -483,7 +492,7 @@ namespace sxtg2.Hooks
             var targets = new List<MethodBase>();
             if (_eJudgesType == null)
             {
-                MelonLogger.Warning("[AllPerfect] EJudges 타입을 찾지 못해 올퍼펙트가 적용되지 않습니다.");
+                ModLog.Warning("[AllPerfect] EJudges 타입을 찾지 못해 올퍼펙트가 적용되지 않습니다.");
                 return targets;
             }
 
@@ -528,9 +537,9 @@ namespace sxtg2.Hooks
             }
 
             if (targets.Count == 0)
-                MelonLogger.Warning("[AllPerfect] 패치할 판정 메서드를 하나도 찾지 못해 올퍼펙트가 적용되지 않습니다 (게임 업데이트로 바뀌었을 수 있음).");
+                ModLog.Warning("[AllPerfect] 패치할 판정 메서드를 하나도 찾지 못해 올퍼펙트가 적용되지 않습니다 (게임 업데이트로 바뀌었을 수 있음).");
             else
-                MelonLogger.Msg($"[AllPerfect] 판정 메서드 {targets.Count}개를 패치합니다.");
+                ModLog.Msg($"[AllPerfect] 판정 메서드 {targets.Count}개를 패치합니다.");
 
             return targets;
         }
@@ -582,7 +591,7 @@ namespace sxtg2.Hooks
             if (!_prepareLogged)
             {
                 _prepareLogged = true;
-                MelonLogger.Msg(
+                ModLog.Msg(
                     $"[JudgeScoreMax] 점수 상한 훅 적용 (현재 {SaveCustomKeyConfig.MaxScore:0.###}" +
                     $"{(SaveCustomKeyConfig.IsMaxScoreCustom ? " - 커스텀" : " - 기본값, 원본과 동일 동작")}, " +
                     $"원본 상수 {OriginalMaxScore:0.###}).");
@@ -596,7 +605,7 @@ namespace sxtg2.Hooks
             var type = AccessTools.TypeByName("RhythmGame.Play.RG_PS_Judgement");
             if (type == null)
             {
-                MelonLogger.Warning("[JudgeScoreMax] RG_PS_Judgement 타입을 찾지 못해 점수 상한을 적용하지 못했습니다.");
+                ModLog.Warning("[JudgeScoreMax] RG_PS_Judgement 타입을 찾지 못해 점수 상한을 적용하지 못했습니다.");
                 yield break;
             }
 
@@ -633,7 +642,7 @@ namespace sxtg2.Hooks
 
             if (replaced == 0)
             {
-                MelonLogger.Warning($"[JudgeScoreMax] {__originalMethod?.Name}에서 만점 상수({OriginalMaxScore:0.###})를 찾지 못했습니다. 게임 업데이트로 코드가 바뀌었을 수 있습니다.");
+                ModLog.Warning($"[JudgeScoreMax] {__originalMethod?.Name}에서 만점 상수({OriginalMaxScore:0.###})를 찾지 못했습니다. 게임 업데이트로 코드가 바뀌었을 수 있습니다.");
             }
             else
             {
@@ -730,7 +739,7 @@ namespace sxtg2.Hooks
 
                 if (customTrack.CustomJacket == null)
                 {
-                    MelonLogger.Warning(
+                    ModLog.Warning(
                         $"[TrackDataMediaHook] 커스텀 자켓을 찾지 못해 기본 자켓을 사용합니다: {customTrack.DisplayName}");
                 }
             }

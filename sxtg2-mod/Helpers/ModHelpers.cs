@@ -21,14 +21,20 @@ namespace sxtg2.Helpers
         private const string CategoryId = "sxtg2";
         private static MelonPreferences_Category _category;
         private static MelonPreferences_Entry _logLevelEntry;
-        private static readonly Stack<string> CorrelationStack = new Stack<string>();
 
         private static MelonPreferences_Entry _autoPlayEntry;
         private static MelonPreferences_Entry _allPerfectEntry;
         private static MelonPreferences_Entry _blockSaveEntry;
 
+        /// <summary>같은 key의 반복 경고 사이 최소 간격(초). 프레임마다 나는 예외가 로그를 덮지 않게 한다.</summary>
+        private const float ThrottleSeconds = 10f;
+        private static readonly Dictionary<string, float> LastThrottledAt = new Dictionary<string, float>();
+
         public static void RegisterPreferences()
         {
+            // 설정 파서(ConfigParsing)의 경고도 같은 LogLevel을 따르게 연결한다. 파서는 테스트 프로젝트와 공유하려고 Unity에 의존하지 않는다.
+            ConfigParsing.Warn = Warning;
+
             if (_category != null)
                 return;
 
@@ -97,107 +103,42 @@ namespace sxtg2.Helpers
 
         public static bool IsVerbose => Level == ModLogLevel.Verbose;
 
-        public static IDisposable BeginCorrelation(string operation, string hint = null)
-        {
-            var suffix = string.IsNullOrEmpty(hint) ? Guid.NewGuid().ToString("N").Substring(0, 8) : SanitizeHint(hint);
-            var id = $"{operation}:{suffix}";
-            lock (CorrelationStack)
-                CorrelationStack.Push(id);
-            return new CorrelationScope();
-        }
-
-        private static string SanitizeHint(string hint)
-        {
-            if (string.IsNullOrEmpty(hint))
-                return "unknown";
-            if (hint.Length > 32)
-                hint = hint.Substring(0, 32);
-            return hint.Replace('\r', '_').Replace('\n', '_');
-        }
-
-        private static string Prefix(string message)
-        {
-            string cid;
-            lock (CorrelationStack)
-                cid = CorrelationStack.Count > 0 ? CorrelationStack.Peek() : null;
-            return string.IsNullOrEmpty(cid) ? message : $"[cid:{cid}] {message}";
-        }
-
         public static void Msg(string message)
         {
             if (Level == ModLogLevel.ErrorsOnly)
                 return;
-            MelonLogger.Msg(Prefix(message));
+            MelonLogger.Msg(message);
         }
 
         public static void Warning(string message)
         {
             if (Level == ModLogLevel.ErrorsOnly)
                 return;
-            MelonLogger.Warning(Prefix(message));
+            MelonLogger.Warning(message);
         }
 
-        public static void Error(string message)
+        /// <summary>
+        /// 같은 key의 경고는 ThrottleSeconds 안에서 한 번만 찍는다. Update/OnGUI처럼 프레임마다 도는 곳에서 같은 예외가
+        /// 나도 로그가 수천 줄로 쌓이지 않게 한다.
+        /// </summary>
+        public static void WarningThrottled(string key, string message)
         {
-            MelonLogger.Error(Prefix(message));
-        }
-
-        public static void Exception(string context, Exception ex)
-        {
-            if (ex == null)
-            {
-                MelonLogger.Error(Prefix($"[{context}] (null exception)"));
+            if (Level == ModLogLevel.ErrorsOnly)
                 return;
-            }
 
-            MelonLogger.Error(Prefix($"[{context}]\n{FormatException(ex)}"));
+            float now = Time.realtimeSinceStartup;
+            if (LastThrottledAt.TryGetValue(key, out float last) && now - last < ThrottleSeconds)
+                return;
+
+            LastThrottledAt[key] = now;
+            MelonLogger.Warning(message);
         }
 
         public static void Verbose(string message)
         {
             if (Level != ModLogLevel.Verbose)
                 return;
-            MelonLogger.Msg(Prefix(message));
-        }
-
-        public static string FormatException(Exception ex, int maxInnerDepth = 8)
-        {
-            if (ex == null)
-                return "(null)";
-
-            var sb = new StringBuilder();
-            var depth = 0;
-            for (Exception e = ex; e != null && depth < maxInnerDepth; e = e.InnerException, depth++)
-            {
-                if (depth > 0)
-                    sb.AppendLine("--- InnerException ---");
-                sb.Append('[').Append(e.GetType().FullName).Append("] ").AppendLine(e.Message ?? "");
-            }
-
-            if (!string.IsNullOrEmpty(ex.StackTrace))
-            {
-                sb.AppendLine("--- StackTrace ---");
-                sb.AppendLine(ex.StackTrace);
-            }
-
-            return sb.ToString();
-        }
-
-        private sealed class CorrelationScope : IDisposable
-        {
-            private bool _disposed;
-
-            public void Dispose()
-            {
-                if (_disposed)
-                    return;
-                _disposed = true;
-                lock (CorrelationStack)
-                {
-                    if (CorrelationStack.Count > 0)
-                        CorrelationStack.Pop();
-                }
-            }
+            MelonLogger.Msg(message);
         }
     }
 
@@ -369,7 +310,7 @@ namespace sxtg2.Helpers
             AppendNoteSpeedChaosSection(sb);
 
             File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
-            MelonLogger.Msg($"[SaveCustomKey] 기본 설정 파일 생성 완료: {filePath}");
+            ModLog.Msg($"[SaveCustomKey] 기본 설정 파일 생성 완료: {filePath}");
         }
 
         private static void AppendJudgmentBarCapsuleSection(StringBuilder sb)
@@ -461,11 +402,11 @@ namespace sxtg2.Helpers
                     section(sb);
 
                 File.AppendAllText(filePath, sb.ToString(), Encoding.UTF8);
-                MelonLogger.Msg($"[SaveCustomKey] 기존 설정 파일에 {keyNames} 항목을 추가했습니다: {filePath}");
+                ModLog.Msg($"[SaveCustomKey] 기존 설정 파일에 {keyNames} 항목을 추가했습니다: {filePath}");
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[SaveCustomKey] 설정 항목 추가 실패: {ex.Message}");
+                ModLog.Warning($"[SaveCustomKey] 설정 항목 추가 실패: {ex.Message}");
             }
         }
 
@@ -543,13 +484,13 @@ namespace sxtg2.Helpers
             foreach (var line in lines)
             {
                 var trimmed = line.Trim();
-                if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#") || trimmed.StartsWith("//"))
+                if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#", StringComparison.Ordinal) || trimmed.StartsWith("//", StringComparison.Ordinal))
                     continue;
 
                 var parts = trimmed.Split(new[] { '=' }, 2);
                 if (parts.Length != 2)
                 {
-                    MelonLogger.Warning($"[SaveCustomKey] 키=값 형식이 아닌 줄을 무시합니다: \"{trimmed}\"");
+                    ModLog.Warning($"[SaveCustomKey] 키=값 형식이 아닌 줄을 무시합니다: \"{trimmed}\"");
                     continue;
                 }
 
@@ -561,7 +502,7 @@ namespace sxtg2.Helpers
                 if (SettingHandlers.TryGetValue(key, out var apply))
                     apply(val);
                 else
-                    MelonLogger.Warning($"[SaveCustomKey] 알 수 없는 설정 키를 무시합니다: {key}");
+                    ModLog.Warning($"[SaveCustomKey] 알 수 없는 설정 키를 무시합니다: {key}");
             }
 
             return seenKeys;
@@ -605,7 +546,7 @@ namespace sxtg2.Helpers
                 if (isReload)
                     ModLog.Verbose($"[SaveCustomKey] 재로드 후 전체 설정 - {summary}");
                 else
-                    MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - {summary}");
+                    ModLog.Msg($"[SaveCustomKey] 설정 로드 완료 - {summary}");
             }
             catch (Exception ex)
             {
@@ -619,7 +560,7 @@ namespace sxtg2.Helpers
             if (NoteSpeedChaosMin <= NoteSpeedChaosMax)
                 return;
 
-            MelonLogger.Warning($"[SaveCustomKey] NoteSpeedChaosMin({NoteSpeedChaosMin:0.##})이 Max({NoteSpeedChaosMax:0.##})보다 큽니다 → 두 값을 맞바꿉니다.");
+            ModLog.Warning($"[SaveCustomKey] NoteSpeedChaosMin({NoteSpeedChaosMin:0.##})이 Max({NoteSpeedChaosMax:0.##})보다 큽니다 → 두 값을 맞바꿉니다.");
             float swap = NoteSpeedChaosMin;
             NoteSpeedChaosMin = NoteSpeedChaosMax;
             NoteSpeedChaosMax = swap;
@@ -678,9 +619,9 @@ namespace sxtg2.Helpers
                 return;
             }
 
-            MelonLogger.Msg($"[SaveCustomKey] 설정 재로드 #{_reloadCount} ({reason}) - {changes.Count}개 항목이 이번 플레이부터 적용됩니다");
+            ModLog.Msg($"[SaveCustomKey] 설정 재로드 #{_reloadCount} ({reason}) - {changes.Count}개 항목이 이번 플레이부터 적용됩니다");
             foreach (var change in changes)
-                MelonLogger.Msg($"[SaveCustomKey]   · {change}");
+                ModLog.Msg($"[SaveCustomKey]   · {change}");
         }
 
         private static string OnOffText(bool value) => value ? "켜짐(1)" : "꺼짐(0)";
@@ -787,7 +728,7 @@ namespace sxtg2.Helpers
                 return named;
 
             // 2. HTML 헥스코드 (#RRGGBB, #RRGGBBAA, RRGGBB, RRGGBBAA)
-            string hexCandidate = s.StartsWith("#") ? s : "#" + s;
+            string hexCandidate = s.StartsWith("#", StringComparison.Ordinal) ? s : "#" + s;
             if (ColorUtility.TryParseHtmlString(hexCandidate, out Color parsedColor))
                 return parsedColor;
 
@@ -795,7 +736,7 @@ namespace sxtg2.Helpers
             if (TryParseRgbaList(s, out Color listColor))
                 return listColor;
 
-            MelonLogger.Warning($"[SaveCustomKey] {key} 색상 값을 읽지 못했습니다: \"{val}\" → 기본값 유지");
+            ModLog.Warning($"[SaveCustomKey] {key} 색상 값을 읽지 못했습니다: \"{val}\" → 기본값 유지");
             return defaultColor;
         }
 
@@ -830,9 +771,6 @@ namespace sxtg2.Helpers
             color = new Color(r, g, b, a);
             return true;
         }
-
-        public static bool ParseFlexibleBool(string val, bool defaultValue)
-            => ConfigParsing.ParseFlexibleBool(val, defaultValue);
     }
 }
 
@@ -865,7 +803,7 @@ namespace sxtg2.Helpers.Track
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[ThumbnailLoader] 썸네일 로드 실패: {ex.Message}");
+                ModLog.Warning($"[ThumbnailLoader] 썸네일 로드 실패: {ex.Message}");
             }
 
             return null;
@@ -895,7 +833,7 @@ namespace sxtg2.Helpers.Track
                 return null;
             }
 
-            MelonLogger.Msg(
+            ModLog.Msg(
                 $"[ThumbnailLoader] 자켓 로드: {Path.GetFileName(path)} " +
                 $"({texture.width}x{texture.height})");
             return Sprite.Create(

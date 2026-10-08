@@ -17,6 +17,10 @@
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
+  <PropertyGroup>
+    <!-- DLL 참조 경로(게임 설치 폴더). build.bat은 GAME_PATH 환경 변수를 이 속성으로 넘긴다. -->
+    <GamePath Condition=" '$(GamePath)' == '' ">H:\Sixtar Gate STARTRAIL custom mode</GamePath>
+  </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x64' ">
     <DebugSymbols>true</DebugSymbols>
     <DebugType>portable</DebugType>
@@ -36,25 +40,25 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="MelonLoader">
-      <HintPath>H:\Sixtar Gate STARTRAIL custom mode\MelonLoader\net35\MelonLoader.dll</HintPath>
+      <HintPath>$(GamePath)\MelonLoader\net35\MelonLoader.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <!-- Unity / UnityEngine DLL (와일드카드: Managed 폴더 기준) -->
-    <Reference Include="H:\Sixtar Gate STARTRAIL custom mode\Sixtar Gate STARTRAIL_Data\Managed\UnityEngine.dll">
+    <Reference Include="$(GamePath)\Sixtar Gate STARTRAIL_Data\Managed\UnityEngine.dll">
       <Private>False</Private>
     </Reference>
-    <Reference Include="H:\Sixtar Gate STARTRAIL custom mode\Sixtar Gate STARTRAIL_Data\Managed\UnityEngine.*.dll">
+    <Reference Include="$(GamePath)\Sixtar Gate STARTRAIL_Data\Managed\UnityEngine.*.dll">
       <Private>False</Private>
     </Reference>
-    <Reference Include="H:\Sixtar Gate STARTRAIL custom mode\Sixtar Gate STARTRAIL_Data\Managed\Unity.*.dll">
+    <Reference Include="$(GamePath)\Sixtar Gate STARTRAIL_Data\Managed\Unity.*.dll">
       <Private>False</Private>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>H:\Sixtar Gate STARTRAIL custom mode\MelonLoader\net35\0Harmony.dll</HintPath>
+      <HintPath>$(GamePath)\MelonLoader\net35\0Harmony.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>H:\Sixtar Gate STARTRAIL custom mode\Sixtar Gate STARTRAIL_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <HintPath>$(GamePath)\Sixtar Gate STARTRAIL_Data\Managed\Assembly-CSharp.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>

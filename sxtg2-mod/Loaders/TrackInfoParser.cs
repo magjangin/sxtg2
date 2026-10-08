@@ -34,7 +34,7 @@ namespace sxtg2.Loaders
             {
                 if (string.IsNullOrEmpty(albumFolder) || !Directory.Exists(albumFolder))
                 {
-                    MelonLogger.Warning($"[TrackInfoParser] 앨범 폴더가 존재하지 않습니다: {albumFolder}");
+                    ModLog.Warning($"[TrackInfoParser] 앨범 폴더가 존재하지 않습니다: {albumFolder}");
                     return trackInfo;
                 }
 
@@ -127,7 +127,7 @@ namespace sxtg2.Loaders
             }
             catch (DecoderFallbackException)
             {
-                MelonLogger.Warning(
+                ModLog.Warning(
                     $"[TrackInfoParser] {Path.GetFileName(filePath)}가 UTF-8이 아닙니다(메모장 ANSI 저장?). 한글 키/값이 깨져 읽히지 않을 수 있으니 UTF-8로 다시 저장하세요.");
                 return File.ReadAllLines(filePath);
             }
@@ -149,7 +149,7 @@ namespace sxtg2.Loaders
                         continue;
 
                     // 주석 라인 무시
-                    if (line.StartsWith("#") || line.StartsWith("//"))
+                    if (line.StartsWith("#", StringComparison.Ordinal) || line.StartsWith("//", StringComparison.Ordinal))
                         continue;
 
                     // 키:값 형식 파싱
@@ -169,7 +169,7 @@ namespace sxtg2.Loaders
 
                 if (recognizedFields == 0)
                 {
-                    MelonLogger.Warning(
+                    ModLog.Warning(
                         $"[TrackInfoParser] {Path.GetFileName(filePath)}에서 제목/아티스트/난이도를 하나도 읽지 못했습니다. " +
                         "`제목: ...`, `아티스트: ...`, `난이도: 3, 7, 11, 14` 형식과 UTF-8 저장인지 확인하세요.");
                 }
@@ -234,7 +234,7 @@ namespace sxtg2.Loaders
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[TrackInfoParser] 난이도 파싱 실패: {ex.Message}");
+                ModLog.Warning($"[TrackInfoParser] 난이도 파싱 실패: {ex.Message}");
             }
         }
     }

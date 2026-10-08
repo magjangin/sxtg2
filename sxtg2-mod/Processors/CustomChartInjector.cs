@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using MelonLoader;
+using sxtg2.Helpers;
 using RhythmGame;
 using sxtg2.Loaders;
 
@@ -46,13 +47,13 @@ namespace sxtg2.Processors
         {
             if (data == null)
             {
-                MelonLogger.Warning("[CustomChartInjector] SXGTData가 null입니다.");
+                ModLog.Warning("[CustomChartInjector] SXGTData가 null입니다.");
                 return false;
             }
 
             if (_parsedChart?.Notes == null || _parsedChart.Notes.Count == 0)
             {
-                MelonLogger.Warning("[CustomChartInjector] 파싱된 노트가 없습니다.");
+                ModLog.Warning("[CustomChartInjector] 파싱된 노트가 없습니다.");
                 return false;
             }
 
@@ -60,12 +61,16 @@ namespace sxtg2.Processors
             {
                 float bpm = _parsedChart.BaseBpm > 0f ? _parsedChart.BaseBpm : DefaultBpm;
 
+                // 덮어쓰기 전의 도너 값을 남겨 둔다. 로그에서 도너 값이 실제로 얼마였는지 확인하려는 것이다(알려진 문제 #23).
+                float donorTrackStartTiming = data.trackStartTiming;
+
                 BuildResult built = BuildLaneNotes(data, bpm);
                 ApplyToGameData(data, built, bpm);
 
-                MelonLogger.Msg(
+                ModLog.Msg(
                     $"[CustomChartInjector] {_parsedChart.Notes.Count}개 주입, " +
-                    $"totalNotes={built.TotalNotes}, totalNoteWithTicks={built.TotalNoteWithTicks}, BPM={bpm}, trackStartTiming=0");
+                    $"totalNotes={built.TotalNotes}, totalNoteWithTicks={built.TotalNoteWithTicks}, BPM={bpm}, " +
+                    $"trackStartTiming=0 (도너 값 {donorTrackStartTiming:0.###})");
 
                 LogChartWarnings(built.HoldsWithoutEnd, built.OpensWithoutEnd, built.SkippedUnknownLane);
                 return true;
@@ -98,7 +103,7 @@ namespace sxtg2.Processors
 
                 laneNotes.Add(note);
 
-                if (parsedNote.Lane == 9 || parsedNote.Lane == 10)
+                if (parsedNote.Lane == 9)
                     continue;
 
                 result.TotalNotes++;
@@ -148,27 +153,27 @@ namespace sxtg2.Processors
 
             if (holdsWithoutEnd > 0)
             {
-                MelonLogger.Warning(
+                ModLog.Warning(
                     $"[CustomChartInjector] 끝(03)이 없는 홀드 {holdsWithoutEnd}개를 일반 노트로 바꿨습니다. " +
                     "채보에서 홀드 시작(02) 뒤에 끝(03)을 넣어 주세요. 위치 예: " + DescribeExamples(stats?.MissingEndNotes, "Long"));
             }
 
             if (opensWithoutEnd > 0)
             {
-                MelonLogger.Warning(
+                ModLog.Warning(
                     $"[CustomChartInjector] 끝(05)이 없는 오픈 노트 {opensWithoutEnd}개에 기본 길이 {DefaultOpenLength:0.#}초를 줬습니다. " +
                     "위치 예: " + DescribeExamples(stats?.MissingEndNotes, "Open"));
             }
 
             if (stats != null && stats.OrphanEndNotes.Count > 0)
             {
-                MelonLogger.Warning(
+                ModLog.Warning(
                     $"[CustomChartInjector] 시작이 없는 끝 노트(03/05) {stats.OrphanEndNotes.Count}개는 무시했습니다. " +
                     "위치 예: " + DescribeExamples(stats.OrphanEndNotes, null));
             }
 
             if (skippedUnknownLane > 0)
-                MelonLogger.Warning($"[CustomChartInjector] 게임에 없는 레인의 노트 {skippedUnknownLane}개를 건너뛰었습니다.");
+                ModLog.Warning($"[CustomChartInjector] 게임에 없는 레인의 노트 {skippedUnknownLane}개를 건너뛰었습니다.");
         }
 
         private static string DescribeExamples(List<BmsParser.MissingEndNoteInfo> notes, string noteType)

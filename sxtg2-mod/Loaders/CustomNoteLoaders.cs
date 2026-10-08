@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using MelonLoader;
+using sxtg2.Helpers;
 using UnityEngine;
 
 namespace sxtg2.Loaders
@@ -136,21 +137,21 @@ namespace sxtg2.Loaders
                         if (normalizedName.Length > 0 && !LoadedCustomSprites.ContainsKey(normalizedName))
                             LoadedCustomSprites[normalizedName] = sprite;
 
-                        MelonLogger.Msg($"{LogPrefix} 커스텀 노트 스프라이트 로드: {noteName} ({texture.width}x{texture.height})");
+                        ModLog.Msg($"{LogPrefix} 커스텀 노트 스프라이트 로드: {noteName} ({texture.width}x{texture.height})");
                     }
                     else
                     {
                         UnityEngine.Object.Destroy(texture);
-                        MelonLogger.Warning($"{LogPrefix} PNG로 읽지 못해 건너뜁니다: {Path.GetFileName(file)}");
+                        ModLog.Warning($"{LogPrefix} PNG로 읽지 못해 건너뜁니다: {Path.GetFileName(file)}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    MelonLogger.Warning($"{LogPrefix} 스프라이트 로드 실패 ({Path.GetFileName(file)}): {ex.Message}");
+                    ModLog.Warning($"{LogPrefix} 스프라이트 로드 실패 ({Path.GetFileName(file)}): {ex.Message}");
                 }
             }
 
-            MelonLogger.Msg($"{LogPrefix} 총 {LoadedCustomSprites.Count}개의 커스텀 노트 스프라이트 로드 완료");
+            ModLog.Msg($"{LogPrefix} 총 {LoadedCustomSprites.Count}개의 커스텀 노트 스프라이트 로드 완료");
         }
     }
 }
