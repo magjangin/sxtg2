@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using MelonLoader;
 using UnityEngine;
 using sxtg2.Features;
@@ -56,11 +57,40 @@ namespace sxtg2
                     ModLog.Warning($"[Main] 노트 스킨 초기화 실패(스킨 없이 계속합니다): {ex.Message}");
                 }
 
+                LogGameVersion();
                 ModLog.Msg("[Main] sxtg2 모드 초기화 완료");
             }
             catch (Exception ex)
             {
                 MelonLogger.Error($"[Main] 초기화 실패: {ex}");
+            }
+        }
+
+        /// <summary>
+        /// 게임 버전, Assembly-CSharp.dll의 SHA-256, Harmony로 패치된 메서드 수를 로그로 남긴다. 게임이 업데이트되어
+        /// 훅이 어긋났을 때 로그만 보고 원인을 좁히려는 것이다(알려진 문제: 게임 버전 가드 없음). 실패해도 초기화는 계속한다.
+        /// </summary>
+        private static void LogGameVersion()
+        {
+            try
+            {
+                string assemblyPath = Path.Combine(Application.dataPath, "Managed", "Assembly-CSharp.dll");
+                string hash = File.Exists(assemblyPath) ? ComputeSha256(assemblyPath) : "(파일 없음)";
+                int patchedMethods = HarmonyLib.Harmony.GetAllPatchedMethods().Count();
+                ModLog.Msg($"[Main] 게임 버전 {Application.version}, Assembly-CSharp SHA-256 {hash}, Harmony 패치 메서드 {patchedMethods}개");
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[Main] 게임 버전 정보를 읽지 못했습니다: {ex.Message}");
+            }
+        }
+
+        private static string ComputeSha256(string path)
+        {
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            using (var stream = File.OpenRead(path))
+            {
+                return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "");
             }
         }
 
