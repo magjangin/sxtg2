@@ -37,11 +37,13 @@
   `NoteSpriteHook.ApplyCustomSkin`을 분리해 플레이·미리보기 노트가 같이 씀.
 - **검증**: `dotnet build` 성공(경고 0개), `sxtg2.LogicTests` 12개 통과(`LaneCoverBand` 5개 추가). 패치 대상 시그니처(필드·인자
   이름)를 설치된 게임 `Assembly-CSharp.dll`에서 ilspycmd로 확인. 빌드된 DLL의 `BuildConfigText`를 사용자 현재 값으로
-  돌려 생성될 파일 내용을 확인(값 유지, `JudgmentBarCapsule` → `JudgmentBarShape`). 실게임 확인 **미완료** — 확인할 것:
-  (1) 게임을 켜면 `config.txt`가 구역 형식으로 바뀌고 `config.txt.bak`이 생기는지, 값이 그대로인지 (2) 인벤토리 노트 스킨 목록
-  끝에 "커스텀 노트"가 보이고 미리보기 노트가 PNG로 바뀌는지, 옮길 때 `[SaveCustomKey] 인벤토리에서 노트 스킨 변경` 로그,
-  다시 열면 커서가 커스텀에 있는지, 곡 선택 확인창 노트 이름 (3) `FadeIn=1`(기본 위치·길이)일 때 화면 끝에서 투명하게 나와
-  서서히 진해지는지, `FadeOut=1`일 때 판정선에서 사라지는지, `LaneCoverDebug=1`의 연두색 선 위치.
+  돌려 생성될 파일 내용을 확인(값 유지, `JudgmentBarCapsule` → `JudgmentBarShape`).
+- **실게임 확인(08:53 실행 로그)**: `config.txt`가 구역 형식으로 바뀌고 `config.txt.bak` 생성, 값 그대로(`.bak`과 비교해 차이는
+  `JudgmentBarCapsule` → `JudgmentBarShape`/`JudgmentBarRangeShape`와 새 페이드 항목뿐), 경고·오류 0건. 인벤토리에 "커스텀 노트"
+  항목 추가, 커서 이동마다 `CustomNotes=0/1` 저장 로그 확인. **미확인**: 미리보기 노트 모양, 확인창 표시, 페이드 인/아웃 화면.
+- 사용자 요청으로 사용자 `config.txt`의 `CustomMarathon`을 0으로 돌림(서든/히든/페이드/마라톤 전부 꺼짐; 코드 기본값도 전부 꺼짐).
+- 참고(기존 동작): 시작 로그에 "설정 로드 완료"가 두 번 찍힘. `JudgeScoreMaxHook`이 패치 적용 중 `EnsureInitialized()`로 먼저
+  읽고, `Main.OnInitializeMelon`이 `Initialize()`로 한 번 더 읽기 때문. 결과는 같아 그대로 둠.
 
 ## 2026-10-11 수정: 커스텀 곡 마라톤 순서를 무작위로 (v1.3.1)
 
