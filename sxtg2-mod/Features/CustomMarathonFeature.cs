@@ -17,7 +17,7 @@ namespace sxtg2.Features
     /// 커스텀 곡 마라톤. 커스텀 곡 하나를 시작하면, 결과창에서 Enter를 누를 때마다 곡 목록을 거치지 않고
     /// 아직 안 친 다음 커스텀 곡을 바로 시작한다. 모든 커스텀 곡을 딱 한 번씩 돌면 목록으로 돌아간다.
     ///
-    /// 순서는 곡 목록(앨범 폴더 이름순)을 따르고, 처음 고른 곡부터 시작해 끝에 닿으면 앞으로 돌아온다.
+    /// 처음 고른 곡이 1번이고, 나머지 커스텀 곡은 마라톤을 시작할 때마다 무작위로 섞어 겹치지 않게 이어진다.
     /// 리트라이는 같은 곡을 다시 치는 것이라 순번이 넘어가지 않는다. 플레이 중 일시정지에서 목록으로
     /// 나가거나 결과창에서 Esc를 누르면 그 자리에서 마라톤이 끝난다.
     /// </summary>
@@ -35,6 +35,8 @@ namespace sxtg2.Features
             AccessTools.FieldRefAccess<ManagerResult, bool>("backable");
         private static readonly Action<ManagerResult> BackToMusicSelect =
             AccessTools.MethodDelegate<Action<ManagerResult>>(AccessTools.Method(typeof(ManagerResult), "BackToMusicSelect"));
+
+        private static readonly System.Random Shuffler = new System.Random();
 
         private static Run _run;
         private static ManagerResult _result;
@@ -67,9 +69,20 @@ namespace sxtg2.Features
             if (start < 0)
                 return;
 
+            // 고른 곡은 1번에 두고 나머지만 섞는다(Fisher–Yates). 한 곡이 두 번 나오는 일은 없다.
+            var rest = tracks.Where((track, index) => index != start).ToList();
+            for (int i = rest.Count - 1; i > 0; i--)
+            {
+                int j = Shuffler.Next(i + 1);
+                var swap = rest[i];
+                rest[i] = rest[j];
+                rest[j] = swap;
+            }
+            rest.Insert(0, tracks[start]);
+
             _run = new Run
             {
-                Tracks = tracks.Skip(start).Concat(tracks.Take(start)).ToList(),
+                Tracks = rest,
                 Current = 0,
                 Level = musicSelect.LevelCursor,
                 Style = musicSelect.playStyle
@@ -78,7 +91,7 @@ namespace sxtg2.Features
             if (SaveCustomKeyConfig.EnableCustomMarathon)
             {
                 ModLog.Msg($"[CustomMarathon] 시작: 커스텀 곡 {_run.Tracks.Count}개를 한 번씩 순회 ({_run.Level}, {_run.Style}) - 1번 \"{selected.DisplayName}\"");
-                ModLog.Msg($"[CustomMarathon] 순서: {string.Join(" → ", _run.Tracks.Select(track => track.DisplayName).ToArray())}");
+                ModLog.Msg($"[CustomMarathon] 순서(무작위): {string.Join(" → ", _run.Tracks.Select(track => track.DisplayName).ToArray())}");
             }
         }
 

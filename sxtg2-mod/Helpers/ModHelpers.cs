@@ -538,6 +538,7 @@ namespace sxtg2.Helpers
             sb.AppendLine("# 커스텀 곡 마라톤 (1 = 켜짐, 0 = 꺼짐)");
             sb.AppendLine("# 켜고 커스텀 곡 하나를 시작하면, 결과창에서 Enter를 누를 때 목록을 거치지 않고");
             sb.AppendLine("# 아직 안 친 다음 커스텀 곡이 바로 시작됩니다. 모든 커스텀 곡을 딱 한 번씩 돌면 목록으로 돌아갑니다.");
+            sb.AppendLine("# 순서는 고른 곡이 1번이고 나머지는 매번 무작위로 섞입니다(같은 곡은 다시 안 나옴).");
             sb.AppendLine("# 결과창에서 Esc = 마라톤 그만하고 목록으로");
             sb.AppendLine("CustomMarathon=0");
             sb.AppendLine();
