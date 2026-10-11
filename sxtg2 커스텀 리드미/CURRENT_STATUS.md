@@ -1,6 +1,6 @@
 # 현재 상태
 
-기준일: 2026-10-11
+기준일: 2026-10-12
 
 ## 현재 결론
 
@@ -11,6 +11,37 @@
 - `dotnet build sxtg2-mod/sxtg2.csproj --configuration Debug` 성공 (경고 0개)
 - `sxtg2.LogicTests` 4개 통과
 - 실제 게임에서 커스텀 차트 흐름 정상 동작 확인
+
+## 2026-10-12 추가: 인벤토리 커스텀 노트 스킨, 페이드 인/아웃, 설정 파일 구역화 (v1.4.0)
+
+- **인벤토리 "커스텀 노트" 항목** (`Features/CustomNoteSkinFeature.cs`): `CustomNotes`에 노트 PNG가 있으면 게임 인벤토리
+  노트 스킨 목록 끝에 항목이 생기고, 고르면 `CustomNotes=1`, 다른 스킨으로 옮기면 `CustomNotes=0`을 `config.txt`에 씀.
+  게임은 노트 프리팹·타격 이펙트를 스킨 ID로 찾으므로 `userData.noteSkin`에는 커스텀 ID를 남기지 않고 바탕 스킨 `Default`를
+  넣음(모드를 지워도 세이브가 깨지지 않음). 이름(KR/JP/EN)·썸네일(`Thumbnail.png`)·미리보기 노트·곡 선택 확인창 표시까지
+  처리. 자세한 내용: `02-systems/NOTE_SYSTEM.md` "인벤토리 노트 스킨 항목".
+- **페이드 인 / 페이드 아웃** (사용자 요청으로 서든/히든과 분리된 독립 항목): `FadeIn`(켜기)·`FadeInStart`(나타나기 시작하는
+  위치 %, 기본 100)·`FadeInLength`(투명 → 불투명 길이 %, 기본 20), `FadeOut`·`FadeOutStart`(사라지기 시작하는 위치, 기본 20)·
+  `FadeOutLength`(기본 20). 위치는 판정선 0% ~ 화면 끝 100%. 서든/히든과 합치는 규칙은 `Helpers/LaneCoverBand.cs`(같은 쪽이면
+  더 많이 가리는 경계가 이김). 같은 `RectMask2D`의 `softness`를 페이드 길이의 2배로 줌(셰이더가 softness/2 안쪽에서 알파 1).
+  softness는 위아래 공통이라 노트 머리가 가까운 쪽 경계의 폭을 씀 — 두 경계에 동시에 걸치는 긴 홀드 몸통은 먼 쪽 흐림이
+  다를 수 있음. `FadeIn`/`FadeOut`은 `Sudden`/`Hidden`처럼 게임을 켤 때마다 0, 위치·길이는 유지. 보이는 구간이 10% 미만이면
+  페이드를 끔. (같은 날 먼저 만든 `SuddenFade`/`HiddenFade` 길이만 있는 방식은 배포 전에 이것으로 대체.)
+- **설정 파일 구역화** (사용자 요청 "설정 파일 세분화"): `config.txt`를 `# ===== [플레이] =====` 같은 10개 구역(플레이,
+  판정바, 키뷰어, 노트 흔들림, 노트 속도 카오스, 커스텀 노트 스킨, 서든/히든, 페이드 인/아웃, 커스텀 곡 마라톤, 진단)으로
+  나눔. 이전 형식 파일은 게임을 켤 때 값을 그대로 옮겨 구역 형식으로 다시 쓰고 원본은 `config.txt.bak`으로 남김. 빠진
+  항목이 있어도 같은 방법으로 채움(게임을 켤 때만 — 곡마다 하는 재로드 중에는 에디터가 저장 중인 파일을 덮어쓸 수 있어서
+  안 함). 모르는 설정 이름은 경고.
+- 리팩토링: 설정마다 따로 관리하던 네 곳(읽기 if-else 체인, 기본 파일 템플릿, 빠진 항목 덧붙이기, 재로드 비교 스냅샷)을
+  `SaveCustomKeyConfig.Sections` 표 하나(키·별칭·주석·읽기·쓰기)로 합침. 새 설정은 표에 한 줄만 넣으면 됨. `config.txt`
+  한 줄 값 고쳐 쓰기는 `RewriteConfigValues`(시작 시 서든/히든·페이드 끄기와 인벤토리 `CustomNotes` 저장이 같이 씀).
+  `NoteSpriteHook.ApplyCustomSkin`을 분리해 플레이·미리보기 노트가 같이 씀.
+- **검증**: `dotnet build` 성공(경고 0개), `sxtg2.LogicTests` 12개 통과(`LaneCoverBand` 5개 추가). 패치 대상 시그니처(필드·인자
+  이름)를 설치된 게임 `Assembly-CSharp.dll`에서 ilspycmd로 확인. 빌드된 DLL의 `BuildConfigText`를 사용자 현재 값으로
+  돌려 생성될 파일 내용을 확인(값 유지, `JudgmentBarCapsule` → `JudgmentBarShape`). 실게임 확인 **미완료** — 확인할 것:
+  (1) 게임을 켜면 `config.txt`가 구역 형식으로 바뀌고 `config.txt.bak`이 생기는지, 값이 그대로인지 (2) 인벤토리 노트 스킨 목록
+  끝에 "커스텀 노트"가 보이고 미리보기 노트가 PNG로 바뀌는지, 옮길 때 `[SaveCustomKey] 인벤토리에서 노트 스킨 변경` 로그,
+  다시 열면 커서가 커스텀에 있는지, 곡 선택 확인창 노트 이름 (3) `FadeIn=1`(기본 위치·길이)일 때 화면 끝에서 투명하게 나와
+  서서히 진해지는지, `FadeOut=1`일 때 판정선에서 사라지는지, `LaneCoverDebug=1`의 연두색 선 위치.
 
 ## 2026-10-11 수정: 커스텀 곡 마라톤 순서를 무작위로 (v1.3.1)
 

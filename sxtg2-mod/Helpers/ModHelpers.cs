@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using MelonLoader;
 using UnityEngine;
 
@@ -236,8 +237,260 @@ namespace sxtg2.Helpers
         public static float LaneCoverSoftness { get; set; }
         public static bool LaneCoverDebug { get; set; }
 
+        // 페이드 인/아웃. 위치와 길이는 판정선 = 0%, 화면 끝 = 100% 기준.
+        public static bool EnableFadeIn { get; set; }
+        public static float FadeInStart { get; set; }
+        public static float FadeInLength { get; set; }
+        public static bool EnableFadeOut { get; set; }
+        public static float FadeOutStart { get; set; }
+        public static float FadeOutLength { get; set; }
+
+        /// <summary>서든/히든과 페이드 인/아웃을 합친 레인 가림 위치.</summary>
+        public static LaneCoverBand LaneCover => LaneCoverBand.From(
+            SuddenPercent, HiddenPercent,
+            EnableFadeIn, FadeInStart, FadeInLength,
+            EnableFadeOut, FadeOutStart, FadeOutLength);
+
         public static bool EnableCustomMarathon { get; set; }
         public static float CustomMarathonAutoNext { get; set; }
+
+        // ───────────── 설정 항목 표 ─────────────
+        // 파일 읽기(이름/별칭 → 값), 기본 파일 만들기, 구역 형식으로 다시 쓰기, 재로드 전후 비교가 전부 이 표 하나를 쓴다.
+        // 새 설정은 여기에 한 줄만 넣으면 된다.
+
+        private sealed class Setting
+        {
+            public string Key;
+            public string[] Aliases = new string[0];
+            public string[] Comments = new string[0];
+            public Action<string> Parse;
+            public Func<string> Format;
+            // 예전 이름. 읽기만 하고 파일에는 쓰지 않는다(구역 형식으로 다시 쓸 때 대표 항목으로 옮겨 적힌다).
+            public bool Legacy;
+
+            public Setting Alias(params string[] aliases)
+            {
+                Aliases = aliases;
+                return this;
+            }
+        }
+
+        private sealed class Section
+        {
+            public string Title;
+            public string[] Comments = new string[0];
+            public Setting[] Settings;
+        }
+
+        private const string SectionMarker = "# ===== [";
+
+        private static Setting Bool(string key, Func<bool> get, Action<bool> set, params string[] comments) => new Setting
+        {
+            Key = key,
+            Comments = comments,
+            Parse = val => set(ParseFlexibleBool(val, get())),
+            Format = () => get() ? "1" : "0"
+        };
+
+        private static Setting Number(string key, Func<float> get, Action<float> set, float min, float max, params string[] comments) => new Setting
+        {
+            Key = key,
+            Comments = comments,
+            Parse = val => set(ParseFloatSetting(key, val.TrimEnd('%', ' '), get(), min, max)),
+            Format = () => NumText(get(), "0.###")
+        };
+
+        private static Setting Shape(string key, Func<int> get, Action<int> set, params string[] comments) => new Setting
+        {
+            Key = key,
+            Comments = comments,
+            Parse = val => set(ParseShapeSetting(key, val, get())),
+            Format = () => get().ToString(CultureInfo.InvariantCulture)
+        };
+
+        private static Setting ColorValue(string key, Func<Color> get, Action<Color> set, params string[] comments) => new Setting
+        {
+            Key = key,
+            Comments = comments,
+            Parse = val => set(ParseColorSetting(key, val, get())),
+            Format = () => ColorText(get())
+        };
+
+        private static readonly Section[] Sections =
+        {
+            new Section
+            {
+                Title = "플레이",
+                Settings = new[]
+                {
+                    Bool("AutoPlay", () => AutoPlay, v => AutoPlay = v, "오토 플레이 (1 = 켜짐, 0 = 꺼짐)"),
+                    Bool("AllPerfect", () => AllPerfect, v => AllPerfect = v, "올 퍼펙트 판정 조작 - BLUESTAR (1 = 켜짐, 0 = 꺼짐)"),
+                    Bool("BlockSave", () => BlockSave, v => BlockSave = v, "베스트 스코어 / 랭킹 저장 차단 (1 = 켜짐, 0 = 꺼짐)"),
+                    Number("MaxScore", () => MaxScore, v => MaxScore = v, 0.001f, float.MaxValue,
+                        "점수 상한 (만점 기준값). 기본값 1000000 = 원본과 동일",
+                        "1000000 이외의 값을 넣으면 판정 점수 계산의 만점이 그 값으로 바뀝니다.").Alias("ScoreLimit"),
+                }
+            },
+            new Section
+            {
+                Title = "판정바",
+                Settings = new[]
+                {
+                    Bool("EnableJudgmentBar", () => EnableJudgmentBar, v => EnableJudgmentBar = v, "실시간 판정바 표시 (1 = 켜짐, 0 = 꺼짐)").Alias("JudgmentBar"),
+                    Bool("JudgmentBarVertical", () => JudgmentBarVertical, v => JudgmentBarVertical = v, "판정바 방향 (1 = 세로, 0 = 가로)"),
+                    Shape("JudgmentBarShape", () => JudgmentBarShape, v => JudgmentBarShape = v, "판정바 모양 (0 = 사각 바, 1 = 알약 캡슐, 2 = 삼각/다이아몬드)"),
+                    Shape("JudgmentBarRangeShape", () => JudgmentBarRangeShape, v => JudgmentBarRangeShape = v,
+                        "판정바 안쪽 범위 박스 모양 (-1 = 판정바 모양 따라감, 0 = 사각, 1 = 알약, 2 = 삼각)"),
+                    new Setting
+                    {
+                        Key = "JudgmentBarSide",
+                        Comments = new[] { "판정바 위치 (Left = 화면 왼쪽, Right = 화면 오른쪽, Center = 기본 위치)",
+                            "기본 위치는 세로 판정바는 왼쪽, 가로 판정바는 화면 정중앙입니다." },
+                        Parse = val => JudgmentBarSide = ParseSideSetting("JudgmentBarSide", val, JudgmentBarSide),
+                        Format = () => JudgmentBarSide
+                    }.Alias("JudgmentBarPosition"),
+                    new Setting
+                    {
+                        Key = "JudgmentBarCapsule",
+                        Legacy = true,
+                        Parse = val => JudgmentBarCapsule = ParseFlexibleBool(val, JudgmentBarCapsule),
+                        Format = () => JudgmentBarCapsule ? "1" : "0"
+                    },
+                }
+            },
+            new Section
+            {
+                Title = "키뷰어",
+                Settings = new[]
+                {
+                    Bool("EnableKeyViewer", () => EnableKeyViewer, v => EnableKeyViewer = v, "실시간 키뷰어 표시 (1 = 켜짐, 0 = 꺼짐)").Alias("KeyViewer"),
+                    ColorValue("KeyViewerPressedColor", () => KeyViewerPressedColor, v => KeyViewerPressedColor = v,
+                        "키를 눌렀을 때 색 (일반 노트 키)",
+                        "형식: #RRGGBB, #RRGGBBAA, R,G,B,A, 색 이름 (시안, 마젠타, 노랑, 빨강, 파랑, 초록, 흰색, 검정, 주황, 보라, 분홍, 하늘, 민트)"),
+                    ColorValue("KeyViewerNormalColor", () => KeyViewerNormalColor, v => KeyViewerNormalColor = v, "누르지 않았을 때 색"),
+                    ColorValue("KeyViewerGatePressedColor", () => KeyViewerGatePressedColor, v => KeyViewerGatePressedColor = v, "GATE 키(가운데 4번)를 눌렀을 때 색"),
+                }
+            },
+            new Section
+            {
+                Title = "노트 흔들림",
+                Comments = new[] { "노트가 눈송이처럼 좌우로 흔들리며 내려오는 연출. 판정에는 영향이 없습니다." },
+                Settings = new[]
+                {
+                    Bool("NoteSway", () => EnableNoteSway, v => EnableNoteSway = v, "흔들림 연출 (1 = 켜짐, 0 = 꺼짐)").Alias("EnableNoteSway"),
+                    Number("NoteSwayAmplitude", () => NoteSwayAmplitude, v => NoteSwayAmplitude = v, 0f, 1000f, "흔들림 폭 (픽셀). 너무 크면 레인 밖으로 나가 잘릴 수 있습니다."),
+                    Number("NoteSwaySpeed", () => NoteSwaySpeed, v => NoteSwaySpeed = v, 0f, 50f, "흔들림 속도 (초당 왕복 횟수)"),
+                    Bool("NoteSwayDamping", () => NoteSwayDamping, v => NoteSwayDamping = v,
+                        "판정선에 가까워지면 흔들림을 잦아들게 함 (1 = 켜짐, 0 = 꺼짐). 끄면 판정선에 닿을 때까지 흔들립니다."),
+                    Number("NoteSwayDampingTime", () => NoteSwayDampingTime, v => NoteSwayDampingTime = v, 0.01f, 30f, "판정선 도달 몇 초 전부터 잦아들지"),
+                }
+            },
+            new Section
+            {
+                Title = "노트 속도 카오스",
+                Comments = new[] { "[챌린지] 노트마다 낙하 속도가 제각각이라 서로 추월합니다. 판정에는 영향이 없습니다." },
+                Settings = new[]
+                {
+                    Bool("NoteSpeedChaos", () => EnableNoteSpeedChaos, v => EnableNoteSpeedChaos = v, "속도 카오스 (1 = 켜짐, 0 = 꺼짐)").Alias("EnableNoteSpeedChaos"),
+                    Number("NoteSpeedChaosMin", () => NoteSpeedChaosMin, v => NoteSpeedChaosMin = v, 0.05f, 10f, "속도 배율 최솟값 (1 = 원래 속도)"),
+                    Number("NoteSpeedChaosMax", () => NoteSpeedChaosMax, v => NoteSpeedChaosMax = v, 0.05f, 10f, "속도 배율 최댓값"),
+                    Bool("NoteSpeedChaosPerLane", () => NoteSpeedChaosPerLane, v => NoteSpeedChaosPerLane = v,
+                        "1 = 레인마다 속도가 다름(같은 레인 안에서는 순서 유지), 0 = 노트마다 다름(완전 카오스)"),
+                }
+            },
+            new Section
+            {
+                Title = "커스텀 노트 스킨",
+                Settings = new[]
+                {
+                    Bool("CustomNotes", () => EnableCustomNotes, v => EnableCustomNotes = v,
+                        "게임 폴더 CustomNotes 폴더의 PNG(Blue.png, Red.png 등)로 노트 모양을 바꿈 (1 = 켜짐, 0 = 꺼짐)",
+                        "게임 인벤토리의 노트 스킨 목록에서 \"커스텀 노트\"를 고르거나 다른 스킨으로 옮기면 자동으로 바뀝니다.").Alias("EnableCustomNotes"),
+                }
+            },
+            new Section
+            {
+                Title = "서든 / 히든",
+                Comments = new[]
+                {
+                    "[챌린지] 레인 일부를 칼같이 가립니다. 판정선 = 0%, 노트가 나오는 화면 끝 = 100%로 잽니다.",
+                    "Sudden/Hidden은 게임을 켤 때마다 0(끔)으로 돌아갑니다. 켠 뒤 여기서 올리면 다음 곡부터 적용됩니다."
+                },
+                Settings = new[]
+                {
+                    Number("Sudden", () => SuddenPercent, v => SuddenPercent = v, 0f, 90f,
+                        "서든: 위쪽을 가릴 비율 (%, 0 = 끔). 예: 30 = 위쪽 30%를 가려 노트가 늦게 보임").Alias("SuddenPlus"),
+                    Number("Hidden", () => HiddenPercent, v => HiddenPercent = v, 0f, 90f,
+                        "히든: 판정선 쪽을 가릴 비율 (%, 0 = 끔). 서든과 합쳐 90%를 넘으면 히든이 줄어듭니다.").Alias("HiddenPlus"),
+                    Number("LaneCoverSoftness", () => LaneCoverSoftness, v => LaneCoverSoftness = v, 0f, 500f,
+                        "칼같이 가린 경계를 살짝 흐리는 폭 (픽셀, 0 = 칼같이 자름)"),
+                }
+            },
+            new Section
+            {
+                Title = "페이드 인 / 페이드 아웃",
+                Comments = new[]
+                {
+                    "[챌린지] 노트가 서서히 나타나거나(페이드 인) 서서히 사라집니다(페이드 아웃).",
+                    "위치·길이는 판정선 = 0%, 노트가 나오는 화면 끝 = 100% 기준입니다.",
+                    "같은 쪽에 서든(히든)도 켜면 더 많이 가리는 쪽 경계가 쓰입니다.",
+                    "FadeIn/FadeOut은 게임을 켤 때마다 0(끔)으로 돌아갑니다. 위치와 길이는 그대로 남습니다."
+                },
+                Settings = new[]
+                {
+                    Bool("FadeIn", () => EnableFadeIn, v => EnableFadeIn = v, "페이드 인: 내려오는 노트가 서서히 나타남 (1 = 켜짐, 0 = 꺼짐)"),
+                    Number("FadeInStart", () => FadeInStart, v => FadeInStart = v, 0f, 100f,
+                        "나타나기 시작하는 위치 (%). 100 = 화면 끝에서부터, 60 = 레인 60% 높이에서부터"),
+                    Number("FadeInLength", () => FadeInLength, v => FadeInLength = v, 0f, 100f,
+                        "이 길이(%)만큼 내려오는 동안 투명 → 불투명. 예: 시작 100, 길이 20 → 80% 높이부터 완전히 보임"),
+                    Bool("FadeOut", () => EnableFadeOut, v => EnableFadeOut = v, "페이드 아웃: 판정선에 다가가는 노트가 서서히 사라짐 (1 = 켜짐, 0 = 꺼짐)"),
+                    Number("FadeOutStart", () => FadeOutStart, v => FadeOutStart = v, 0f, 100f,
+                        "사라지기 시작하는 위치 (%). 예: 40 = 레인 40% 높이부터 흐려지기 시작"),
+                    Number("FadeOutLength", () => FadeOutLength, v => FadeOutLength = v, 0f, 100f,
+                        "이 길이(%)만큼 내려오는 동안 불투명 → 투명. 예: 시작 20, 길이 20 → 판정선에서 완전히 사라짐"),
+                }
+            },
+            new Section
+            {
+                Title = "커스텀 곡 마라톤",
+                Settings = new[]
+                {
+                    Bool("CustomMarathon", () => EnableCustomMarathon, v => EnableCustomMarathon = v,
+                        "마라톤 (1 = 켜짐, 0 = 꺼짐). 커스텀 곡 하나를 시작하면 결과창 Enter로 아직 안 친 다음 커스텀 곡이 바로 시작됩니다.",
+                        "모든 커스텀 곡을 한 번씩 돌면 목록으로 돌아갑니다. 고른 곡이 1번, 나머지는 매번 무작위(같은 곡은 다시 안 나옴).",
+                        "결과창에서 Esc = 마라톤 그만하고 목록으로").Alias("EnableCustomMarathon"),
+                    Number("CustomMarathonAutoNext", () => CustomMarathonAutoNext, v => CustomMarathonAutoNext = v, 0f, 600f,
+                        "결과창에서 몇 초 뒤 자동으로 다음 곡으로 넘어갈지 (0 = Enter를 누를 때만)"),
+                }
+            },
+            new Section
+            {
+                Title = "진단",
+                Settings = new[]
+                {
+                    Bool("LaneCoverDebug", () => LaneCoverDebug, v => LaneCoverDebug = v,
+                        "서든/히든/페이드 계산선을 화면에 그림 (빨강 = 판정선, 하늘색 = 가림 경계, 연두 = 페이드가 끝나는 곳). 확인이 끝나면 0으로"),
+                }
+            },
+        };
+
+        // 대표 이름과 별칭(대소문자 무시) → 항목. Sections 다음에 선언해야 초기화 순서가 맞는다.
+        private static readonly Dictionary<string, Setting> SettingsByName = BuildSettingsLookup();
+
+        private static Dictionary<string, Setting> BuildSettingsLookup()
+        {
+            var lookup = new Dictionary<string, Setting>(StringComparer.OrdinalIgnoreCase);
+            foreach (var section in Sections)
+            {
+                foreach (var setting in section.Settings)
+                {
+                    lookup[setting.Key] = setting;
+                    foreach (var alias in setting.Aliases)
+                        lookup[alias] = setting;
+                }
+            }
+            return lookup;
+        }
 
         static SaveCustomKeyConfig()
         {
@@ -282,6 +535,13 @@ namespace sxtg2.Helpers
             LaneCoverSoftness = 24f;
             LaneCoverDebug = false;
 
+            EnableFadeIn = false;
+            FadeInStart = 100f;
+            FadeInLength = 20f;
+            EnableFadeOut = false;
+            FadeOutStart = 20f;
+            FadeOutLength = 20f;
+
             EnableCustomMarathon = false;
             CustomMarathonAutoNext = 0f;
         }
@@ -299,45 +559,87 @@ namespace sxtg2.Helpers
             ResetLaneCoverOnStart();
         }
 
+        private static string ConfigFilePath =>
+            Path.Combine(Path.GetDirectoryName(Application.dataPath), "SaveCustomKey", "config.txt");
+
+        private static readonly string[] LaneCoverKeys = { "Sudden", "SuddenPlus", "Hidden", "HiddenPlus", "FadeIn", "FadeOut" };
+
+        private static readonly string[] CustomNotesKeys = { "CustomNotes", "EnableCustomNotes" };
+
         /// <summary>
-        /// 서든/히든은 그 판에만 거는 챌린지라 게임을 켤 때마다 꺼진 상태(0)로 시작한다.
-        /// 설정 파일은 플레이 씬에 들어갈 때마다 다시 읽히므로 메모리 값만 0으로 두면 첫 곡에서 되살아난다.
-        /// 그래서 파일의 Sudden/Hidden 줄도 0으로 고쳐 쓴다(다른 줄과 주석, 인코딩, 줄바꿈은 그대로).
-        /// 게임을 켠 뒤 파일에서 다시 올리면 그 세션 동안은 적용된다.
+        /// 서든/히든과 페이드 인/아웃은 그 판에만 거는 챌린지라 게임을 켤 때마다 꺼진 상태로 시작한다(페이드 위치·길이는 유지).
+        /// 설정 파일은 플레이 씬에 들어갈 때마다 다시 읽히므로 메모리 값만 끄면 첫 곡에서 되살아난다.
+        /// 그래서 파일의 해당 줄도 0으로 고쳐 쓴다(다른 줄과 주석, 인코딩, 줄바꿈은 그대로).
+        /// 게임을 켠 뒤 파일에서 다시 켜면 그 세션 동안은 적용된다.
         /// </summary>
         private static void ResetLaneCoverOnStart()
         {
-            if (SuddenPercent <= 0f && HiddenPercent <= 0f)
+            if (SuddenPercent <= 0f && HiddenPercent <= 0f && !EnableFadeIn && !EnableFadeOut)
                 return;
 
-            float oldSudden = SuddenPercent;
-            float oldHidden = HiddenPercent;
+            string before = $"Sudden {SuddenPercent:0.#}%, Hidden {HiddenPercent:0.#}%, FadeIn {(EnableFadeIn ? 1 : 0)}, FadeOut {(EnableFadeOut ? 1 : 0)}";
             SuddenPercent = 0f;
             HiddenPercent = 0f;
+            EnableFadeIn = false;
+            EnableFadeOut = false;
 
             try
             {
-                string filePath = Path.Combine(Path.GetDirectoryName(Application.dataPath), "SaveCustomKey", "config.txt");
-                byte[] raw = File.ReadAllBytes(filePath);
-                bool hasBom = raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF;
-                string text = new UTF8Encoding(false).GetString(raw, hasBom ? 3 : 0, raw.Length - (hasBom ? 3 : 0));
-
-                string updated = System.Text.RegularExpressions.Regex.Replace(
-                    text,
-                    @"^([ \t]*(?:Sudden|SuddenPlus|Hidden|HiddenPlus)[ \t]*=)[^\r\n]*",
-                    "${1}0",
-                    System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-                if (updated != text)
-                    File.WriteAllText(filePath, updated, new UTF8Encoding(hasBom));
-
-                MelonLogger.Msg($"[SaveCustomKey] 서든/히든은 게임을 켤 때마다 꺼진 상태로 시작합니다 (Sudden {oldSudden:0.#}% → 0, Hidden {oldHidden:0.#}% → 0, config.txt도 0으로 고침)");
+                RewriteConfigValues(LaneCoverKeys, "0");
+                MelonLogger.Msg($"[SaveCustomKey] 서든/히든·페이드 인/아웃은 게임을 켤 때마다 꺼진 상태로 시작합니다 ({before} → 전부 0, config.txt도 0으로 고침)");
             }
             catch (Exception ex)
             {
                 // 파일을 못 고쳐도 이번 세션 메모리 값은 0이다. 다만 첫 곡에서 파일 값이 다시 읽힐 수 있다.
-                MelonLogger.Warning($"[SaveCustomKey] 서든/히든 초기화 중 config.txt를 고치지 못했습니다: {ex.Message}");
+                MelonLogger.Warning($"[SaveCustomKey] 서든/히든·페이드 초기화 중 config.txt를 고치지 못했습니다: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 게임 인벤토리에서 커스텀 노트 스킨을 고르거나 다른 스킨으로 옮겼을 때 호출된다.
+        /// 설정은 플레이 씬에 들어갈 때마다 파일에서 다시 읽히므로 config.txt의 CustomNotes 줄도 같이 고친다.
+        /// </summary>
+        public static void SetCustomNotesFromInventory(bool enabled)
+        {
+            if (EnableCustomNotes == enabled)
+                return;
+
+            EnableCustomNotes = enabled;
+            try
+            {
+                string value = enabled ? "1" : "0";
+                if (!RewriteConfigValues(CustomNotesKeys, value))
+                    File.AppendAllText(ConfigFilePath, Environment.NewLine + "CustomNotes=" + value + Environment.NewLine, Encoding.UTF8);
+                MelonLogger.Msg($"[SaveCustomKey] 인벤토리에서 노트 스킨 변경 → CustomNotes={value} (config.txt 저장)");
+            }
+            catch (Exception ex)
+            {
+                // 메모리 값은 바뀌었지만, 다음 곡에서 파일의 옛 값이 다시 읽힐 수 있다.
+                MelonLogger.Warning($"[SaveCustomKey] CustomNotes를 config.txt에 저장하지 못했습니다: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// config.txt에서 keys 중 하나로 시작하는 설정 줄의 값만 value로 고쳐 쓴다(다른 줄과 주석, BOM, 줄바꿈은 그대로).
+        /// 해당하는 줄이 하나라도 있었으면 true.
+        /// </summary>
+        private static bool RewriteConfigValues(string[] keys, string value)
+        {
+            string filePath = ConfigFilePath;
+            byte[] raw = File.ReadAllBytes(filePath);
+            bool hasBom = raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF;
+            string text = new UTF8Encoding(false).GetString(raw, hasBom ? 3 : 0, raw.Length - (hasBom ? 3 : 0));
+
+            var pattern = new Regex(
+                @"^([ \t]*(?:" + string.Join("|", Array.ConvertAll(keys, Regex.Escape)) + @")[ \t]*=)[^\r\n]*",
+                RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            if (!pattern.IsMatch(text))
+                return false;
+
+            string updated = pattern.Replace(text, "${1}" + value);
+            if (updated != text)
+                File.WriteAllText(filePath, updated, new UTF8Encoding(hasBom));
+            return true;
         }
 
         /// <summary>
@@ -369,14 +671,13 @@ namespace sxtg2.Helpers
 
             try
             {
-                string gamePath = Path.GetDirectoryName(Application.dataPath);
-                string folderPath = Path.Combine(gamePath, "SaveCustomKey");
-                Directory.CreateDirectory(folderPath);
+                string configFilePath = ConfigFilePath;
+                Directory.CreateDirectory(Path.GetDirectoryName(configFilePath));
 
-                string configFilePath = Path.Combine(folderPath, "config.txt");
                 if (!File.Exists(configFilePath))
                 {
-                    CreateDefaultConfigFile(configFilePath);
+                    File.WriteAllText(configFilePath, BuildConfigText(), Encoding.UTF8);
+                    MelonLogger.Msg($"[SaveCustomKey] 기본 설정 파일 생성 완료: {configFilePath}");
                 }
 
                 if (isReload)
@@ -390,178 +691,34 @@ namespace sxtg2.Helpers
             }
         }
 
-        private static void CreateDefaultConfigFile(string filePath)
+        /// <summary>표의 구역 순서대로, 지금 값을 넣은 설정 파일 전체 내용.</summary>
+        private static string BuildConfigText()
         {
             var sb = new StringBuilder();
             sb.AppendLine("# sxtg2 모드 설정 파일 (SaveCustomKey/config.txt)");
-            sb.AppendLine("# 설정 변경 후 저장하면 게임 실행 시 자동 적용됩니다.");
-            sb.AppendLine("# 지원 형식: 1/0, true/false, 켜짐/꺼짐, on/off");
-            sb.AppendLine();
-            sb.AppendLine("# 오토 플레이 (1 = 켜짐, 0 = 꺼짐)");
-            sb.AppendLine("AutoPlay=0");
-            sb.AppendLine();
-            sb.AppendLine("# 올 퍼펙트 판정 조작 - BLUESTAR (1 = 켜짐, 0 = 꺼짐)");
-            sb.AppendLine("AllPerfect=0");
-            sb.AppendLine();
-            sb.AppendLine("# 베스트 스코어 / 랭킹 저장 차단 (1 = 켜짐, 0 = 꺼짐)");
-            sb.AppendLine("BlockSave=1");
-            sb.AppendLine();
-            sb.AppendLine("# 실시간 판정바 표시 (1 = 켜짐, 0 = 꺼짐)");
-            sb.AppendLine("EnableJudgmentBar=1");
-            sb.AppendLine();
-            sb.AppendLine("# 판정바 형태 (1 = 세로 판정바, 0 = 가로 판정바)");
-            sb.AppendLine("JudgmentBarVertical=1");
-            sb.AppendLine();
-            AppendJudgmentBarCapsuleSection(sb);
-            AppendJudgmentBarSideSection(sb);
-            sb.AppendLine();
-            sb.AppendLine("# 실시간 키뷰어 표시 (1 = 켜짐, 0 = 꺼짐)");
-            sb.AppendLine("EnableKeyViewer=1");
-            AppendMaxScoreSection(sb);
-            AppendNoteSwaySection(sb);
-            AppendNoteSpeedChaosSection(sb);
-            AppendCustomNotesSection(sb);
-            AppendLaneCoverSection(sb);
-            AppendCustomMarathonSection(sb);
+            sb.AppendLine("# 저장하면 다음 곡(플레이 씬에 들어갈 때)부터 적용됩니다. 게임을 다시 켤 필요는 없습니다.");
+            sb.AppendLine("# 켜기/끄기 값: 1/0, true/false, 켜짐/꺼짐, on/off 모두 됩니다. # 또는 // 로 시작하는 줄은 주석입니다.");
 
-            File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
-            MelonLogger.Msg($"[SaveCustomKey] 기본 설정 파일 생성 완료: {filePath}");
-        }
-
-        private static void AppendJudgmentBarCapsuleSection(StringBuilder sb)
-        {
-            sb.AppendLine();
-            sb.AppendLine("# 판정바 모양 (0 = 사각 바, 1 = 알약 캡슐 모양, 2 = 삼각/다이아몬드 모양)");
-            sb.AppendLine("# 기존 JudgmentBarCapsule=1 키도 캡슐(1)로 동일하게 작동합니다.");
-            sb.AppendLine("JudgmentBarShape=0");
-            sb.AppendLine();
-            sb.AppendLine("# 판정바 안쪽 범위 박스 모양 (-1 = 판정바 모양 추종, 0 = 사각, 1 = 알약, 2 = 삼각)");
-            sb.AppendLine("JudgmentBarRangeShape=-1");
-        }
-
-        private static void AppendJudgmentBarSideSection(StringBuilder sb)
-        {
-            sb.AppendLine();
-            sb.AppendLine("# 판정바 위치 (Left = 화면 왼쪽, Right = 화면 오른쪽, Center = 기본 위치)");
-            sb.AppendLine("# 기본 위치는 세로 판정바는 왼쪽 고정, 가로 판정바는 화면 정중앙입니다.");
-            sb.AppendLine("JudgmentBarSide=Center");
-        }
-
-        private static void AppendKeyViewerColorSection(StringBuilder sb)
-        {
-            sb.AppendLine();
-            sb.AppendLine("# 키뷰어 눌림 색상 (일반 노트 키 입력 시)");
-            sb.AppendLine("# 지원 형식: #RRGGBB, #RRGGBBAA, R,G,B,A, 영문/한글 색상명 (시안, 마젠타, 노랑, 빨강, 파랑, 초록, 흰색, 검정, 주황, 보라, 분홍, 하늘, 민트)");
-            sb.AppendLine("KeyViewerPressedColor=#26BFD9D9");
-            sb.AppendLine();
-            sb.AppendLine("# 키뷰어 미입력 기본 색상");
-            sb.AppendLine("KeyViewerNormalColor=#141414A6");
-            sb.AppendLine();
-            sb.AppendLine("# 키뷰어 GATE 키(중앙 4번) 전용 눌림 색상");
-            sb.AppendLine("KeyViewerGatePressedColor=#FF4081E6");
-        }
-
-        private static void AppendMaxScoreSection(StringBuilder sb)
-        {
-            sb.AppendLine();
-            sb.AppendLine("# 점수 상한 (만점 기준값). 기본값 1000000 = 원본과 동일");
-            sb.AppendLine("# 1000000 이외의 값을 넣으면 판정 점수 계산의 만점이 그 값으로 바뀝니다.");
-            sb.AppendLine("# 0 이하 또는 숫자가 아닌 값은 무시되고 기본값이 사용됩니다.");
-            sb.AppendLine($"MaxScore={DefaultMaxScore:0.###}");
-        }
-
-        private static void AppendNoteSwaySection(StringBuilder sb)
-        {
-            sb.AppendLine();
-            sb.AppendLine("# 노트가 눈송이처럼 좌우로 흔들리며 내려오는 연출 (1 = 켜짐, 0 = 꺼짐)");
-            sb.AppendLine("# 판정에는 전혀 영향이 없는 순수 시각 효과입니다.");
-            sb.AppendLine("NoteSway=0");
-            sb.AppendLine();
-            sb.AppendLine("# 흔들림 폭 (픽셀). 너무 크면 레인 밖으로 나가 잘릴 수 있습니다.");
-            sb.AppendLine("NoteSwayAmplitude=12");
-            sb.AppendLine();
-            sb.AppendLine("# 흔들림 속도 (초당 왕복 횟수)");
-            sb.AppendLine("NoteSwaySpeed=0.8");
-            sb.AppendLine();
-            sb.AppendLine("# 판정선에 가까워지면 흔들림을 잦아들게 함 (1 = 켜짐, 0 = 꺼짐)");
-            sb.AppendLine("# 끄면 판정선에 닿는 순간까지 계속 흔들립니다.");
-            sb.AppendLine("NoteSwayDamping=1");
-            sb.AppendLine();
-            sb.AppendLine("# 판정선 도달 몇 초 전부터 흔들림이 잦아들지");
-            sb.AppendLine("NoteSwayDampingTime=0.4");
-        }
-
-        private static void AppendNoteSpeedChaosSection(StringBuilder sb)
-        {
-            sb.AppendLine();
-            sb.AppendLine("# [챌린지] 노트마다 낙하 속도를 제각각으로 (1 = 켜짐, 0 = 꺼짐)");
-            sb.AppendLine("# 노트끼리 서로 추월하므로 읽기가 매우 어려워집니다. 판정에는 영향이 없습니다.");
-            sb.AppendLine("NoteSpeedChaos=0");
-            sb.AppendLine();
-            sb.AppendLine("# 속도 배율 범위 (1 = 원래 속도). 예: 0.6 ~ 1.8");
-            sb.AppendLine("NoteSpeedChaosMin=0.6");
-            sb.AppendLine("NoteSpeedChaosMax=1.8");
-            sb.AppendLine();
-            sb.AppendLine("# 1 = 레인마다 속도가 다름(같은 레인 안에서는 순서 유지, 읽을 수는 있음)");
-            sb.AppendLine("# 0 = 노트마다 속도가 다름(완전 카오스)");
-            sb.AppendLine("NoteSpeedChaosPerLane=0");
-        }
-
-        private static void AppendCustomNotesSection(StringBuilder sb)
-        {
-            sb.AppendLine();
-            sb.AppendLine("# 커스텀 노트 스킨 적용 (1 = 켜짐, 0 = 꺼짐)");
-            sb.AppendLine("# 게임 폴더의 CustomNotes 폴더에 넣은 PNG(Blue.png, Red.png 등)로 노트 모양을 바꿉니다.");
-            sb.AppendLine("# 끄면 PNG가 있어도 게임 기본 노트로 플레이합니다.");
-            sb.AppendLine("CustomNotes=1");
-        }
-
-        private static void AppendLaneCoverSection(StringBuilder sb)
-        {
-            sb.AppendLine();
-            sb.AppendLine("# [챌린지] 서든: 레인 위쪽을 가려 노트가 늦게 보이게 함 (가릴 비율 %, 0 = 끔)");
-            sb.AppendLine("# 판정선에서 화면 끝까지를 100%로 봅니다. 예: 30 = 위쪽 30%를 가림");
-            sb.AppendLine("# 서든/히든은 게임을 켤 때마다 0(끔)으로 돌아갑니다. 켠 뒤 여기서 올리면 다음 곡부터 적용됩니다.");
-            sb.AppendLine("Sudden=0");
-            sb.AppendLine();
-            sb.AppendLine("# [챌린지] 히든: 판정선 쪽을 가려 노트가 치기 직전에 사라지게 함 (가릴 비율 %, 0 = 끔)");
-            sb.AppendLine("# 서든과 같이 쓸 수 있습니다. 둘을 합쳐 90%를 넘으면 히든이 줄어듭니다.");
-            sb.AppendLine("Hidden=0");
-            sb.AppendLine();
-            sb.AppendLine("# 가림 경계를 부드럽게 흐리는 폭 (픽셀, 0 = 칼같이 자름)");
-            sb.AppendLine("LaneCoverSoftness=24");
-        }
-
-        private static void AppendCustomMarathonSection(StringBuilder sb)
-        {
-            sb.AppendLine();
-            sb.AppendLine("# 커스텀 곡 마라톤 (1 = 켜짐, 0 = 꺼짐)");
-            sb.AppendLine("# 켜고 커스텀 곡 하나를 시작하면, 결과창에서 Enter를 누를 때 목록을 거치지 않고");
-            sb.AppendLine("# 아직 안 친 다음 커스텀 곡이 바로 시작됩니다. 모든 커스텀 곡을 딱 한 번씩 돌면 목록으로 돌아갑니다.");
-            sb.AppendLine("# 순서는 고른 곡이 1번이고 나머지는 매번 무작위로 섞입니다(같은 곡은 다시 안 나옴).");
-            sb.AppendLine("# 결과창에서 Esc = 마라톤 그만하고 목록으로");
-            sb.AppendLine("CustomMarathon=0");
-            sb.AppendLine();
-            sb.AppendLine("# 마라톤 중 결과창에서 몇 초 뒤 자동으로 다음 곡으로 넘어갈지 (0 = Enter를 누를 때만)");
-            sb.AppendLine("CustomMarathonAutoNext=0");
-        }
-
-        /// <summary>이전 버전에서 만들어진 설정 파일에는 새 항목이 없으므로 뒤에 덧붙여준다.</summary>
-        private static void AppendMissingSections(string filePath, List<Action<StringBuilder>> sections, string keyNames)
-        {
-            try
+            foreach (var section in Sections)
             {
-                var sb = new StringBuilder();
-                foreach (var section in sections)
-                    section(sb);
+                sb.AppendLine();
+                sb.AppendLine($"{SectionMarker}{section.Title}] =====");
+                foreach (var line in section.Comments)
+                    sb.AppendLine("# " + line);
 
-                File.AppendAllText(filePath, sb.ToString(), Encoding.UTF8);
-                MelonLogger.Msg($"[SaveCustomKey] 기존 설정 파일에 {keyNames} 항목을 추가했습니다: {filePath}");
+                foreach (var setting in section.Settings)
+                {
+                    if (setting.Legacy)
+                        continue;
+
+                    sb.AppendLine();
+                    foreach (var line in setting.Comments)
+                        sb.AppendLine("# " + line);
+                    sb.AppendLine($"{setting.Key}={setting.Format()}");
+                }
             }
-            catch (Exception ex)
-            {
-                MelonLogger.Warning($"[SaveCustomKey] 설정 항목 추가 실패: {ex.Message}");
-            }
+
+            return sb.ToString();
         }
 
         private static void LoadConfigFile(string filePath, bool isReload)
@@ -587,6 +744,7 @@ namespace sxtg2.Helpers
                     ResetToDefaults();
 
                 var seenKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var unknownKeys = new List<string>();
                 foreach (var line in lines)
                 {
                     var trimmed = line.Trim();
@@ -598,159 +756,38 @@ namespace sxtg2.Helpers
                         continue;
 
                     var key = parts[0].Trim();
-                    var val = parts[1].Trim();
-                    seenKeys.Add(key);
+                    if (!SettingsByName.TryGetValue(key, out var setting))
+                    {
+                        unknownKeys.Add(key);
+                        continue;
+                    }
 
-                    if (key.Equals("AutoPlay", StringComparison.OrdinalIgnoreCase))
-                    {
-                        AutoPlay = ParseFlexibleBool(val, AutoPlay);
-                    }
-                    else if (key.Equals("AllPerfect", StringComparison.OrdinalIgnoreCase))
-                    {
-                        AllPerfect = ParseFlexibleBool(val, AllPerfect);
-                    }
-                    else if (key.Equals("BlockSave", StringComparison.OrdinalIgnoreCase))
-                    {
-                        BlockSave = ParseFlexibleBool(val, BlockSave);
-                    }
-                    else if (key.Equals("EnableJudgmentBar", StringComparison.OrdinalIgnoreCase) || key.Equals("JudgmentBar", StringComparison.OrdinalIgnoreCase))
-                    {
-                        EnableJudgmentBar = ParseFlexibleBool(val, EnableJudgmentBar);
-                    }
-                    else if (key.Equals("JudgmentBarVertical", StringComparison.OrdinalIgnoreCase))
-                    {
-                        JudgmentBarVertical = ParseFlexibleBool(val, JudgmentBarVertical);
-                    }
-                    else if (key.Equals("JudgmentBarShape", StringComparison.OrdinalIgnoreCase))
-                    {
-                        JudgmentBarShape = ParseShapeSetting("JudgmentBarShape", val, JudgmentBarShape);
-                    }
-                    else if (key.Equals("JudgmentBarRangeShape", StringComparison.OrdinalIgnoreCase))
-                    {
-                        JudgmentBarRangeShape = ParseShapeSetting("JudgmentBarRangeShape", val, JudgmentBarRangeShape);
-                    }
-                    else if (key.Equals("JudgmentBarCapsule", StringComparison.OrdinalIgnoreCase))
-                    {
-                        bool isCap = ParseFlexibleBool(val, JudgmentBarCapsule);
-                        JudgmentBarCapsule = isCap;
-                    }
-                    else if (key.Equals("JudgmentBarSide", StringComparison.OrdinalIgnoreCase) || key.Equals("JudgmentBarPosition", StringComparison.OrdinalIgnoreCase))
-                    {
-                        JudgmentBarSide = ParseSideSetting("JudgmentBarSide", val, JudgmentBarSide);
-                    }
-                    else if (key.Equals("EnableKeyViewer", StringComparison.OrdinalIgnoreCase) || key.Equals("KeyViewer", StringComparison.OrdinalIgnoreCase))
-                    {
-                        EnableKeyViewer = ParseFlexibleBool(val, EnableKeyViewer);
-                    }
-                    else if (key.Equals("KeyViewerPressedColor", StringComparison.OrdinalIgnoreCase))
-                    {
-                        KeyViewerPressedColor = ParseColorSetting("KeyViewerPressedColor", val, KeyViewerPressedColor);
-                    }
-                    else if (key.Equals("KeyViewerNormalColor", StringComparison.OrdinalIgnoreCase))
-                    {
-                        KeyViewerNormalColor = ParseColorSetting("KeyViewerNormalColor", val, KeyViewerNormalColor);
-                    }
-                    else if (key.Equals("KeyViewerGatePressedColor", StringComparison.OrdinalIgnoreCase))
-                    {
-                        KeyViewerGatePressedColor = ParseColorSetting("KeyViewerGatePressedColor", val, KeyViewerGatePressedColor);
-                    }
-                    else if (key.Equals("MaxScore", StringComparison.OrdinalIgnoreCase) || key.Equals("ScoreLimit", StringComparison.OrdinalIgnoreCase))
-                    {
-                        MaxScore = ParseFloatSetting("MaxScore", val, MaxScore, 0.001f, float.MaxValue);
-                    }
-                    else if (key.Equals("NoteSway", StringComparison.OrdinalIgnoreCase) || key.Equals("EnableNoteSway", StringComparison.OrdinalIgnoreCase))
-                    {
-                        EnableNoteSway = ParseFlexibleBool(val, EnableNoteSway);
-                    }
-                    else if (key.Equals("NoteSwayAmplitude", StringComparison.OrdinalIgnoreCase))
-                    {
-                        NoteSwayAmplitude = ParseFloatSetting("NoteSwayAmplitude", val, NoteSwayAmplitude, 0f, 1000f);
-                    }
-                    else if (key.Equals("NoteSwaySpeed", StringComparison.OrdinalIgnoreCase))
-                    {
-                        NoteSwaySpeed = ParseFloatSetting("NoteSwaySpeed", val, NoteSwaySpeed, 0f, 50f);
-                    }
-                    else if (key.Equals("NoteSwayDamping", StringComparison.OrdinalIgnoreCase))
-                    {
-                        NoteSwayDamping = ParseFlexibleBool(val, NoteSwayDamping);
-                    }
-                    else if (key.Equals("NoteSwayDampingTime", StringComparison.OrdinalIgnoreCase))
-                    {
-                        NoteSwayDampingTime = ParseFloatSetting("NoteSwayDampingTime", val, NoteSwayDampingTime, 0.01f, 30f);
-                    }
-                    else if (key.Equals("NoteSpeedChaos", StringComparison.OrdinalIgnoreCase) || key.Equals("EnableNoteSpeedChaos", StringComparison.OrdinalIgnoreCase))
-                    {
-                        EnableNoteSpeedChaos = ParseFlexibleBool(val, EnableNoteSpeedChaos);
-                    }
-                    else if (key.Equals("NoteSpeedChaosMin", StringComparison.OrdinalIgnoreCase))
-                    {
-                        NoteSpeedChaosMin = ParseFloatSetting("NoteSpeedChaosMin", val, NoteSpeedChaosMin, 0.05f, 10f);
-                    }
-                    else if (key.Equals("NoteSpeedChaosMax", StringComparison.OrdinalIgnoreCase))
-                    {
-                        NoteSpeedChaosMax = ParseFloatSetting("NoteSpeedChaosMax", val, NoteSpeedChaosMax, 0.05f, 10f);
-                    }
-                    else if (key.Equals("NoteSpeedChaosPerLane", StringComparison.OrdinalIgnoreCase))
-                    {
-                        NoteSpeedChaosPerLane = ParseFlexibleBool(val, NoteSpeedChaosPerLane);
-                    }
-                    else if (key.Equals("CustomNotes", StringComparison.OrdinalIgnoreCase) || key.Equals("EnableCustomNotes", StringComparison.OrdinalIgnoreCase))
-                    {
-                        EnableCustomNotes = ParseFlexibleBool(val, EnableCustomNotes);
-                    }
-                    else if (key.Equals("Sudden", StringComparison.OrdinalIgnoreCase) || key.Equals("SuddenPlus", StringComparison.OrdinalIgnoreCase))
-                    {
-                        SuddenPercent = ParseFloatSetting("Sudden", val.TrimEnd('%', ' '), SuddenPercent, 0f, 90f);
-                    }
-                    else if (key.Equals("Hidden", StringComparison.OrdinalIgnoreCase) || key.Equals("HiddenPlus", StringComparison.OrdinalIgnoreCase))
-                    {
-                        HiddenPercent = ParseFloatSetting("Hidden", val.TrimEnd('%', ' '), HiddenPercent, 0f, 90f);
-                    }
-                    else if (key.Equals("LaneCoverSoftness", StringComparison.OrdinalIgnoreCase))
-                    {
-                        LaneCoverSoftness = ParseFloatSetting("LaneCoverSoftness", val, LaneCoverSoftness, 0f, 500f);
-                    }
-                    else if (key.Equals("LaneCoverDebug", StringComparison.OrdinalIgnoreCase))
-                    {
-                        LaneCoverDebug = ParseFlexibleBool(val, LaneCoverDebug);
-                    }
-                    else if (key.Equals("CustomMarathon", StringComparison.OrdinalIgnoreCase) || key.Equals("EnableCustomMarathon", StringComparison.OrdinalIgnoreCase))
-                    {
-                        EnableCustomMarathon = ParseFlexibleBool(val, EnableCustomMarathon);
-                    }
-                    else if (key.Equals("CustomMarathonAutoNext", StringComparison.OrdinalIgnoreCase))
-                    {
-                        CustomMarathonAutoNext = ParseFloatSetting("CustomMarathonAutoNext", val, CustomMarathonAutoNext, 0f, 600f);
-                    }
+                    setting.Parse(parts[1].Trim());
+                    seenKeys.Add(setting.Key);
                 }
 
-                if (NoteSpeedChaosMin > NoteSpeedChaosMax)
+                if (unknownKeys.Count > 0)
                 {
-                    MelonLogger.Warning($"[SaveCustomKey] NoteSpeedChaosMin({NoteSpeedChaosMin:0.##})이 Max({NoteSpeedChaosMax:0.##})보다 큽니다 → 두 값을 맞바꿉니다.");
-                    float swap = NoteSpeedChaosMin;
-                    NoteSpeedChaosMin = NoteSpeedChaosMax;
-                    NoteSpeedChaosMax = swap;
+                    string message = $"[SaveCustomKey] 모르는 설정 이름이라 무시했습니다: {string.Join(", ", unknownKeys.ToArray())}";
+                    if (isReload)
+                        ModLog.Verbose(message);
+                    else
+                        MelonLogger.Warning(message);
                 }
 
-                if (SuddenPercent + HiddenPercent > 90f)
-                {
-                    float reduced = 90f - SuddenPercent;
-                    MelonLogger.Warning($"[SaveCustomKey] Sudden({SuddenPercent:0.#}%) + Hidden({HiddenPercent:0.#}%)이 90%를 넘어 노트가 안 보이게 됩니다 → Hidden을 {reduced:0.#}%로 줄입니다.");
-                    HiddenPercent = reduced;
-                }
+                Validate();
 
-                AppendSectionsMissingFrom(filePath, seenKeys);
-
-                string shapeStr = JudgmentBarShape == 2 ? "삼각(2)" : (JudgmentBarShape == 1 ? "캡슐(1)" : "사각(0)");
-                string rangeShapeStr = JudgmentBarRangeShape == -1 ? "추종(-1)" : (JudgmentBarRangeShape == 2 ? "삼각(2)" : (JudgmentBarRangeShape == 1 ? "캡슐(1)" : "사각(0)"));
-                string summary = $"AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, Shape={shapeStr}(범위:{rangeShapeStr}), Side={JudgmentBarSide}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}, NoteSpeedChaos={(EnableNoteSpeedChaos ? $"켜짐(배율 {NoteSpeedChaosMin:0.##}~{NoteSpeedChaosMax:0.##}, {(NoteSpeedChaosPerLane ? "레인별" : "노트별")})" : "꺼짐(0)")}, CustomNotes={(EnableCustomNotes ? "켜짐(1)" : "꺼짐(0)")}, Sudden={SuddenPercent:0.#}%, Hidden={HiddenPercent:0.#}%, CustomMarathon={(EnableCustomMarathon ? (CustomMarathonAutoNext > 0f ? $"켜짐({CustomMarathonAutoNext:0.#}초 자동)" : "켜짐(1)") : "꺼짐(0)")}";
+                // 파일 전체를 다시 쓰는 건 게임을 켤 때만 한다. 곡마다 하는 재로드 중에 하면, 마침 에디터가 저장하던
+                // 파일을 반쯤 읽고 "빠진 항목이 있다"며 덮어써 버릴 수 있다.
+                if (!isReload)
+                    RewriteIfOutdated(filePath, lines, seenKeys);
 
                 // 최초 로드는 전체를 남기고, 재로드는 바뀐 항목만 LogDiff가 남긴다.
                 // 플레이할 때마다 이 긴 줄이 찍히면 로그가 못 쓰게 되므로 재로드 시엔 상세 레벨로 내린다.
                 if (isReload)
-                    ModLog.Verbose($"[SaveCustomKey] 재로드 후 전체 설정 - {summary}");
+                    ModLog.Verbose($"[SaveCustomKey] 재로드 후 전체 설정 - {Summary()}");
                 else
-                    MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - {summary}");
+                    MelonLogger.Msg($"[SaveCustomKey] 설정 로드 완료 - {Summary()}");
             }
             catch (Exception ex)
             {
@@ -758,41 +795,112 @@ namespace sxtg2.Helpers
             }
         }
 
+        /// <summary>서로 얽힌 값들을 맞춘다. 각 값의 범위 검사는 읽을 때 이미 끝났다.</summary>
+        private static void Validate()
+        {
+            if (NoteSpeedChaosMin > NoteSpeedChaosMax)
+            {
+                MelonLogger.Warning($"[SaveCustomKey] NoteSpeedChaosMin({NoteSpeedChaosMin:0.##})이 Max({NoteSpeedChaosMax:0.##})보다 큽니다 → 두 값을 맞바꿉니다.");
+                float swap = NoteSpeedChaosMin;
+                NoteSpeedChaosMin = NoteSpeedChaosMax;
+                NoteSpeedChaosMax = swap;
+            }
+
+            if (SuddenPercent + HiddenPercent > 90f)
+            {
+                float reduced = 90f - SuddenPercent;
+                MelonLogger.Warning($"[SaveCustomKey] Sudden({SuddenPercent:0.#}%) + Hidden({HiddenPercent:0.#}%)이 90%를 넘어 노트가 안 보이게 됩니다 → Hidden을 {reduced:0.#}%로 줄입니다.");
+                HiddenPercent = reduced;
+            }
+
+            if (!EnableFadeIn && !EnableFadeOut)
+                return;
+
+            var band = LaneCover;
+            if (band.VisibleSpan < 10f)
+            {
+                // 서든+히든만으로는 항상 10% 이상 남으므로, 페이드를 끄면 다시 보인다.
+                MelonLogger.Warning($"[SaveCustomKey] 페이드 인/아웃까지 합치면 보이는 구간이 {Math.Max(0f, band.VisibleSpan):0.#}%뿐이라 노트가 거의 안 보입니다 " +
+                    $"(FadeIn 시작 {FadeInStart:0.#}%, FadeOut 끝 {Math.Max(0f, FadeOutStart - FadeOutLength):0.#}%) → 페이드 인/아웃을 끕니다.");
+                EnableFadeIn = false;
+                EnableFadeOut = false;
+            }
+            else if (band.FarOpaque < band.NearOpaque)
+            {
+                MelonLogger.Warning($"[SaveCustomKey] 페이드 인이 끝나기({band.FarOpaque:0.#}%) 전에 페이드 아웃이 시작돼({band.NearOpaque:0.#}%) 노트가 끝까지 완전히 진해지지 않습니다.");
+            }
+        }
+
+        /// <summary>
+        /// 파일이 구역 형식이 아니거나(이전 버전) 빠진 항목이 있으면, 지금 값으로 파일 전체를 구역 형식으로 다시 쓴다.
+        /// 값은 그대로 옮겨지고(별칭은 대표 이름으로), 원래 파일은 config.txt.bak으로 남긴다. 직접 단 주석은 백업에만 남는다.
+        /// </summary>
+        private static void RewriteIfOutdated(string filePath, string[] lines, HashSet<string> seenKeys)
+        {
+            bool sectioned = Array.Exists(lines, line => line.TrimStart().StartsWith(SectionMarker, StringComparison.Ordinal));
+            var missing = new List<string>();
+            foreach (var section in Sections)
+            {
+                foreach (var setting in section.Settings)
+                {
+                    if (!setting.Legacy && !seenKeys.Contains(setting.Key))
+                        missing.Add(setting.Key);
+                }
+            }
+
+            if (sectioned && missing.Count == 0)
+                return;
+
+            try
+            {
+                File.Copy(filePath, filePath + ".bak", overwrite: true);
+                File.WriteAllText(filePath, BuildConfigText(), Encoding.UTF8);
+                MelonLogger.Msg(sectioned
+                    ? $"[SaveCustomKey] 설정 파일에 없던 항목({string.Join(", ", missing.ToArray())})을 넣어 다시 정리했습니다. 원본은 config.txt.bak"
+                    : "[SaveCustomKey] 설정 파일을 카테고리 구역 형식으로 다시 정리했습니다. 값은 그대로이고, 원본은 config.txt.bak");
+            }
+            catch (Exception ex)
+            {
+                // 못 고쳐도 읽은 값은 그대로 쓴다. 다음 로드 때 다시 시도한다.
+                MelonLogger.Warning($"[SaveCustomKey] 설정 파일을 구역 형식으로 정리하지 못했습니다: {ex.Message}");
+            }
+        }
+
+        private static IEnumerable<KeyValuePair<string, string>> CurrentValues()
+        {
+            foreach (var section in Sections)
+            {
+                foreach (var setting in section.Settings)
+                {
+                    if (!setting.Legacy)
+                        yield return new KeyValuePair<string, string>(setting.Key, setting.Format());
+                }
+            }
+        }
+
+        private static string Summary()
+        {
+            var parts = new List<string>();
+            foreach (var section in Sections)
+            {
+                var values = new List<string>();
+                foreach (var setting in section.Settings)
+                {
+                    if (!setting.Legacy)
+                        values.Add($"{setting.Key}={setting.Format()}");
+                }
+                parts.Add($"[{section.Title}] {string.Join(", ", values.ToArray())}");
+            }
+            return string.Join(" ", parts.ToArray());
+        }
+
         /// <summary>재로드 전후를 비교해 실제로 바뀐 항목만 로그로 남기기 위한 스냅샷.</summary>
         private static Dictionary<string, string> Snapshot()
         {
-            return new Dictionary<string, string>(StringComparer.Ordinal)
-            {
-                { "AutoPlay", OnOffText(AutoPlay) },
-                { "AllPerfect", OnOffText(AllPerfect) },
-                { "BlockSave", OnOffText(BlockSave) },
-                { "EnableJudgmentBar", OnOffText(EnableJudgmentBar) },
-                { "JudgmentBarVertical", JudgmentBarVertical ? "세로(1)" : "가로(0)" },
-                { "JudgmentBarShape", ShapeText(JudgmentBarShape) },
-                { "JudgmentBarRangeShape", ShapeText(JudgmentBarRangeShape) },
-                { "JudgmentBarSide", JudgmentBarSide ?? "(null)" },
-                { "EnableKeyViewer", OnOffText(EnableKeyViewer) },
-                { "KeyViewerPressedColor", ColorText(KeyViewerPressedColor) },
-                { "KeyViewerNormalColor", ColorText(KeyViewerNormalColor) },
-                { "KeyViewerGatePressedColor", ColorText(KeyViewerGatePressedColor) },
-                { "MaxScore", NumText(MaxScore, "0.###") },
-                { "NoteSway", OnOffText(EnableNoteSway) },
-                { "NoteSwayAmplitude", NumText(NoteSwayAmplitude, "0.##") },
-                { "NoteSwaySpeed", NumText(NoteSwaySpeed, "0.##") },
-                { "NoteSwayDamping", OnOffText(NoteSwayDamping) },
-                { "NoteSwayDampingTime", NumText(NoteSwayDampingTime, "0.##") },
-                { "NoteSpeedChaos", OnOffText(EnableNoteSpeedChaos) },
-                { "NoteSpeedChaosMin", NumText(NoteSpeedChaosMin, "0.##") },
-                { "NoteSpeedChaosMax", NumText(NoteSpeedChaosMax, "0.##") },
-                { "NoteSpeedChaosPerLane", NoteSpeedChaosPerLane ? "레인별(1)" : "노트별(0)" },
-                { "CustomNotes", OnOffText(EnableCustomNotes) },
-                { "Sudden", NumText(SuddenPercent, "0.#") + "%" },
-                { "Hidden", NumText(HiddenPercent, "0.#") + "%" },
-                { "LaneCoverSoftness", NumText(LaneCoverSoftness, "0.#") },
-                { "LaneCoverDebug", OnOffText(LaneCoverDebug) },
-                { "CustomMarathon", OnOffText(EnableCustomMarathon) },
-                { "CustomMarathonAutoNext", NumText(CustomMarathonAutoNext, "0.#") }
-            };
+            var snapshot = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var entry in CurrentValues())
+                snapshot[entry.Key] = entry.Value;
+            return snapshot;
         }
 
         private static void LogDiff(Dictionary<string, string> before, Dictionary<string, string> after, string reason)
@@ -815,87 +923,11 @@ namespace sxtg2.Helpers
                 MelonLogger.Msg($"[SaveCustomKey]   · {change}");
         }
 
-        private static string OnOffText(bool value) => value ? "켜짐(1)" : "꺼짐(0)";
-
-        private static string ShapeText(int shape)
-        {
-            switch (shape)
-            {
-                case -1: return "추종(-1)";
-                case 1: return "캡슐(1)";
-                case 2: return "삼각(2)";
-                default: return $"사각({shape})";
-            }
-        }
-
         private static string ColorText(Color color) => "#" + ColorUtility.ToHtmlStringRGBA(color);
 
         private static string NumText(float value, string format) => value.ToString(format, CultureInfo.InvariantCulture);
 
         public static bool IsMaxScoreCustom => Math.Abs(MaxScore - DefaultMaxScore) > 0.001f;
-
-        private static void AppendSectionsMissingFrom(string filePath, HashSet<string> seenKeys)
-        {
-            var sections = new List<Action<StringBuilder>>();
-            var names = new List<string>();
-
-            if (!seenKeys.Contains("JudgmentBarCapsule") && !seenKeys.Contains("JudgmentBarShape"))
-            {
-                sections.Add(AppendJudgmentBarCapsuleSection);
-                names.Add("JudgmentBarCapsule");
-            }
-
-            if (!seenKeys.Contains("JudgmentBarSide") && !seenKeys.Contains("JudgmentBarPosition"))
-            {
-                sections.Add(AppendJudgmentBarSideSection);
-                names.Add("JudgmentBarSide");
-            }
-
-            if (!seenKeys.Contains("KeyViewerPressedColor") && !seenKeys.Contains("KeyViewerNormalColor"))
-            {
-                sections.Add(AppendKeyViewerColorSection);
-                names.Add("KeyViewerColor");
-            }
-
-            if (!seenKeys.Contains("MaxScore") && !seenKeys.Contains("ScoreLimit"))
-            {
-                sections.Add(AppendMaxScoreSection);
-                names.Add("MaxScore");
-            }
-
-            if (!seenKeys.Contains("NoteSway") && !seenKeys.Contains("EnableNoteSway"))
-            {
-                sections.Add(AppendNoteSwaySection);
-                names.Add("NoteSway");
-            }
-
-            if (!seenKeys.Contains("NoteSpeedChaos") && !seenKeys.Contains("EnableNoteSpeedChaos"))
-            {
-                sections.Add(AppendNoteSpeedChaosSection);
-                names.Add("NoteSpeedChaos");
-            }
-
-            if (!seenKeys.Contains("CustomNotes") && !seenKeys.Contains("EnableCustomNotes"))
-            {
-                sections.Add(AppendCustomNotesSection);
-                names.Add("CustomNotes");
-            }
-
-            if (!seenKeys.Contains("Sudden") && !seenKeys.Contains("SuddenPlus") && !seenKeys.Contains("Hidden") && !seenKeys.Contains("HiddenPlus"))
-            {
-                sections.Add(AppendLaneCoverSection);
-                names.Add("Sudden/Hidden");
-            }
-
-            if (!seenKeys.Contains("CustomMarathon") && !seenKeys.Contains("EnableCustomMarathon"))
-            {
-                sections.Add(AppendCustomMarathonSection);
-                names.Add("CustomMarathon");
-            }
-
-            if (sections.Count > 0)
-                AppendMissingSections(filePath, sections, string.Join(", ", names.ToArray()));
-        }
 
         public static float ParseFloatSetting(string key, string val, float defaultValue, float min, float max)
         {

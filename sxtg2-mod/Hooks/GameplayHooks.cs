@@ -115,17 +115,23 @@ namespace sxtg2.Hooks
                 if (__result == null || !SaveCustomKeyConfig.EnableCustomNotes)
                     return;
 
-                var noteObject = __result.gameObject;
-                if (noteObject == null)
-                    return;
-
-                ApplyCustomSprites(__result, noteObject);
-                NoteRendererRecovery.RecoverNoteRenderer(noteObject);
+                ApplyCustomSkin(__result);
             }
             catch (Exception ex)
             {
                 MelonLogger.Warning($"[NoteSpriteHook] Generate 후처리 오류: {ex.Message}");
             }
+        }
+
+        /// <summary>노트 하나에 CustomNotes 스프라이트를 입힌다. 플레이 노트와 인벤토리 미리보기 노트가 같이 쓴다.</summary>
+        internal static void ApplyCustomSkin(RG_NoteObject note)
+        {
+            var noteObject = note.gameObject;
+            if (noteObject == null)
+                return;
+
+            ApplyCustomSprites(note, noteObject);
+            NoteRendererRecovery.RecoverNoteRenderer(noteObject);
         }
 
         private static void ApplyCustomSprites(RG_NoteObject noteInstance, GameObject noteObject)
@@ -244,6 +250,10 @@ namespace sxtg2.Hooks
     /// 판정선은 프리팹의 앵커 기준점이 아니라 "지금 노트가 그려진 자리 - 아직 남은 낙하 거리"로 잰다.
     /// 앵커 기준점으로 계산하면 판정선이 실제보다 화면 아래쪽(캔버스 y -435, 실제 약 -180)으로 잡혀
     /// 노트가 통째로 안 보였다(2026-10-11 실게임). 경계는 매 프레임 다시 계산하고, 계산에 실패하면 가리지 않는다.
+    ///
+    /// 페이드 인/아웃(서서히 드러나기/사라지기)은 같은 마스크의 softness로 만든다. UI/Default 셰이더는
+    /// 클립 경계에서 안쪽으로 softness/2 거리까지 알파를 0→1로 올리므로, 페이드 구간 길이의 2배를 softness로 준다.
+    /// 서든/히든과 페이드 설정을 경계 위치로 합치는 규칙은 LaneCoverBand에 있다.
     /// </summary>
     [HarmonyPatch]
     public static class LaneCoverHook
@@ -254,6 +264,13 @@ namespace sxtg2.Hooks
             public RectTransform ShortNote;
             public RectMask2D Mask;
             public Vector4 LastPadding;
+            public int LastSoftness;
+        }
+
+        private sealed class ClipResult
+        {
+            public Vector4 Padding;
+            public int Softness;
         }
 
         // 가리지 않는 쪽에 주는 패딩. 음수 패딩은 클립 영역을 바깥으로 넓힌다.
@@ -276,10 +293,13 @@ namespace sxtg2.Hooks
 
         // 디버그 오버레이용: 마지막으로 계산한 판정선/경계의 월드 좌표와 그 캔버스.
         private static bool _hasDebug;
-        private static Vector3 _debugJudge, _debugAnchorJudge, _debugLower, _debugUpper;
-        private static bool _debugHasLower, _debugHasUpper;
+        private static Vector3 _debugJudge, _debugAnchorJudge, _debugNear, _debugFar, _debugNearFade, _debugFarFade;
+        private static bool _debugHasNear, _debugHasFar, _debugHasNearFade, _debugHasFarFade;
         private static Canvas _debugCanvas;
         private static Texture2D _whiteTex;
+
+        // softness 상한(캔버스 단위). 소실점 근처에서 서서히 구간이 터무니없이 길게 잡혀도 int로 안전하게 넣기 위함.
+        private const float MaxSoftness = 20000f;
 
         public static void Reset()
         {
@@ -292,7 +312,7 @@ namespace sxtg2.Hooks
             _hasDebug = false;
         }
 
-        private static bool Enabled => SaveCustomKeyConfig.SuddenPercent > 0f || SaveCustomKeyConfig.HiddenPercent > 0f;
+        private static bool Enabled => SaveCustomKeyConfig.LaneCover.Enabled;
 
         [HarmonyPatch(typeof(NoteGenerator), "Generate")]
         [HarmonyPostfix]
@@ -326,7 +346,7 @@ namespace sxtg2.Hooks
                 if (mask == null)
                     mask = __result.gameObject.AddComponent<RectMask2D>();
 
-                var state = new CoverState { Root = root, ShortNote = shortNote, Mask = mask, LastPadding = new Vector4(float.NaN, 0f, 0f, 0f) };
+                var state = new CoverState { Root = root, ShortNote = shortNote, Mask = mask, LastPadding = new Vector4(float.NaN, 0f, 0f, 0f), LastSoftness = -1 };
                 States[__result.GetInstanceID()] = state;
                 Apply(state);
             }
@@ -356,19 +376,26 @@ namespace sxtg2.Hooks
 
         private static void Apply(CoverState state)
         {
-            Vector4 padding = ComputePadding(state) ?? NoClip;
+            var clip = ComputeClip(state);
+            Vector4 padding = clip?.Padding ?? NoClip;
+            int softness = clip?.Softness ?? Mathf.RoundToInt(SaveCustomKeyConfig.LaneCoverSoftness);
 
             // padding을 넣을 때마다 자식들의 클리핑이 다시 계산되므로 실제로 바뀐 경우에만 넣는다.
             if (float.IsNaN(state.LastPadding.x) || (padding - state.LastPadding).sqrMagnitude > 0.25f)
             {
                 state.Mask.padding = padding;
-                state.Mask.softness = new Vector2Int(0, Mathf.RoundToInt(SaveCustomKeyConfig.LaneCoverSoftness));
                 state.LastPadding = padding;
+            }
+
+            if (softness != state.LastSoftness)
+            {
+                state.Mask.softness = new Vector2Int(0, softness);
+                state.LastSoftness = softness;
             }
         }
 
-        /// <summary>보이는 띠에 해당하는 RectMask2D 패딩. 계산할 수 없으면 null(= 가리지 않음).</summary>
-        private static Vector4? ComputePadding(CoverState state)
+        /// <summary>보이는 띠에 해당하는 RectMask2D 패딩과 흐림 폭. 계산할 수 없으면 null(= 가리지 않음).</summary>
+        private static ClipResult ComputeClip(CoverState state)
         {
             RectTransform shortNote = state.ShortNote;
             var space = shortNote.parent as RectTransform;
@@ -383,22 +410,24 @@ namespace sxtg2.Hooks
             // CalculatePosition은 shortNote.anchoredPosition.y = (Timing - curTime) * 속도로 둔다.
             // 그러니 "지금 노트 그림의 중심 - 아직 남은 낙하 거리"가 노트가 맞는 자리(판정선)다.
             Vector3 upWorld = space.TransformVector(Vector3.up);
-            Vector3 judgeWorld = shortNote.TransformPoint(shortNote.rect.center) - upWorld * shortNote.anchoredPosition.y;
+            Vector3 headWorld = shortNote.TransformPoint(shortNote.rect.center);
+            Vector3 judgeWorld = headWorld - upWorld * shortNote.anchoredPosition.y;
 
-            if (!TryGetLaneDistances(state.Root, cam, judgeWorld, upWorld, out float nearDistance, out float farDistance, out float judgeScreenY))
+            var band = SaveCustomKeyConfig.LaneCover;
+            if (!TryGetLaneDistances(state.Root, cam, judgeWorld, upWorld, band, out var lane))
                 return null;
 
-            float sudden = SaveCustomKeyConfig.SuddenPercent / 100f;
-            float hidden = SaveCustomKeyConfig.HiddenPercent / 100f;
-            Vector3 nearWorld = judgeWorld + upWorld * nearDistance;
-            Vector3 farWorld = judgeWorld + upWorld * farDistance;
+            bool hasHidden = band.HasNear;
+            bool hasSudden = band.HasFar;
+            Vector3 nearWorld = judgeWorld + upWorld * lane.Near;
+            Vector3 farWorld = judgeWorld + upWorld * lane.Far;
 
             // 여기부터는 RectMask2D가 실제로 쓰는 캔버스·사각형 기준(Clipping.FindCullAndClipWorldRect와 같은 계산).
             float nearY = canvasSpace.InverseTransformPoint(nearWorld).y;
             float farY = canvasSpace.InverseTransformPoint(farWorld).y;
             bool upward = canvasSpace.InverseTransformVector(upWorld).y > 0f;
-            bool hasLower = upward ? hidden > 0f : sudden > 0f;
-            bool hasUpper = upward ? sudden > 0f : hidden > 0f;
+            bool hasLower = upward ? hasHidden : hasSudden;
+            bool hasUpper = upward ? hasSudden : hasHidden;
             float lower = upward ? nearY : farY;
             float upper = upward ? farY : nearY;
             Rect maskRect = state.Mask.canvasRect;
@@ -412,21 +441,55 @@ namespace sxtg2.Hooks
                 return null;
             }
 
-            RecordDebug(maskCanvas, judgeWorld, space, shortNote, upward ? nearWorld : farWorld, upward ? farWorld : nearWorld, hasLower, hasUpper);
-            LogJudgeLine(cam, judgeScreenY, nearWorld, farWorld, shortNote);
+            // 경계마다 흐림 폭: 페이드 구간이 있으면 그 길이의 2배(셰이더는 softness/2 안쪽에서 알파 1), 없으면 LaneCoverSoftness.
+            Vector3 nearFadeWorld = judgeWorld + upWorld * lane.NearOpaque;
+            Vector3 farFadeWorld = judgeWorld + upWorld * lane.FarOpaque;
+            bool hiddenFades = band.NearFades;
+            bool suddenFades = band.FarFades;
+            float hiddenSoftness = hiddenFades
+                ? 2f * Mathf.Abs(canvasSpace.InverseTransformPoint(nearFadeWorld).y - nearY)
+                : SaveCustomKeyConfig.LaneCoverSoftness;
+            float suddenSoftness = suddenFades
+                ? 2f * Mathf.Abs(canvasSpace.InverseTransformPoint(farFadeWorld).y - farY)
+                : SaveCustomKeyConfig.LaneCoverSoftness;
 
-            return new Vector4(
-                -Unbounded,
-                hasLower ? lower - maskRect.yMin : -Unbounded,
-                -Unbounded,
-                hasUpper ? maskRect.yMax - upper : -Unbounded);
+            // softness는 위아래 경계에 똑같이 걸려서 경계마다 따로 줄 수 없다. 마스크는 노트마다 따로 있으니
+            // 노트 머리가 가까운 쪽 경계의 폭을 쓴다. 머리는 한 번에 한 경계 근처에만 있으므로 머리가 드러나고 사라지는 건
+            // 정확하다. 두 경계에 동시에 걸칠 만큼 긴 홀드 몸통만 먼 쪽 경계의 흐림 폭이 달라질 수 있다.
+            float softness;
+            if (!hasSudden)
+                softness = hiddenSoftness;
+            else if (!hasHidden)
+                softness = suddenSoftness;
+            else
+            {
+                float headY = canvasSpace.InverseTransformPoint(headWorld).y;
+                softness = Mathf.Abs(headY - nearY) <= Mathf.Abs(headY - farY) ? hiddenSoftness : suddenSoftness;
+            }
+
+            RecordDebug(maskCanvas, judgeWorld, space, shortNote,
+                nearWorld, farWorld, nearFadeWorld, farFadeWorld,
+                hasHidden, hasSudden, hasHidden && hiddenFades, hasSudden && suddenFades);
+            LogJudgeLine(cam, lane.JudgeScreenY, band, nearWorld, farWorld, nearFadeWorld, farFadeWorld, shortNote);
+
+            return new ClipResult
+            {
+                Padding = new Vector4(
+                    -Unbounded,
+                    hasLower ? lower - maskRect.yMin : -Unbounded,
+                    -Unbounded,
+                    hasUpper ? maskRect.yMax - upper : -Unbounded),
+                Softness = Mathf.RoundToInt(Mathf.Clamp(softness, 0f, MaxSoftness))
+            };
         }
 
         private sealed class LaneDistances
         {
             public int Frame;
-            public float Near;
-            public float Far;
+            public float Near;        // 판정선 쪽 경계(히든 / 페이드 아웃 끝)
+            public float Far;         // 화면 끝 쪽 경계(서든 / 페이드 인 시작)
+            public float NearOpaque;  // 페이드 아웃이 시작되는 곳(여기부터 위로는 완전히 보임)
+            public float FarOpaque;   // 페이드 인이 끝나는 곳(여기부터 아래로는 완전히 보임)
             public float JudgeScreenY;
         }
 
@@ -435,23 +498,17 @@ namespace sxtg2.Hooks
         private static readonly Dictionary<int, LaneDistances> LaneCache = new Dictionary<int, LaneDistances>();
 
         /// <summary>
-        /// 판정선에서 레인을 따라 몇 로컬 단위를 가야 화면에서 히든 경계(near)·서든 경계(far)가 되는지.
+        /// 판정선에서 레인을 따라 몇 로컬 단위를 가야 화면에서 band의 각 위치(경계·페이드 끝)가 되는지.
         /// 기어가 원근 카메라 앞 깊숙이(Gear Layer z = 1256) 그려지므로 캔버스 좌표가 아니라 카메라로 투영한
         /// 실제 화면 픽셀로 비율을 잰다. 판정선 ~ 화면 끝(노트가 오는 쪽)이 100%다.
         /// 같은 레인의 노트는 판정선을 공유하므로 레인(노트 루트의 부모)마다 프레임당 한 번만 계산한다.
         /// </summary>
         private static bool TryGetLaneDistances(RectTransform root, Camera cam, Vector3 judgeWorld, Vector3 upWorld,
-            out float near, out float far, out float judgeScreenY)
+            LaneCoverBand band, out LaneDistances lane)
         {
-            near = far = judgeScreenY = 0f;
             int key = root.parent != null ? root.parent.GetInstanceID() : root.GetInstanceID();
-            if (LaneCache.TryGetValue(key, out var cached) && cached.Frame == Time.frameCount)
-            {
-                near = cached.Near;
-                far = cached.Far;
-                judgeScreenY = cached.JudgeScreenY;
+            if (LaneCache.TryGetValue(key, out lane) && lane.Frame == Time.frameCount)
                 return true;
-            }
 
             Vector2 judge = RectTransformUtility.WorldToScreenPoint(cam, judgeWorld);
             Vector2 probe = RectTransformUtility.WorldToScreenPoint(cam, judgeWorld + upWorld * 10f) - judge;
@@ -468,11 +525,18 @@ namespace sxtg2.Hooks
                 edge = farthest;
             float span = edge - judge.y;
 
-            near = FindDistance(cam, judgeWorld, upWorld, judge.y + span * (SaveCustomKeyConfig.HiddenPercent / 100f), sign);
-            far = FindDistance(cam, judgeWorld, upWorld, judge.y + span * (1f - SaveCustomKeyConfig.SuddenPercent / 100f), sign);
-            judgeScreenY = Screen.height - judge.y;
+            float At(float percent) => FindDistance(cam, judgeWorld, upWorld, judge.y + span * (percent / 100f), sign);
 
-            LaneCache[key] = new LaneDistances { Frame = Time.frameCount, Near = near, Far = far, JudgeScreenY = judgeScreenY };
+            lane = new LaneDistances
+            {
+                Frame = Time.frameCount,
+                Near = At(band.NearEdge),
+                Far = At(band.FarEdge),
+                NearOpaque = band.NearFades ? At(band.NearOpaque) : 0f,
+                FarOpaque = band.FarFades ? At(band.FarOpaque) : 0f,
+                JudgeScreenY = Screen.height - judge.y
+            };
+            LaneCache[key] = lane;
             return true;
         }
 
@@ -562,7 +626,9 @@ namespace sxtg2.Hooks
             return true;
         }
 
-        private static void RecordDebug(Canvas canvas, Vector3 judgeWorld, RectTransform space, RectTransform shortNote, Vector3 lowerWorld, Vector3 upperWorld, bool hasLower, bool hasUpper)
+        private static void RecordDebug(Canvas canvas, Vector3 judgeWorld, RectTransform space, RectTransform shortNote,
+            Vector3 nearWorld, Vector3 farWorld, Vector3 nearFadeWorld, Vector3 farFadeWorld,
+            bool hasNear, bool hasFar, bool hasNearFade, bool hasFarFade)
         {
             if (!SaveCustomKeyConfig.LaneCoverDebug)
                 return;
@@ -572,16 +638,20 @@ namespace sxtg2.Hooks
             _debugCanvas = canvas;
             _debugJudge = judgeWorld;
             _debugAnchorJudge = space.TransformPoint(new Vector3(0f, anchorY, 0f));
-            _debugLower = lowerWorld;
-            _debugUpper = upperWorld;
-            _debugHasLower = hasLower;
-            _debugHasUpper = hasUpper;
+            _debugNear = nearWorld;
+            _debugFar = farWorld;
+            _debugNearFade = nearFadeWorld;
+            _debugFarFade = farFadeWorld;
+            _debugHasNear = hasNear;
+            _debugHasFar = hasFar;
+            _debugHasNearFade = hasNearFade;
+            _debugHasFarFade = hasFarFade;
             _hasDebug = true;
         }
 
         /// <summary>
-        /// LaneCoverDebug=1이면 계산한 판정선(빨강)·옛 앵커 기준 판정선(노랑)·보이는 띠 경계(하늘색)를 화면에 가로선으로 그린다.
-        /// 스크린샷 한 장으로 계산이 실제 판정선과 맞는지 확인하기 위한 것.
+        /// LaneCoverDebug=1이면 계산한 판정선(빨강)·옛 앵커 기준 판정선(노랑)·가림 경계(하늘색)·서서히 구간 끝(연두)을
+        /// 화면에 가로선으로 그린다. 스크린샷 한 장으로 계산이 실제 판정선과 맞는지 확인하기 위한 것.
         /// </summary>
         public static void DrawDebug()
         {
@@ -599,10 +669,16 @@ namespace sxtg2.Hooks
             Camera cam = root.renderMode == RenderMode.ScreenSpaceOverlay ? null : root.worldCamera;
             DrawLine(cam, _debugJudge, new Color(1f, 0.15f, 0.15f, 0.95f), "판정선(계산)");
             DrawLine(cam, _debugAnchorJudge, new Color(1f, 0.9f, 0.1f, 0.95f), "판정선(앵커, 옛 계산)");
-            if (_debugHasLower)
-                DrawLine(cam, _debugLower, new Color(0.2f, 0.9f, 1f, 0.95f), "보이는 띠 아래");
-            if (_debugHasUpper)
-                DrawLine(cam, _debugUpper, new Color(0.2f, 0.9f, 1f, 0.95f), "보이는 띠 위");
+            var edgeColor = new Color(0.2f, 0.9f, 1f, 0.95f);
+            var fadeColor = new Color(0.55f, 1f, 0.35f, 0.95f);
+            if (_debugHasNear)
+                DrawLine(cam, _debugNear, edgeColor, "아래 가림 경계(히든 / 페이드 아웃 끝)");
+            if (_debugHasFar)
+                DrawLine(cam, _debugFar, edgeColor, "위 가림 경계(서든 / 페이드 인 시작)");
+            if (_debugHasNearFade)
+                DrawLine(cam, _debugNearFade, fadeColor, "페이드 아웃 시작");
+            if (_debugHasFarFade)
+                DrawLine(cam, _debugFarFade, fadeColor, "페이드 인 끝");
         }
 
         private static void DrawLine(Camera cam, Vector3 world, Color color, string label)
@@ -616,17 +692,22 @@ namespace sxtg2.Hooks
         }
 
         // 처음 적용할 때와, 판정선이 눈에 띄게 움직였을 때만 남긴다(씬마다 움직임 로그는 4줄까지). 좌표는 화면 위에서부터의 픽셀.
-        private static void LogJudgeLine(Camera cam, float judgeScreenY, Vector3 nearWorld, Vector3 farWorld, RectTransform shortNote)
+        private static void LogJudgeLine(Camera cam, float judgeScreenY, LaneCoverBand cover, Vector3 nearWorld, Vector3 farWorld,
+            Vector3 nearFadeWorld, Vector3 farFadeWorld, RectTransform shortNote)
         {
             if (!float.IsNaN(_loggedJudgeY) && (Mathf.Abs(judgeScreenY - _loggedJudgeY) < 20f || _moveLogCount >= 4))
                 return;
 
-            float nearY = Screen.height - RectTransformUtility.WorldToScreenPoint(cam, nearWorld).y;
-            float farY = Screen.height - RectTransformUtility.WorldToScreenPoint(cam, farWorld).y;
-            string band = $"히든 경계 y {nearY:0}, 서든 경계 y {farY:0}";
+            float ScreenTopY(Vector3 world) => Screen.height - RectTransformUtility.WorldToScreenPoint(cam, world).y;
+            string band = $"아래 경계 y {ScreenTopY(nearWorld):0}, 위 경계 y {ScreenTopY(farWorld):0}";
+            if (cover.NearFades)
+                band += $", 페이드 아웃 시작 y {ScreenTopY(nearFadeWorld):0}";
+            if (cover.FarFades)
+                band += $", 페이드 인 끝 y {ScreenTopY(farFadeWorld):0}";
             if (float.IsNaN(_loggedJudgeY))
             {
-                ModLog.Msg($"[LaneCover] 서든 {SaveCustomKeyConfig.SuddenPercent:0.#}% / 히든 {SaveCustomKeyConfig.HiddenPercent:0.#}% 적용 " +
+                ModLog.Msg($"[LaneCover] 서든 {SaveCustomKeyConfig.SuddenPercent:0.#}% / 히든 {SaveCustomKeyConfig.HiddenPercent:0.#}% / " +
+                    $"페이드 인 {(SaveCustomKeyConfig.EnableFadeIn ? "켜짐" : "꺼짐")} / 페이드 아웃 {(SaveCustomKeyConfig.EnableFadeOut ? "켜짐" : "꺼짐")} 적용: {cover} " +
                     $"(화면 {Screen.width}x{Screen.height}, 판정선 y {judgeScreenY:0}, {band}, " +
                     $"노트 셰이더 {shortNote.GetComponent<Image>()?.materialForRendering?.shader?.name ?? "(없음)"})");
             }

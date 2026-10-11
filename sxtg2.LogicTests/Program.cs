@@ -1,3 +1,4 @@
+using sxtg2.Helpers;
 using sxtg2.Loaders;
 
 namespace sxtg2.LogicTests;
@@ -15,6 +16,11 @@ internal static class Program
             ("ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd", ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd),
             ("ParseBmsFileWithStatistics_UsesCacheForSamePath", ParseBmsFileWithStatistics_UsesCacheForSamePath),
             ("ParseFlexibleBool_SupportsComprehensiveTrueFalseKeywords", ParseFlexibleBool_SupportsComprehensiveTrueFalseKeywords),
+            ("LaneCoverBand_OffByDefault", LaneCoverBand_OffByDefault),
+            ("LaneCoverBand_SuddenHiddenAreHardEdges", LaneCoverBand_SuddenHiddenAreHardEdges),
+            ("LaneCoverBand_FadeInAndOutAlone", LaneCoverBand_FadeInAndOutAlone),
+            ("LaneCoverBand_StricterEdgeWinsOnSameSide", LaneCoverBand_StricterEdgeWinsOnSameSide),
+            ("LaneCoverBand_FadeEndsAreClampedToLane", LaneCoverBand_FadeEndsAreClampedToLane),
         };
 
         var failed = new List<string>();
@@ -217,6 +223,73 @@ internal static class Program
             return false;
 
         return defaultValue;
+    }
+
+    private static void LaneCoverBand_OffByDefault()
+    {
+        // 기본값: 서든/히든 0, 페이드 꺼짐(위치·길이는 기본값이 들어 있어도 꺼져 있으면 영향 없음)
+        var band = LaneCoverBand.From(0f, 0f, false, 100f, 20f, false, 20f, 20f);
+        Assert.True(!band.Enabled, $"아무것도 안 켰는데 가림이 켜졌습니다: {band}");
+
+        // 켜도 길이 0 + 화면 끝/판정선에서 시작하면 효과가 없다.
+        band = LaneCoverBand.From(0f, 0f, true, 100f, 0f, true, 0f, 0f);
+        Assert.True(!band.Enabled, $"효과 없는 페이드인데 가림이 켜졌습니다: {band}");
+    }
+
+    private static void LaneCoverBand_SuddenHiddenAreHardEdges()
+    {
+        var band = LaneCoverBand.From(30f, 20f, false, 100f, 20f, false, 20f, 20f);
+        AssertBand(band, nearEdge: 20f, nearOpaque: 20f, farOpaque: 70f, farEdge: 70f);
+        Assert.True(band.HasNear && band.HasFar, "서든/히든 경계가 둘 다 있어야 합니다.");
+        Assert.True(!band.NearFades && !band.FarFades, "서든/히든만 켜면 페이드 구간이 없어야 합니다.");
+    }
+
+    private static void LaneCoverBand_FadeInAndOutAlone()
+    {
+        // 페이드 인: 화면 끝(100)에서 나타나기 시작해 20% 내려오면 완전히 보임
+        var fadeIn = LaneCoverBand.From(0f, 0f, true, 100f, 20f, false, 20f, 20f);
+        AssertBand(fadeIn, nearEdge: 0f, nearOpaque: 0f, farOpaque: 80f, farEdge: 100f);
+        Assert.True(fadeIn.HasFar && fadeIn.FarFades && !fadeIn.HasNear, $"페이드 인만 켰을 때 결과가 다릅니다: {fadeIn}");
+
+        // 페이드 아웃: 40%에서 흐려지기 시작해 10%에서 완전히 사라짐
+        var fadeOut = LaneCoverBand.From(0f, 0f, false, 100f, 20f, true, 40f, 30f);
+        AssertBand(fadeOut, nearEdge: 10f, nearOpaque: 40f, farOpaque: 100f, farEdge: 100f);
+        Assert.True(fadeOut.HasNear && fadeOut.NearFades && !fadeOut.HasFar, $"페이드 아웃만 켰을 때 결과가 다릅니다: {fadeOut}");
+    }
+
+    private static void LaneCoverBand_StricterEdgeWinsOnSameSide()
+    {
+        // 페이드 인(50에서 시작)이 서든 경계(70)보다 많이 가린다 → 경계 50, 30부터 완전히 보임
+        var band = LaneCoverBand.From(30f, 0f, true, 50f, 20f, false, 20f, 20f);
+        AssertBand(band, nearEdge: 0f, nearOpaque: 0f, farOpaque: 30f, farEdge: 50f);
+
+        // 페이드 인이 서든에 가려진 곳(90)에서 시작 → 서든 경계 70에서 투명하게 나와, 페이드 설정대로 60부터 완전히 보임
+        band = LaneCoverBand.From(30f, 0f, true, 90f, 30f, false, 20f, 20f);
+        AssertBand(band, nearEdge: 0f, nearOpaque: 0f, farOpaque: 60f, farEdge: 70f);
+
+        // 페이드가 통째로 서든에 가려지면 칼같은 서든 경계만 남는다
+        band = LaneCoverBand.From(30f, 0f, true, 100f, 20f, false, 20f, 20f);
+        AssertBand(band, nearEdge: 0f, nearOpaque: 0f, farOpaque: 70f, farEdge: 70f);
+        Assert.True(!band.FarFades, "서든에 가려진 페이드 인은 페이드 구간이 없어야 합니다.");
+
+        // 히든(30)이 페이드 아웃 끝(0)보다 많이 가린다 → 경계 30, 페이드 아웃 시작 40까지 서서히
+        band = LaneCoverBand.From(0f, 30f, false, 100f, 20f, true, 40f, 40f);
+        AssertBand(band, nearEdge: 30f, nearOpaque: 40f, farOpaque: 100f, farEdge: 100f);
+    }
+
+    private static void LaneCoverBand_FadeEndsAreClampedToLane()
+    {
+        // 길이가 시작 위치보다 길면 판정선(0)에서 끝난다
+        var band = LaneCoverBand.From(0f, 0f, true, 30f, 80f, true, 10f, 50f);
+        AssertBand(band, nearEdge: 0f, nearOpaque: 10f, farOpaque: 0f, farEdge: 30f);
+        Assert.True(Math.Abs(band.VisibleSpan - 30f) < 0.001f, $"보이는 구간 길이가 30이어야 합니다: {band}");
+    }
+
+    private static void AssertBand(LaneCoverBand band, float nearEdge, float nearOpaque, float farOpaque, float farEdge)
+    {
+        bool Same(float a, float b) => Math.Abs(a - b) < 0.001f;
+        Assert.True(Same(band.NearEdge, nearEdge) && Same(band.NearOpaque, nearOpaque) && Same(band.FarOpaque, farOpaque) && Same(band.FarEdge, farEdge),
+            $"기대 {nearEdge}/{nearOpaque}/{farOpaque}/{farEdge}, 실제 {band.NearEdge}/{band.NearOpaque}/{band.FarOpaque}/{band.FarEdge}");
     }
 
     private static string WriteTempBms(string content)

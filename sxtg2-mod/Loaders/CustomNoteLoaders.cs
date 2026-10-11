@@ -10,7 +10,15 @@ namespace sxtg2.Loaders
     public static class CustomNoteSpriteLoader
     {
         private const string LogPrefix = "[CustomNoteSpriteLoader]";
+        // 인벤토리 목록 칸에 쓰는 그림. 노트 스프라이트가 아니므로 노트 매칭에서는 빠진다.
+        private const string ThumbnailName = "Thumbnail";
         private static readonly Dictionary<string, Sprite> LoadedCustomSprites = new Dictionary<string, Sprite>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>CustomNotes 폴더에 노트로 쓸 PNG가 하나라도 있는지.</summary>
+        public static bool HasNoteSprites { get; private set; }
+
+        /// <summary>CustomNotes\Thumbnail.png. 없으면 null.</summary>
+        public static Sprite ThumbnailSprite { get; private set; }
 
         public static void Initialize()
         {
@@ -92,6 +100,13 @@ namespace sxtg2.Loaders
                             new Rect(0, 0, texture.width, texture.height),
                             new Vector2(0.5f, 0.5f));
 
+                        if (noteName.Equals(ThumbnailName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            ThumbnailSprite = sprite;
+                            MelonLogger.Msg($"{LogPrefix} 인벤토리 썸네일 로드: {Path.GetFileName(file)}");
+                            continue;
+                        }
+
                         LoadedCustomSprites[noteName] = sprite;
                         MelonLogger.Msg($"{LogPrefix} 커스텀 노트 스프라이트 로드: {noteName}");
                     }
@@ -102,6 +117,7 @@ namespace sxtg2.Loaders
                 }
             }
 
+            HasNoteSprites = LoadedCustomSprites.Count > 0;
             MelonLogger.Msg($"{LogPrefix} 총 {LoadedCustomSprites.Count}개의 커스텀 노트 스프라이트 로드 완료");
         }
     }

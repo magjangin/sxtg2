@@ -67,9 +67,11 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Features\CustomMarathonFeature.cs" />
+    <Compile Include="Features\CustomNoteSkinFeature.cs" />
     <Compile Include="Features\JudgmentBarFeature.cs" />
     <Compile Include="Features\KeyViewerFeature.cs" />
     <Compile Include="Features\MusicSelectFeature.cs" />
+    <Compile Include="Helpers\LaneCoverBand.cs" />
     <Compile Include="Helpers\ModHelpers.cs" />
     <Compile Include="Hooks\AudioHooks.cs" />
     <Compile Include="Hooks\GameplayHooks.cs" />

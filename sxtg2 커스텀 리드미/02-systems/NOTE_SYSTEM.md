@@ -400,7 +400,31 @@ public static void LogNoteDetails(object note)
 
 `CustomNoteSpriteLoader`가 `{게임 설치 폴더}\CustomNotes\*.png`를 읽어 `Sprite.Create`로 변환하고
 파일명 기준(대소문자 무시)으로 캐싱한다. 폴더 규칙은 `01-user-guide/INSTALL_AND_LAYOUT.md`
-5절 참고.
+5절 참고. `Thumbnail.png`는 노트 매칭에서 빼고 인벤토리 목록 칸 그림으로만 쓴다.
+
+### 인벤토리 노트 스킨 항목 (`Features/CustomNoteSkinFeature.cs`, 2026-10-12 추가)
+
+게임의 노트 스킨은 `InventoryItem` CSV에서 읽은 `Util.items["NoteSkin"]` 목록이고, 고르면 `userData.noteSkin`에 ID가
+들어간다. 플레이에서 그 ID로 노트 프리팹 폴더(`Util.GetNoteSkinDir` → `Rhythm Game Part/PlayScene/NoteSkin/{ID}/`)와
+타격 이펙트(`Lane.PlayShortEffect(noteSkinName)` → 애니메이터 상태 이름)를 찾는다. 그래서 진짜 스킨이 아닌 ID가
+`userData.noteSkin`에 남으면 프리팹이 null이 되고 이펙트도 안 나온다. 모드를 지운 뒤에도 마찬가지다.
+
+- **항목 추가**: `Setter_NoteSkin.OnInitialize` Prefix에서 노트 PNG가 있으면 목록 끝에 ID `sxtg2Custom` 항목을 붙인다.
+  이름/설명은 `CSVParser.GetLocalizedString` Prefix가 `NoteSkin_sxtg2Custom_*` 키에만 답한다(KR/JP/EN).
+  썸네일은 `InventoryItemInfo.GetThumbnailSprite` Prefix(`Thumbnail.png`, 없으면 원본의 물음표 아이콘).
+- **장착 상태는 config가 기억**: 커서가 커스텀에 오면 원본이 `userData.noteSkin = "sxtg2Custom"`을 넣는데,
+  `ChangeCursorDelta` Finalizer가 바로 바탕 스킨 `Default`로 바꾸고 `CustomNotes=1`을 `config.txt`에 쓴다. 다른 스킨으로
+  옮기면 `CustomNotes=0`. 그래서 세이브에는 항상 진짜 스킨 ID만 남는다. 안전장치로 `UserAccountModule.SaveUserData`
+  Prefix와 `Util.GetNoteSkinDir` Prefix도 커스텀 ID를 `Default`로 바꾼다.
+- **다시 열 때**: 원본 `OnInitialize`는 `userData.noteSkin`(= Default) 위치로 커서를 맞춘다. 이때 `ChangeCursorDelta(0)`가
+  불려도 `CustomNotes`는 건드리지 않고(초기화 중 플래그), Postfix에서 커스텀이 장착돼 있으면 원본과 같은 순서
+  (`SelectIndex` → `ChangeCursorDelta(0)`)로 커서를 커스텀 항목으로 옮긴다.
+- **미리보기**: `InventoryPopup.RefreshNoteGenerate(string)` Prefix가 커스텀 ID를 `Default`로 바꿔 프리팹을 읽게 하고,
+  그 인벤토리의 `currentGear` 아래에서 `RG_NoteObject.SetTiming`이 불린 노트에만 `NoteSpriteHook.ApplyCustomSkin`을
+  적용한다(플레이 노트와 같은 함수). 인벤토리를 열 때(인자 없는 호출)는 커스텀이 장착돼 있으면 커스텀으로 보여 준다.
+- **곡 선택 확인창**: `ConfirmWindow.RefreshItemInfo` Postfix가 커스텀 장착 시 노트 칸과 이름을 커스텀으로 바꿔 보여 준다.
+- 바탕 스킨이 `Default`라 PNG가 없는 노트(흰 노트 등)와 타격 이펙트는 Default 것이다. 예전처럼 `config.txt`에서
+  `CustomNotes=1`만 켜고 다른 스킨을 장착한 상태(인벤토리를 거치지 않은 경우)는 그 스킨 위에 덧씌운다.
 
 ---
 
@@ -554,11 +578,40 @@ if (_curTime + notePreGenerateTime >= note.timing) { Generate(...); }
   가리지 않는다.
 - 노트를 컨테이너로 옮기는 방식은 쓰지 않는다: 게이트가 열릴 때 게임이 GATE 레인 `NoteGroup`의 직계 자식마다
   `GetComponent<Animator>().Play("Note Appearance")`를 부르기 때문(`RG_PS_Judgement`).
-- `LaneCoverDebug=1`이면 계산한 판정선(빨강)·옛 앵커 판정선(노랑)·보이는 띠 경계(하늘색)를 화면에 선으로 그린다.
+- `LaneCoverDebug=1`이면 계산한 판정선(빨강)·옛 앵커 판정선(노랑)·가림 경계(하늘색)·페이드가 끝나는 곳(연두)을 화면에 선으로 그린다.
+
+### 페이드 인 / 페이드 아웃 (`FadeIn*` / `FadeOut*`, 2026-10-12 추가)
+
+설정은 켜기 + 시작 위치 + 길이(`FadeIn`/`FadeInStart`/`FadeInLength`, `FadeOut`/`FadeOutStart`/`FadeOutLength`)이고,
+서든/히든과 합쳐서 레인 위의 위치 네 개로 바꾸는 규칙은 `Helpers/LaneCoverBand.cs`에 따로 있다(유니티 의존이 없어
+`sxtg2.LogicTests`에서 검사함). 위치는 판정선 = 0%, 화면 끝 = 100%.
+
+```text
+100 ── FarEdge     이 위는 안 보임 (서든 경계 / 페이드 인 시작 중 더 아래)
+       FarOpaque   여기까지 내려오며 투명 → 불투명 (FadeInStart - FadeInLength)
+       (완전히 보이는 구간)
+       NearOpaque  여기부터 불투명 → 투명 (FadeOutStart)
+0 ──── NearEdge    이 아래는 안 보임 (히든 경계 / 페이드 아웃 끝 중 더 위)
+```
+
+- 같은 쪽에 서든과 페이드 인이 같이 켜지면 더 많이 가리는 쪽이 경계가 되고, 완전히 보이기 시작하는 곳은 페이드
+  설정을 따른다(페이드 인이 서든에 가려진 곳에서 시작하면 서든 경계에서 투명하게 나온다). 히든과 페이드 아웃도 같다.
+- 페이드는 같은 `RectMask2D`의 `softness`로 만든다. Unity 2020.3 `UI/Default` 셰이더는 클립 경계에서 안쪽으로 거리 d인
+  곳의 알파에 `saturate(2d / (softness + 4·픽셀))`을 곱하므로, 경계에서 **softness/2** 안쪽까지 알파가 0 → 1로 오른다.
+  그래서 페이드 구간 길이(마스크 캔버스 단위)의 2배를 softness로 준다.
+- 페이드 끝 위치도 경계와 같은 방법(화면 픽셀 비율 → 이분 탐색)으로 레인 위 거리를 구한다(`LaneDistances.NearOpaque`/`FarOpaque`).
+- `softness`는 위아래 경계에 **같은 값**으로 걸려 경계마다 따로 줄 수 없다. 마스크가 노트마다 있으므로 노트 머리
+  (`shortNote` 중심)가 가까운 쪽 경계의 폭을 그 노트에 쓴다. 머리는 한 번에 한 경계 근처에만 있으므로 머리가 드러나고
+  사라지는 모습은 정확하다. 두 경계에 동시에 걸칠 만큼 긴 홀드 몸통은 먼 쪽 경계의 흐림 폭이 다를 수 있다(머리가 레인
+  중간을 지날 때 그쪽 흐림이 바뀜).
+- 페이드가 없는 경계는 예전처럼 `LaneCoverSoftness`. `Apply`는 패딩과 softness를 각각 바뀔 때만 넣는다.
+- 원근 때문에 같은 %라도 위쪽(먼 쪽)이 캔버스 단위로 훨씬 길다. softness는 2만으로 상한을 둔다.
+- 설정 검사(`SaveCustomKeyConfig.Validate`): 보이는 구간(`FarEdge - NearEdge`)이 10%보다 좁으면 페이드 인/아웃을 끈다.
+  `FarOpaque < NearOpaque`(페이드 인이 끝나기 전에 페이드 아웃 시작)는 경고만 한다.
 
 ### 판정과의 관계 / 확인 방법
 
-판정은 시간만 보므로 정확도에는 영향이 없다. 첫 노트에 적용될 때 `[LaneCover] 서든 …% / 히든 …% 적용 (레인 길이,
-보이는 띠, 노트 셰이더)` 로그가 한 번 찍히고, 판정선이 크게 움직이면 `[LaneCover] 판정선이 움직임` 로그가 씬마다
+판정은 시간만 보므로 정확도에는 영향이 없다. 첫 노트에 적용될 때 `[LaneCover] 서든 …% / 히든 …% / 페이드 인 … / 페이드 아웃 … 적용:
+보이는 구간 …` 로그(판정선, 경계·페이드 끝의 화면 y, 노트 셰이더 포함)가 한 번 찍히고, 판정선이 크게 움직이면 `[LaneCover] 판정선이 움직임` 로그가 씬마다
 최대 4줄 찍힌다. 노트 셰이더가 UI 클립을 지원하지 않는 커스텀 셰이더라면 로그는 찍혀도
 화면에서 잘리지 않을 수 있다.
