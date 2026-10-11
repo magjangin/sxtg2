@@ -382,10 +382,14 @@ public static void LogNoteDetails(object note)
 [SerializeField] private RectTransform tailNote;      // 홀드 끝부분
 ```
 
-### 처리 순서 (`Hooks/Note/NoteSpriteHook.cs`)
+### 처리 순서 (`Hooks/GameplayHooks.cs`의 `NoteSpriteHook`)
 
-1. `Generate` 반환값(`RG_NoteObject`)에서 `gameObject` 이름(예: `Default_Blue(Clone)`)을 읽어
+`config.txt`의 `CustomNotes=0`이면 아래 과정을 전부 건너뛴다(렌더러 복구의 `SetNativeSize`도 하지 않아
+원본과 완전히 같다). 설정은 플레이 씬 진입 때 다시 읽으므로 다음 곡부터 반영된다.
+
+1. `Generate` 반환값(`RG_NoteObject`)에서 `gameObject` 이름(예: `_Blue(Clone)`, `Default_Blue(Clone)`)을 읽어
    노트 타입(`Blue`/`Red`/`Gate`)을 추출한다 (`CustomNoteSpriteLoader.ExtractNoteType`).
+   이름 끝에 `(Clone)`이 붙으므로 밑줄 위치로 자르지 않고 `_blue`/`_red`/`_gate` 포함 여부(대소문자 무시)로 판별한다.
 2. `shortNote`/`tailNote`/`holdTexture` 필드를 리플렉션으로 가져와 `Image.sprite`를 교체한다.
    - `shortNote`: 폴백 없음(Gate만 Blue로 폴백)
    - `tailNote`/`holdTexture`: `[Type][Suffix]` → `[Suffix][Type]` → `[Suffix]` → 공용 이름 순으로 탐색, 없으면 적용하지 않음
@@ -395,7 +399,7 @@ public static void LogNoteDetails(object note)
 ### 스프라이트 소스
 
 `CustomNoteSpriteLoader`가 `{게임 설치 폴더}\CustomNotes\*.png`를 읽어 `Sprite.Create`로 변환하고
-파일명(첫 글자만 대문자로 표준화) 기준으로 캐싱한다. 폴더 규칙은 `01-user-guide/INSTALL_AND_LAYOUT.md`
+파일명 기준(대소문자 무시)으로 캐싱한다. 폴더 규칙은 `01-user-guide/INSTALL_AND_LAYOUT.md`
 5절 참고.
 
 ---

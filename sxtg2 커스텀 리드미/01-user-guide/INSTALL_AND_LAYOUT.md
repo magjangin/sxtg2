@@ -70,7 +70,8 @@
 ## 5) CustomNotes 폴더(선택, 커스텀 노트 스킨)
 
 - 경로: `{게임 설치 폴더}\CustomNotes\`
-- 폴더가 없으면 모드 초기화 시 자동 생성됩니다(`Loaders/CustomNoteSpriteLoader.cs`).
+- 폴더가 없으면 모드 초기화 시 자동 생성됩니다(`Loaders/CustomNoteLoaders.cs`의 `CustomNoteSpriteLoader`).
+- `config.txt`의 `CustomNotes=0`으로 끌 수 있습니다(PNG를 지우지 않아도 게임 기본 노트로 돌아감). 6절 참고.
 - 파일명 규칙(대소문자 무시, PNG만):
   - `Blue.png`, `Red.png` — 메인 노트. 없으면 게임 기본 스프라이트 유지(폴백 없음)
   - `Gate.png` — 게이트 노트. 없으면 `Blue.png`로 폴백
@@ -78,14 +79,15 @@
     없으면 공용 `Tail`/`TailNote` 순서로 탐색. 전부 없으면 적용하지 않음(폴백 없음)
   - 홀드 몸통: `RedHold`/`HoldRed`, `BlueHold`/`HoldBlue`, `GateHold`/`HoldGate` 우선,
     없으면 공용 `Hold`/`HoldTexture` 순서로 탐색. 전부 없으면 적용하지 않음(폴백 없음)
-- 관련 구현: `Loaders/CustomNoteSpriteLoader.cs`, `Hooks/Note/NoteSpriteHook.cs`, `Helpers/UI/NoteRendererRecovery.cs`
+- 관련 구현: `Loaders/CustomNoteLoaders.cs`(`CustomNoteSpriteLoader`, `NoteRendererRecovery`), `Hooks/GameplayHooks.cs`(`NoteSpriteHook`)
 - 자세한 흐름은 `02-systems/NOTE_SYSTEM.md`의 "노트 스킨(커스텀 스프라이트)" 절 참고.
 
 ## 6) SaveCustomKey 폴더(모드 설정 파일)
 
 - 경로: `{게임 설치 폴더}\SaveCustomKey\config.txt`
 - 모드 초기화 시 `SaveCustomKeyConfig.Initialize()`(`Helpers/ModHelpers.cs`)가 폴더와 설정 파일을
-  자동 생성하고 읽어옵니다. 설정은 **게임 시작 시 1회** 로드되므로, 값을 바꿨으면 게임을 다시 켜야 합니다.
+  자동 생성하고 읽어옵니다. 설정은 게임 시작 시와 **플레이 씬에 들어갈 때마다** 다시 읽으므로, 게임을
+  켠 채로 값을 바꾸고 저장하면 다음 곡(리트라이 포함)부터 적용됩니다. 한 곡을 치는 도중에는 바뀌지 않습니다.
 - 값 형식은 유연합니다: `1`/`0`, `true`/`false`, `on`/`off`, `켜짐`/`꺼짐` 모두 인식합니다.
   `#` 또는 `//`로 시작하는 줄은 주석입니다.
 
@@ -109,6 +111,7 @@
 | `NoteSpeedChaosMin` | `0.6` | 속도 배율 최솟값 (1 = 원래 속도) |
 | `NoteSpeedChaosMax` | `1.8` | 속도 배율 최댓값 |
 | `NoteSpeedChaosPerLane` | `0` | 1 = 레인마다, 0 = 노트마다 속도가 다름 |
+| `CustomNotes` | `1` | `CustomNotes` 폴더 PNG로 노트 스킨 교체 (0 = 게임 기본 노트). `EnableCustomNotes`도 같은 키로 인식 |
 
 - 불리언이 아니라 **숫자 값**인 항목: `MaxScore`, `NoteSwayAmplitude`, `NoteSwaySpeed`,
   `NoteSwayDampingTime`, `NoteSpeedChaosMin`, `NoteSpeedChaosMax`. 허용 범위를 벗어나거나
@@ -120,7 +123,7 @@
   자세한 내용은 `02-systems/NOTE_SYSTEM.md`의 "노트 흔들림 연출" / "노트 속도 카오스" 절 참고.
 - 설정 파일에 항목이 아예 없으면 위 기본값이 그대로 적용됩니다(이전 버전에서 만들어진 파일이라
   새 항목이 빠져 있어도 동작함). `JudgmentBarCapsule`/`JudgmentBarSide`, `MaxScore`,
-  `NoteSway`/`NoteSpeedChaos` 계열은 항목이 없으면 모드가 파일 끝에 기본값 줄을 자동으로
+  `NoteSway`/`NoteSpeedChaos` 계열, `CustomNotes`는 항목이 없으면 모드가 파일 끝에 기본값 줄을 자동으로
   덧붙여줍니다(`SaveCustomKeyConfig.AppendSectionsMissingFrom`). 그 외 항목은 파일에 줄을
   추가하지 않고 C# 기본값만 조용히 적용됩니다.
 - 판정바/키뷰어의 표시 규칙과 동작은 `02-systems/PLAY_OVERLAY.md`를 참고하세요.

@@ -1,6 +1,6 @@
 # 현재 상태
 
-기준일: 2026-08-03
+기준일: 2026-10-11
 
 ## 현재 결론
 
@@ -11,6 +11,38 @@
 - `dotnet build sxtg2-mod/sxtg2.csproj --configuration Debug` 성공 (경고 0개)
 - `sxtg2.LogicTests` 4개 통과
 - 실제 게임에서 커스텀 차트 흐름 정상 동작 확인
+
+## 2026-10-11 추가: 커스텀 노트 스킨 켜기/끄기 (`CustomNotes`) (v1.2.0)
+
+- **추가한 것**: `config.txt`의 `CustomNotes`(별칭 `EnableCustomNotes`, 기본값 1)로 노트 스킨 적용 여부를 고름.
+  0이면 `NoteSpriteHook.GeneratePostfix`가 바로 빠져나가서 스프라이트 교체와 렌더러 복구(`SetNativeSize`)를
+  둘 다 하지 않음(원본과 동일). 다른 설정처럼 플레이 씬 진입 때 다시 읽으므로 게임을 켠 채로 다음 곡부터 반영됨.
+- 기존 `config.txt`에 항목이 없으면 `AppendSectionsMissingFrom`이 파일 끝에 자동으로 덧붙임. 사용자 게임 폴더의
+  `config.txt`에는 직접 `CustomNotes=1` 항목을 추가해 둠.
+- 같이 고친 문서: `INSTALL_AND_LAYOUT.md` 6절의 "설정은 게임 시작 시 1회 로드" 설명이 v1.1.0(플레이 씬
+  진입 시 재로드) 이후 틀린 내용이라 수정.
+- **검증**: `dotnet build` 성공(경고 0개), `sxtg2.LogicTests` 7개 통과, 게임 `Mods/`에 배포 완료.
+  실게임 확인 **미완료** — `CustomNotes=0`으로 바꾼 뒤 곡에 들어가면 기본 노트로 돌아와야 정상.
+
+## 2026-10-11 수정: 노트 스킨(CustomNotes)이 아무 노트에도 적용되지 않던 문제 (v1.2.0)
+
+- **증상**: 2026-07-18에 InventoryPopup에서 이식한 노트 스킨 기능이 게임에서 보이지 않음. 시작 로그에는
+  `CustomNotes`의 PNG가 정상 로드됐다고 찍히지만(`blue`, `red`), 실제 노트는 전부 기본 스프라이트 그대로였음.
+- **원인**: 이식 직후(14fe077)에는 InventoryPopup과 같은 규칙이었는데, v0.1.3 커밋(12348f5)에서 파일을
+  `Loaders/CustomNoteLoaders.cs`로 합치면서 매칭 규칙이 바뀌어 회귀함.
+  - `ExtractNoteType`이 "노트 이름에 `_blue`가 들어 있는가"가 아니라 "첫 번째 밑줄 뒤부터 두 번째 밑줄까지"를
+    잘라내는 방식으로 바뀜. 실제 노트 이름은 `_Blue(Clone)` 형태라 `Blue(Clone)`이 추출되고, 어떤 PNG
+    이름과도 맞지 않아 `shortNote`가 항상 null이었음.
+  - 끝노트/홀드 몸통도 문서 규칙(`BlueTail`/`TailBlue`/`Tail`/`TailNote`, `BlueHold`/…)이 아니라
+    `blue_tail`/`tailNote`를 찾았고, 없으면 메인 노트 스프라이트로 폴백(원래는 폴백 없음)하게 바뀌어 있었음.
+  - Gate → Blue 폴백도 빠져 있었음.
+- **수정**: `CustomNoteSpriteLoader`의 매칭 규칙을 InventoryPopup 원본과 문서(`INSTALL_AND_LAYOUT.md` 5절)
+  규칙으로 되돌림. 노트 타입은 `_blue`/`_red`/`_gate` 포함 여부(대소문자 무시)로 판별하고, 끝노트/홀드는
+  `[Type][Suffix]` → `[Suffix][Type]` → `[Suffix]` → 공용 이름 순서로 찾되 없으면 원본을 유지함.
+  `NoteSpriteHook`은 이미 뽑아 둔 노트 타입을 넘기도록 정리함. 문서의 구현 파일 경로도 합쳐진 파일 기준으로 갱신.
+- **검증**: `dotnet build` 성공(경고 0개), `sxtg2.LogicTests` 7개 통과, 게임 `Mods/`에 배포 완료.
+  실게임 확인 **완료**(사용자 확인) — 현재 `CustomNotes`에는 `blue.png`/`red.png`만 있으므로 LL/RR(파랑)·게이트(파랑
+  폴백)·LT/RT(빨강) 노트가 바뀌고, L/R(흰색) 노트와 홀드 끝/몸통은 기본 그대로여야 정상.
 
 ## 2026-08-03 추가: MusicSelect 확인창 Enter 흐름 및 시이(Shii) 캐릭터 조사
 

@@ -111,7 +111,8 @@ namespace sxtg2.Hooks
         {
             try
             {
-                if (__result == null)
+                // 꺼져 있으면 렌더러 복구(SetNativeSize)까지 건너뛰어 원본과 완전히 같게 둔다.
+                if (__result == null || !SaveCustomKeyConfig.EnableCustomNotes)
                     return;
 
                 var noteObject = __result.gameObject;
@@ -132,7 +133,7 @@ namespace sxtg2.Hooks
             string noteType = CustomNoteSpriteLoader.ExtractNoteType(noteObject.name);
             ModLog.Verbose($"[NoteSpriteHook] 노트 생성: name={noteObject.name}, 추출된 타입={(string.IsNullOrEmpty(noteType) ? "(없음)" : noteType)}");
 
-            ApplyToTarget(ShortNote(noteInstance), CustomNoteSpriteLoader.GetCustomSpriteForNote(noteObject.name));
+            ApplyToTarget(ShortNote(noteInstance), CustomNoteSpriteLoader.GetCustomSpriteForNote(noteType));
             ApplyToTarget(TailNote(noteInstance), CustomNoteSpriteLoader.GetTailNoteSprite(noteType));
             ApplyToTarget(HoldTexture(noteInstance), CustomNoteSpriteLoader.GetHoldTextureSprite(noteType));
         }

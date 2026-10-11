@@ -229,6 +229,8 @@ namespace sxtg2.Helpers
         public static float NoteSpeedChaosMax { get; set; }
         public static bool NoteSpeedChaosPerLane { get; set; }
 
+        public static bool EnableCustomNotes { get; set; }
+
         static SaveCustomKeyConfig()
         {
             ResetToDefaults();
@@ -264,6 +266,8 @@ namespace sxtg2.Helpers
             NoteSpeedChaosMin = 0.6f;
             NoteSpeedChaosMax = 1.8f;
             NoteSpeedChaosPerLane = false;
+
+            EnableCustomNotes = true;
         }
 
         public static void EnsureInitialized()
@@ -358,6 +362,7 @@ namespace sxtg2.Helpers
             AppendMaxScoreSection(sb);
             AppendNoteSwaySection(sb);
             AppendNoteSpeedChaosSection(sb);
+            AppendCustomNotesSection(sb);
 
             File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
             MelonLogger.Msg($"[SaveCustomKey] 기본 설정 파일 생성 완료: {filePath}");
@@ -440,6 +445,15 @@ namespace sxtg2.Helpers
             sb.AppendLine("# 1 = 레인마다 속도가 다름(같은 레인 안에서는 순서 유지, 읽을 수는 있음)");
             sb.AppendLine("# 0 = 노트마다 속도가 다름(완전 카오스)");
             sb.AppendLine("NoteSpeedChaosPerLane=0");
+        }
+
+        private static void AppendCustomNotesSection(StringBuilder sb)
+        {
+            sb.AppendLine();
+            sb.AppendLine("# 커스텀 노트 스킨 적용 (1 = 켜짐, 0 = 꺼짐)");
+            sb.AppendLine("# 게임 폴더의 CustomNotes 폴더에 넣은 PNG(Blue.png, Red.png 등)로 노트 모양을 바꿉니다.");
+            sb.AppendLine("# 끄면 PNG가 있어도 게임 기본 노트로 플레이합니다.");
+            sb.AppendLine("CustomNotes=1");
         }
 
         /// <summary>이전 버전에서 만들어진 설정 파일에는 새 항목이 없으므로 뒤에 덧붙여준다.</summary>
@@ -590,6 +604,10 @@ namespace sxtg2.Helpers
                     {
                         NoteSpeedChaosPerLane = ParseFlexibleBool(val, NoteSpeedChaosPerLane);
                     }
+                    else if (key.Equals("CustomNotes", StringComparison.OrdinalIgnoreCase) || key.Equals("EnableCustomNotes", StringComparison.OrdinalIgnoreCase))
+                    {
+                        EnableCustomNotes = ParseFlexibleBool(val, EnableCustomNotes);
+                    }
                 }
 
                 if (NoteSpeedChaosMin > NoteSpeedChaosMax)
@@ -604,7 +622,7 @@ namespace sxtg2.Helpers
 
                 string shapeStr = JudgmentBarShape == 2 ? "삼각(2)" : (JudgmentBarShape == 1 ? "캡슐(1)" : "사각(0)");
                 string rangeShapeStr = JudgmentBarRangeShape == -1 ? "추종(-1)" : (JudgmentBarRangeShape == 2 ? "삼각(2)" : (JudgmentBarRangeShape == 1 ? "캡슐(1)" : "사각(0)"));
-                string summary = $"AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, Shape={shapeStr}(범위:{rangeShapeStr}), Side={JudgmentBarSide}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}, NoteSpeedChaos={(EnableNoteSpeedChaos ? $"켜짐(배율 {NoteSpeedChaosMin:0.##}~{NoteSpeedChaosMax:0.##}, {(NoteSpeedChaosPerLane ? "레인별" : "노트별")})" : "꺼짐(0)")}";
+                string summary = $"AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, Shape={shapeStr}(범위:{rangeShapeStr}), Side={JudgmentBarSide}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}, NoteSpeedChaos={(EnableNoteSpeedChaos ? $"켜짐(배율 {NoteSpeedChaosMin:0.##}~{NoteSpeedChaosMax:0.##}, {(NoteSpeedChaosPerLane ? "레인별" : "노트별")})" : "꺼짐(0)")}, CustomNotes={(EnableCustomNotes ? "켜짐(1)" : "꺼짐(0)")}";
 
                 // 최초 로드는 전체를 남기고, 재로드는 바뀐 항목만 LogDiff가 남긴다.
                 // 플레이할 때마다 이 긴 줄이 찍히면 로그가 못 쓰게 되므로 재로드 시엔 상세 레벨로 내린다.
@@ -645,7 +663,8 @@ namespace sxtg2.Helpers
                 { "NoteSpeedChaos", OnOffText(EnableNoteSpeedChaos) },
                 { "NoteSpeedChaosMin", NumText(NoteSpeedChaosMin, "0.##") },
                 { "NoteSpeedChaosMax", NumText(NoteSpeedChaosMax, "0.##") },
-                { "NoteSpeedChaosPerLane", NoteSpeedChaosPerLane ? "레인별(1)" : "노트별(0)" }
+                { "NoteSpeedChaosPerLane", NoteSpeedChaosPerLane ? "레인별(1)" : "노트별(0)" },
+                { "CustomNotes", OnOffText(EnableCustomNotes) }
             };
         }
 
@@ -727,6 +746,12 @@ namespace sxtg2.Helpers
             {
                 sections.Add(AppendNoteSpeedChaosSection);
                 names.Add("NoteSpeedChaos");
+            }
+
+            if (!seenKeys.Contains("CustomNotes") && !seenKeys.Contains("EnableCustomNotes"))
+            {
+                sections.Add(AppendCustomNotesSection);
+                names.Add("CustomNotes");
             }
 
             if (sections.Count > 0)

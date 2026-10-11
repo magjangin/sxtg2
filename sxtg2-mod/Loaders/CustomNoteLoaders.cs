@@ -21,72 +21,53 @@ namespace sxtg2.Loaders
             LoadCustomSpritesFromFolder(folderPath);
         }
 
+        // 노트 GameObject 이름(예: "_Blue(Clone)", "Default_Blue(Clone)")에서 타입을 뽑는다.
+        // 이름 끝에 "(Clone)"이 붙으므로 밑줄 위치로 자르지 않고 "_blue" 같은 표식이 들어 있는지로 판별한다.
         public static string ExtractNoteType(string gameObjectName)
         {
             if (string.IsNullOrEmpty(gameObjectName))
                 return null;
 
-            int firstUnderscore = gameObjectName.IndexOf('_');
-            if (firstUnderscore < 0 || firstUnderscore >= gameObjectName.Length - 1)
-                return null;
-
-            int secondUnderscore = gameObjectName.IndexOf('_', firstUnderscore + 1);
-
-            if (secondUnderscore > firstUnderscore)
-            {
-                return gameObjectName.Substring(firstUnderscore + 1, secondUnderscore - firstUnderscore - 1);
-            }
-
-            return gameObjectName.Substring(firstUnderscore + 1);
-        }
-
-        public static Sprite GetCustomSpriteForNote(string gameObjectName)
-        {
-            string noteType = ExtractNoteType(gameObjectName);
-
-            if (!string.IsNullOrEmpty(noteType))
-            {
-                if (LoadedCustomSprites.TryGetValue(noteType, out Sprite exactTypeSprite))
-                    return exactTypeSprite;
-            }
-
-            if (!string.IsNullOrEmpty(gameObjectName))
-            {
-                if (LoadedCustomSprites.TryGetValue(gameObjectName, out Sprite fullNameSprite))
-                    return fullNameSprite;
-            }
-
+            string lower = gameObjectName.ToLowerInvariant();
+            if (lower.Contains("_blue"))
+                return "Blue";
+            if (lower.Contains("_red"))
+                return "Red";
+            if (lower.Contains("_gate"))
+                return "Gate";
             return null;
         }
 
-        public static Sprite GetTailNoteSprite(string noteType)
+        // 메인 노트(shortNote)용. Gate만 Blue로 폴백하고, 나머지는 없으면 원본 스프라이트를 그대로 둔다.
+        public static Sprite GetCustomSpriteForNote(string noteType)
         {
-            if (!string.IsNullOrEmpty(noteType))
-            {
-                string key = noteType + "_tail";
-                if (LoadedCustomSprites.TryGetValue(key, out Sprite tailSprite))
-                    return tailSprite;
-            }
+            if (string.IsNullOrEmpty(noteType))
+                return null;
 
-            if (LoadedCustomSprites.TryGetValue("tailNote", out Sprite genericTailSprite))
-                return genericTailSprite;
-
-            return GetCustomSpriteForNote(noteType);
+            return GetSprite(noteType) ?? (noteType == "Gate" ? GetSprite("Blue") : null);
         }
 
-        public static Sprite GetHoldTextureSprite(string noteType)
+        // 끝노트(tailNote)/홀드 몸통(holdTexture)용. 없으면 원본을 그대로 둔다(메인 노트 스프라이트로 폴백하지 않음).
+        public static Sprite GetTailNoteSprite(string noteType) => GetPrioritizedSprite(noteType, "Tail", "TailNote");
+
+        public static Sprite GetHoldTextureSprite(string noteType) => GetPrioritizedSprite(noteType, "Hold", "HoldTexture");
+
+        // [Type][Suffix] → [Suffix][Type] → [Suffix] → [genericName] 순서로 탐색 (예: RedTail → TailRed → Tail → TailNote)
+        private static Sprite GetPrioritizedSprite(string noteType, string suffix, string genericName)
         {
             if (!string.IsNullOrEmpty(noteType))
             {
-                string key = noteType + "_hold";
-                if (LoadedCustomSprites.TryGetValue(key, out Sprite holdSprite))
-                    return holdSprite;
+                Sprite typed = GetSprite(noteType + suffix) ?? GetSprite(suffix + noteType);
+                if (typed != null)
+                    return typed;
             }
 
-            if (LoadedCustomSprites.TryGetValue("holdTexture", out Sprite genericHoldSprite))
-                return genericHoldSprite;
+            return GetSprite(suffix) ?? GetSprite(genericName);
+        }
 
-            return GetCustomSpriteForNote(noteType);
+        private static Sprite GetSprite(string name)
+        {
+            return LoadedCustomSprites.TryGetValue(name, out Sprite sprite) ? sprite : null;
         }
 
         private static void LoadCustomSpritesFromFolder(string folderPath)
