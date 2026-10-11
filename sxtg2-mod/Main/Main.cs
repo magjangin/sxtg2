@@ -73,11 +73,13 @@ namespace sxtg2
             KeyViewer.Reset();
             NoteSwayHook.Reset();
             NoteSpeedChaosHook.Reset();
+            LaneCoverHook.Reset();
         }
 
         public override void OnUpdate()
         {
             BGABGMSyncHook.CheckAndSync();
+            CustomMarathon.Update();
 
             if (AutoPlayHook.IsPlayScene)
             {
@@ -88,10 +90,13 @@ namespace sxtg2
 
         public override void OnGUI()
         {
+            CustomMarathon.Draw();
+
             if (AutoPlayHook.IsPlayScene)
             {
                 JudgmentBar.DrawJudgmentBar();
                 KeyViewer.Draw();
+                LaneCoverHook.DrawDebug();
             }
         }
 

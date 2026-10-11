@@ -231,6 +231,14 @@ namespace sxtg2.Helpers
 
         public static bool EnableCustomNotes { get; set; }
 
+        public static float SuddenPercent { get; set; }
+        public static float HiddenPercent { get; set; }
+        public static float LaneCoverSoftness { get; set; }
+        public static bool LaneCoverDebug { get; set; }
+
+        public static bool EnableCustomMarathon { get; set; }
+        public static float CustomMarathonAutoNext { get; set; }
+
         static SaveCustomKeyConfig()
         {
             ResetToDefaults();
@@ -268,6 +276,14 @@ namespace sxtg2.Helpers
             NoteSpeedChaosPerLane = false;
 
             EnableCustomNotes = true;
+
+            SuddenPercent = 0f;
+            HiddenPercent = 0f;
+            LaneCoverSoftness = 24f;
+            LaneCoverDebug = false;
+
+            EnableCustomMarathon = false;
+            CustomMarathonAutoNext = 0f;
         }
 
         public static void EnsureInitialized()
@@ -280,6 +296,48 @@ namespace sxtg2.Helpers
         {
             _initialized = true;
             LoadFromDisk(isReload: false, reason: null);
+            ResetLaneCoverOnStart();
+        }
+
+        /// <summary>
+        /// 서든/히든은 그 판에만 거는 챌린지라 게임을 켤 때마다 꺼진 상태(0)로 시작한다.
+        /// 설정 파일은 플레이 씬에 들어갈 때마다 다시 읽히므로 메모리 값만 0으로 두면 첫 곡에서 되살아난다.
+        /// 그래서 파일의 Sudden/Hidden 줄도 0으로 고쳐 쓴다(다른 줄과 주석, 인코딩, 줄바꿈은 그대로).
+        /// 게임을 켠 뒤 파일에서 다시 올리면 그 세션 동안은 적용된다.
+        /// </summary>
+        private static void ResetLaneCoverOnStart()
+        {
+            if (SuddenPercent <= 0f && HiddenPercent <= 0f)
+                return;
+
+            float oldSudden = SuddenPercent;
+            float oldHidden = HiddenPercent;
+            SuddenPercent = 0f;
+            HiddenPercent = 0f;
+
+            try
+            {
+                string filePath = Path.Combine(Path.GetDirectoryName(Application.dataPath), "SaveCustomKey", "config.txt");
+                byte[] raw = File.ReadAllBytes(filePath);
+                bool hasBom = raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF;
+                string text = new UTF8Encoding(false).GetString(raw, hasBom ? 3 : 0, raw.Length - (hasBom ? 3 : 0));
+
+                string updated = System.Text.RegularExpressions.Regex.Replace(
+                    text,
+                    @"^([ \t]*(?:Sudden|SuddenPlus|Hidden|HiddenPlus)[ \t]*=)[^\r\n]*",
+                    "${1}0",
+                    System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+                if (updated != text)
+                    File.WriteAllText(filePath, updated, new UTF8Encoding(hasBom));
+
+                MelonLogger.Msg($"[SaveCustomKey] 서든/히든은 게임을 켤 때마다 꺼진 상태로 시작합니다 (Sudden {oldSudden:0.#}% → 0, Hidden {oldHidden:0.#}% → 0, config.txt도 0으로 고침)");
+            }
+            catch (Exception ex)
+            {
+                // 파일을 못 고쳐도 이번 세션 메모리 값은 0이다. 다만 첫 곡에서 파일 값이 다시 읽힐 수 있다.
+                MelonLogger.Warning($"[SaveCustomKey] 서든/히든 초기화 중 config.txt를 고치지 못했습니다: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -363,6 +421,8 @@ namespace sxtg2.Helpers
             AppendNoteSwaySection(sb);
             AppendNoteSpeedChaosSection(sb);
             AppendCustomNotesSection(sb);
+            AppendLaneCoverSection(sb);
+            AppendCustomMarathonSection(sb);
 
             File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
             MelonLogger.Msg($"[SaveCustomKey] 기본 설정 파일 생성 완료: {filePath}");
@@ -454,6 +514,35 @@ namespace sxtg2.Helpers
             sb.AppendLine("# 게임 폴더의 CustomNotes 폴더에 넣은 PNG(Blue.png, Red.png 등)로 노트 모양을 바꿉니다.");
             sb.AppendLine("# 끄면 PNG가 있어도 게임 기본 노트로 플레이합니다.");
             sb.AppendLine("CustomNotes=1");
+        }
+
+        private static void AppendLaneCoverSection(StringBuilder sb)
+        {
+            sb.AppendLine();
+            sb.AppendLine("# [챌린지] 서든: 레인 위쪽을 가려 노트가 늦게 보이게 함 (가릴 비율 %, 0 = 끔)");
+            sb.AppendLine("# 판정선에서 화면 끝까지를 100%로 봅니다. 예: 30 = 위쪽 30%를 가림");
+            sb.AppendLine("# 서든/히든은 게임을 켤 때마다 0(끔)으로 돌아갑니다. 켠 뒤 여기서 올리면 다음 곡부터 적용됩니다.");
+            sb.AppendLine("Sudden=0");
+            sb.AppendLine();
+            sb.AppendLine("# [챌린지] 히든: 판정선 쪽을 가려 노트가 치기 직전에 사라지게 함 (가릴 비율 %, 0 = 끔)");
+            sb.AppendLine("# 서든과 같이 쓸 수 있습니다. 둘을 합쳐 90%를 넘으면 히든이 줄어듭니다.");
+            sb.AppendLine("Hidden=0");
+            sb.AppendLine();
+            sb.AppendLine("# 가림 경계를 부드럽게 흐리는 폭 (픽셀, 0 = 칼같이 자름)");
+            sb.AppendLine("LaneCoverSoftness=24");
+        }
+
+        private static void AppendCustomMarathonSection(StringBuilder sb)
+        {
+            sb.AppendLine();
+            sb.AppendLine("# 커스텀 곡 마라톤 (1 = 켜짐, 0 = 꺼짐)");
+            sb.AppendLine("# 켜고 커스텀 곡 하나를 시작하면, 결과창에서 Enter를 누를 때 목록을 거치지 않고");
+            sb.AppendLine("# 아직 안 친 다음 커스텀 곡이 바로 시작됩니다. 모든 커스텀 곡을 딱 한 번씩 돌면 목록으로 돌아갑니다.");
+            sb.AppendLine("# 결과창에서 Esc = 마라톤 그만하고 목록으로");
+            sb.AppendLine("CustomMarathon=0");
+            sb.AppendLine();
+            sb.AppendLine("# 마라톤 중 결과창에서 몇 초 뒤 자동으로 다음 곡으로 넘어갈지 (0 = Enter를 누를 때만)");
+            sb.AppendLine("CustomMarathonAutoNext=0");
         }
 
         /// <summary>이전 버전에서 만들어진 설정 파일에는 새 항목이 없으므로 뒤에 덧붙여준다.</summary>
@@ -608,6 +697,30 @@ namespace sxtg2.Helpers
                     {
                         EnableCustomNotes = ParseFlexibleBool(val, EnableCustomNotes);
                     }
+                    else if (key.Equals("Sudden", StringComparison.OrdinalIgnoreCase) || key.Equals("SuddenPlus", StringComparison.OrdinalIgnoreCase))
+                    {
+                        SuddenPercent = ParseFloatSetting("Sudden", val.TrimEnd('%', ' '), SuddenPercent, 0f, 90f);
+                    }
+                    else if (key.Equals("Hidden", StringComparison.OrdinalIgnoreCase) || key.Equals("HiddenPlus", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HiddenPercent = ParseFloatSetting("Hidden", val.TrimEnd('%', ' '), HiddenPercent, 0f, 90f);
+                    }
+                    else if (key.Equals("LaneCoverSoftness", StringComparison.OrdinalIgnoreCase))
+                    {
+                        LaneCoverSoftness = ParseFloatSetting("LaneCoverSoftness", val, LaneCoverSoftness, 0f, 500f);
+                    }
+                    else if (key.Equals("LaneCoverDebug", StringComparison.OrdinalIgnoreCase))
+                    {
+                        LaneCoverDebug = ParseFlexibleBool(val, LaneCoverDebug);
+                    }
+                    else if (key.Equals("CustomMarathon", StringComparison.OrdinalIgnoreCase) || key.Equals("EnableCustomMarathon", StringComparison.OrdinalIgnoreCase))
+                    {
+                        EnableCustomMarathon = ParseFlexibleBool(val, EnableCustomMarathon);
+                    }
+                    else if (key.Equals("CustomMarathonAutoNext", StringComparison.OrdinalIgnoreCase))
+                    {
+                        CustomMarathonAutoNext = ParseFloatSetting("CustomMarathonAutoNext", val, CustomMarathonAutoNext, 0f, 600f);
+                    }
                 }
 
                 if (NoteSpeedChaosMin > NoteSpeedChaosMax)
@@ -618,11 +731,18 @@ namespace sxtg2.Helpers
                     NoteSpeedChaosMax = swap;
                 }
 
+                if (SuddenPercent + HiddenPercent > 90f)
+                {
+                    float reduced = 90f - SuddenPercent;
+                    MelonLogger.Warning($"[SaveCustomKey] Sudden({SuddenPercent:0.#}%) + Hidden({HiddenPercent:0.#}%)이 90%를 넘어 노트가 안 보이게 됩니다 → Hidden을 {reduced:0.#}%로 줄입니다.");
+                    HiddenPercent = reduced;
+                }
+
                 AppendSectionsMissingFrom(filePath, seenKeys);
 
                 string shapeStr = JudgmentBarShape == 2 ? "삼각(2)" : (JudgmentBarShape == 1 ? "캡슐(1)" : "사각(0)");
                 string rangeShapeStr = JudgmentBarRangeShape == -1 ? "추종(-1)" : (JudgmentBarRangeShape == 2 ? "삼각(2)" : (JudgmentBarRangeShape == 1 ? "캡슐(1)" : "사각(0)"));
-                string summary = $"AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, Shape={shapeStr}(범위:{rangeShapeStr}), Side={JudgmentBarSide}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}, NoteSpeedChaos={(EnableNoteSpeedChaos ? $"켜짐(배율 {NoteSpeedChaosMin:0.##}~{NoteSpeedChaosMax:0.##}, {(NoteSpeedChaosPerLane ? "레인별" : "노트별")})" : "꺼짐(0)")}, CustomNotes={(EnableCustomNotes ? "켜짐(1)" : "꺼짐(0)")}";
+                string summary = $"AutoPlay={(AutoPlay ? "켜짐(1)" : "꺼짐(0)")}, AllPerfect={(AllPerfect ? "켜짐(1)" : "꺼짐(0)")}, BlockSave={(BlockSave ? "켜짐(1)" : "꺼짐(0)")}, JudgmentBar={(EnableJudgmentBar ? "켜짐(1)" : "꺼짐(0)")}, Vertical={(JudgmentBarVertical ? "세로(1)" : "가로(0)")}, Shape={shapeStr}(범위:{rangeShapeStr}), Side={JudgmentBarSide}, KeyViewer={(EnableKeyViewer ? "켜짐(1)" : "꺼짐(0)")}, MaxScore={MaxScore:0.###}{(IsMaxScoreCustom ? " (커스텀)" : " (기본)")}, NoteSway={(EnableNoteSway ? $"켜짐(폭 {NoteSwayAmplitude:0.#}px, 속도 {NoteSwaySpeed:0.##}Hz, 감쇠 {(NoteSwayDamping ? $"{NoteSwayDampingTime:0.##}초" : "없음")})" : "꺼짐(0)")}, NoteSpeedChaos={(EnableNoteSpeedChaos ? $"켜짐(배율 {NoteSpeedChaosMin:0.##}~{NoteSpeedChaosMax:0.##}, {(NoteSpeedChaosPerLane ? "레인별" : "노트별")})" : "꺼짐(0)")}, CustomNotes={(EnableCustomNotes ? "켜짐(1)" : "꺼짐(0)")}, Sudden={SuddenPercent:0.#}%, Hidden={HiddenPercent:0.#}%, CustomMarathon={(EnableCustomMarathon ? (CustomMarathonAutoNext > 0f ? $"켜짐({CustomMarathonAutoNext:0.#}초 자동)" : "켜짐(1)") : "꺼짐(0)")}";
 
                 // 최초 로드는 전체를 남기고, 재로드는 바뀐 항목만 LogDiff가 남긴다.
                 // 플레이할 때마다 이 긴 줄이 찍히면 로그가 못 쓰게 되므로 재로드 시엔 상세 레벨로 내린다.
@@ -664,7 +784,13 @@ namespace sxtg2.Helpers
                 { "NoteSpeedChaosMin", NumText(NoteSpeedChaosMin, "0.##") },
                 { "NoteSpeedChaosMax", NumText(NoteSpeedChaosMax, "0.##") },
                 { "NoteSpeedChaosPerLane", NoteSpeedChaosPerLane ? "레인별(1)" : "노트별(0)" },
-                { "CustomNotes", OnOffText(EnableCustomNotes) }
+                { "CustomNotes", OnOffText(EnableCustomNotes) },
+                { "Sudden", NumText(SuddenPercent, "0.#") + "%" },
+                { "Hidden", NumText(HiddenPercent, "0.#") + "%" },
+                { "LaneCoverSoftness", NumText(LaneCoverSoftness, "0.#") },
+                { "LaneCoverDebug", OnOffText(LaneCoverDebug) },
+                { "CustomMarathon", OnOffText(EnableCustomMarathon) },
+                { "CustomMarathonAutoNext", NumText(CustomMarathonAutoNext, "0.#") }
             };
         }
 
@@ -752,6 +878,18 @@ namespace sxtg2.Helpers
             {
                 sections.Add(AppendCustomNotesSection);
                 names.Add("CustomNotes");
+            }
+
+            if (!seenKeys.Contains("Sudden") && !seenKeys.Contains("SuddenPlus") && !seenKeys.Contains("Hidden") && !seenKeys.Contains("HiddenPlus"))
+            {
+                sections.Add(AppendLaneCoverSection);
+                names.Add("Sudden/Hidden");
+            }
+
+            if (!seenKeys.Contains("CustomMarathon") && !seenKeys.Contains("EnableCustomMarathon"))
+            {
+                sections.Add(AppendCustomMarathonSection);
+                names.Add("CustomMarathon");
             }
 
             if (sections.Count > 0)

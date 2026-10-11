@@ -112,10 +112,19 @@
 | `NoteSpeedChaosMax` | `1.8` | 속도 배율 최댓값 |
 | `NoteSpeedChaosPerLane` | `0` | 1 = 레인마다, 0 = 노트마다 속도가 다름 |
 | `CustomNotes` | `1` | `CustomNotes` 폴더 PNG로 노트 스킨 교체 (0 = 게임 기본 노트). `EnableCustomNotes`도 같은 키로 인식 |
+| `Sudden` | `0` | [챌린지] 서든: 레인 위쪽을 가릴 비율(%, 0~90). 노트가 늦게 보임. `SuddenPlus`도 같은 키로 인식 |
+| `Hidden` | `0` | [챌린지] 히든: 판정선 쪽을 가릴 비율(%, 0~90). 노트가 치기 직전에 사라짐. `HiddenPlus`도 같은 키로 인식 |
+| `LaneCoverSoftness` | `24` | 서든/히든 경계를 흐리는 폭(픽셀, 0 = 칼같이) |
+| `LaneCoverDebug` | `0` | [진단] 서든/히든 계산선(판정선·보이는 띠 경계)을 화면에 선으로 그림 |
+| `CustomMarathon` | `0` | 커스텀 곡 마라톤: 결과창 Enter로 다음 커스텀 곡을 바로 시작, 전부 한 번씩 돌면 목록으로 (7절) |
+| `CustomMarathonAutoNext` | `0` | 마라톤 중 결과창에서 이 초만큼 지나면 자동으로 다음 곡 (0 = Enter를 누를 때만) |
 
 - 불리언이 아니라 **숫자 값**인 항목: `MaxScore`, `NoteSwayAmplitude`, `NoteSwaySpeed`,
-  `NoteSwayDampingTime`, `NoteSpeedChaosMin`, `NoteSpeedChaosMax`. 허용 범위를 벗어나거나
+  `NoteSwayDampingTime`, `NoteSpeedChaosMin`, `NoteSpeedChaosMax`, `Sudden`, `Hidden`(끝에 `%`를 붙여도 됨),
+  `LaneCoverSoftness`, `CustomMarathonAutoNext`. 허용 범위를 벗어나거나
   숫자로 읽을 수 없는 값은 경고 로그를 남기고 기본값이 유지됩니다.
+- **`Sudden`/`Hidden`은 게임을 켤 때마다 0(끔)으로 돌아갑니다.** 모드가 로드될 때 메모리 값과 `config.txt`의 두 줄을
+  0으로 고쳐 씁니다(다른 줄·주석·인코딩·줄바꿈은 그대로). 게임을 켠 뒤 값을 올리면 다음 곡부터 그 세션 동안 적용됩니다.
 - `MaxScore`는 기본값 `1000000`이면 원본과 동일하게 동작하고, 다른 값을 넣었을 때만 게임 코드에
   IL 패치가 적용됩니다. 자세한 내용은 `02-systems/SCORE_SYSTEM.md`의 "점수 상한 설정" 절 참고.
 - `NoteSway`와 `NoteSpeedChaos`는 판정에 전혀 영향이 없습니다. 판정은 노트의 화면 위치가 아니라
@@ -130,6 +139,21 @@
 - 게임 자체의 커스텀 키 설정은 `UserAccountModule.Instance.userData.customKeySetting`(세이브 데이터 내부,
   `GameSetting/KeyPresetSetting.cs`)로 관리되며, 이 폴더와는 별개입니다. 키 프리셋을 파일로
   내보내기/가져오기 하는 기능은 아직 없습니다.
+
+## 7) 커스텀 곡 마라톤 (`CustomMarathon=1`)
+
+커스텀 곡을 결과창 → 곡 목록 → 다음 곡 선택 없이 **딱 한 번씩** 연달아 치는 모드입니다.
+
+1. `config.txt`에 `CustomMarathon=1`을 넣고 곡 목록에서 아무 커스텀 곡이나 시작합니다.
+2. 결과창 위쪽에 `커스텀 마라톤 3 / 12`와 다음 곡 이름이 뜹니다. **Enter = 다음 곡 바로 시작**, **Esc = 그만하고 목록으로**.
+3. 순서는 곡 목록(앨범 폴더 이름순)이고, 처음 고른 곡부터 시작해 끝에 닿으면 앞으로 돌아옵니다. 모든 커스텀
+   곡을 한 번씩 치면 마지막 결과창에 "완주!"가 뜨고, Enter를 누르면 목록으로 돌아갑니다.
+4. 난이도(Comet~Quasar)와 플레이 스타일은 처음 고른 값이 끝까지 유지됩니다.
+
+- 리트라이는 같은 곡을 다시 치는 것이라 순번이 넘어가지 않습니다.
+- 플레이 중 일시정지 메뉴에서 목록으로 나가면 마라톤이 그 자리에서 끝납니다.
+- `CustomMarathonAutoNext=5`처럼 초를 넣으면 결과창에서 5초 뒤 저절로 다음 곡으로 넘어갑니다(마지막 곡 제외).
+- 공식 곡을 시작하면 마라톤은 시작되지 않습니다. 구현: `Features/CustomMarathonFeature.cs`
 
 ---
 

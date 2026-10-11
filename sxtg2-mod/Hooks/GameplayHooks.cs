@@ -236,6 +236,457 @@ namespace sxtg2.Hooks
     }
 
     /// <summary>
+    /// 서든(레인 위쪽을 가려 노트가 늦게 보임)·히든(판정선 쪽을 가려 노트가 사라짐).
+    /// 노트 루트마다 RectMask2D를 달아 보이는 띠만 남기고 잘라낸다. 알파로 노트를 통째로 숨기면
+    /// 홀드 몸통이 가림 경계에 걸쳤을 때 반만 가릴 수 없어서 클리핑을 쓴다.
+    /// 판정은 Note.timing만 보므로 정확도 자체에는 영향이 없다.
+    ///
+    /// 판정선은 프리팹의 앵커 기준점이 아니라 "지금 노트가 그려진 자리 - 아직 남은 낙하 거리"로 잰다.
+    /// 앵커 기준점으로 계산하면 판정선이 실제보다 화면 아래쪽(캔버스 y -435, 실제 약 -180)으로 잡혀
+    /// 노트가 통째로 안 보였다(2026-10-11 실게임). 경계는 매 프레임 다시 계산하고, 계산에 실패하면 가리지 않는다.
+    /// </summary>
+    [HarmonyPatch]
+    public static class LaneCoverHook
+    {
+        private sealed class CoverState
+        {
+            public RectTransform Root;
+            public RectTransform ShortNote;
+            public RectMask2D Mask;
+            public Vector4 LastPadding;
+        }
+
+        // 가리지 않는 쪽에 주는 패딩. 음수 패딩은 클립 영역을 바깥으로 넓힌다.
+        private const float Unbounded = 100000f;
+        private static readonly Vector4 NoClip = new Vector4(-Unbounded, -Unbounded, -Unbounded, -Unbounded);
+
+        private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> ShortNote =
+            AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("shortNote");
+
+        // RectMask2D가 패딩을 적용하는 캔버스(비공개 프로퍼티). 이 캔버스 좌표계로 계산해야 Unity와 어긋나지 않는다.
+        private static readonly Func<RectMask2D, Canvas> MaskCanvas =
+            AccessTools.MethodDelegate<Func<RectMask2D, Canvas>>(AccessTools.PropertyGetter(typeof(RectMask2D), "Canvas"));
+
+        private static readonly Dictionary<int, CoverState> States = new Dictionary<int, CoverState>();
+
+        private static float _loggedJudgeY = float.NaN;
+        private static int _moveLogCount;
+        private static bool _loggedFailure;
+        private static bool _dumpedHierarchy;
+
+        // 디버그 오버레이용: 마지막으로 계산한 판정선/경계의 월드 좌표와 그 캔버스.
+        private static bool _hasDebug;
+        private static Vector3 _debugJudge, _debugAnchorJudge, _debugLower, _debugUpper;
+        private static bool _debugHasLower, _debugHasUpper;
+        private static Canvas _debugCanvas;
+        private static Texture2D _whiteTex;
+
+        public static void Reset()
+        {
+            States.Clear();
+            LaneCache.Clear();
+            _loggedJudgeY = float.NaN;
+            _moveLogCount = 0;
+            _loggedFailure = false;
+            _dumpedHierarchy = false;
+            _hasDebug = false;
+        }
+
+        private static bool Enabled => SaveCustomKeyConfig.SuddenPercent > 0f || SaveCustomKeyConfig.HiddenPercent > 0f;
+
+        [HarmonyPatch(typeof(NoteGenerator), "Generate")]
+        [HarmonyPostfix]
+        private static void GeneratePostfix(RG_NoteObject __result)
+        {
+            if (__result == null || !Enabled)
+                return;
+
+            try
+            {
+                var root = __result.transform as RectTransform;
+                var shortNote = ShortNote(__result);
+                if (root == null || shortNote == null)
+                    return;
+
+                if (!_dumpedHierarchy && SaveCustomKeyConfig.LaneCoverDebug)
+                {
+                    _dumpedHierarchy = true;
+                    DumpHierarchy(root, shortNote);
+                }
+
+                // 마스크를 달기 전에 루트 사각형부터 늘린다. 못 늘리면 마스크를 달지 않는다
+                // (작은 사각형에 마스크를 달면 Unity가 노트를 통째로 컬링해서 안 보이게 된다).
+                if (!TryExpandRootRect(root, out string reason))
+                {
+                    LogFailureOnce($"노트 구조가 예상과 달라 가림을 적용하지 않습니다: {reason}");
+                    return;
+                }
+
+                var mask = __result.GetComponent<RectMask2D>();
+                if (mask == null)
+                    mask = __result.gameObject.AddComponent<RectMask2D>();
+
+                var state = new CoverState { Root = root, ShortNote = shortNote, Mask = mask, LastPadding = new Vector4(float.NaN, 0f, 0f, 0f) };
+                States[__result.GetInstanceID()] = state;
+                Apply(state);
+            }
+            catch (Exception ex)
+            {
+                LogFailureOnce($"가림 준비 오류: {ex.Message}");
+            }
+        }
+
+        // 노트 위치가 갱신될 때마다 경계도 다시 맞춘다.
+        [HarmonyPatch(typeof(RG_NoteObject), "CalculatePosition")]
+        [HarmonyPostfix]
+        private static void CalculatePositionPostfix(RG_NoteObject __instance)
+        {
+            if (!Enabled || !States.TryGetValue(__instance.GetInstanceID(), out var state))
+                return;
+
+            try
+            {
+                Apply(state);
+            }
+            catch (Exception ex)
+            {
+                LogFailureOnce($"가림 갱신 오류: {ex.Message}");
+            }
+        }
+
+        private static void Apply(CoverState state)
+        {
+            Vector4 padding = ComputePadding(state) ?? NoClip;
+
+            // padding을 넣을 때마다 자식들의 클리핑이 다시 계산되므로 실제로 바뀐 경우에만 넣는다.
+            if (float.IsNaN(state.LastPadding.x) || (padding - state.LastPadding).sqrMagnitude > 0.25f)
+            {
+                state.Mask.padding = padding;
+                state.Mask.softness = new Vector2Int(0, Mathf.RoundToInt(SaveCustomKeyConfig.LaneCoverSoftness));
+                state.LastPadding = padding;
+            }
+        }
+
+        /// <summary>보이는 띠에 해당하는 RectMask2D 패딩. 계산할 수 없으면 null(= 가리지 않음).</summary>
+        private static Vector4? ComputePadding(CoverState state)
+        {
+            RectTransform shortNote = state.ShortNote;
+            var space = shortNote.parent as RectTransform;
+            Canvas maskCanvas = MaskCanvas(state.Mask);
+            if (space == null || maskCanvas == null)
+                return null;
+
+            Transform canvasSpace = maskCanvas.transform;
+            Canvas rootCanvas = maskCanvas.rootCanvas;
+            Camera cam = rootCanvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : rootCanvas.worldCamera;
+
+            // CalculatePosition은 shortNote.anchoredPosition.y = (Timing - curTime) * 속도로 둔다.
+            // 그러니 "지금 노트 그림의 중심 - 아직 남은 낙하 거리"가 노트가 맞는 자리(판정선)다.
+            Vector3 upWorld = space.TransformVector(Vector3.up);
+            Vector3 judgeWorld = shortNote.TransformPoint(shortNote.rect.center) - upWorld * shortNote.anchoredPosition.y;
+
+            if (!TryGetLaneDistances(state.Root, cam, judgeWorld, upWorld, out float nearDistance, out float farDistance, out float judgeScreenY))
+                return null;
+
+            float sudden = SaveCustomKeyConfig.SuddenPercent / 100f;
+            float hidden = SaveCustomKeyConfig.HiddenPercent / 100f;
+            Vector3 nearWorld = judgeWorld + upWorld * nearDistance;
+            Vector3 farWorld = judgeWorld + upWorld * farDistance;
+
+            // 여기부터는 RectMask2D가 실제로 쓰는 캔버스·사각형 기준(Clipping.FindCullAndClipWorldRect와 같은 계산).
+            float nearY = canvasSpace.InverseTransformPoint(nearWorld).y;
+            float farY = canvasSpace.InverseTransformPoint(farWorld).y;
+            bool upward = canvasSpace.InverseTransformVector(upWorld).y > 0f;
+            bool hasLower = upward ? hidden > 0f : sudden > 0f;
+            bool hasUpper = upward ? sudden > 0f : hidden > 0f;
+            float lower = upward ? nearY : farY;
+            float upper = upward ? farY : nearY;
+            Rect maskRect = state.Mask.canvasRect;
+
+            // RectMask2D는 클립 띠가 자기 사각형과 겹치지 않으면 자식을 전부 컬링한다. 그럴 바엔 가리지 않는다.
+            float clipBottom = hasLower ? lower : maskRect.yMin - Unbounded;
+            float clipTop = hasUpper ? upper : maskRect.yMax + Unbounded;
+            if (clipTop <= maskRect.yMin || clipBottom >= maskRect.yMax || clipTop <= clipBottom)
+            {
+                LogFailureOnce($"보이는 띠({clipBottom:0.#} ~ {clipTop:0.#})가 노트 사각형({maskRect.yMin:0.#} ~ {maskRect.yMax:0.#})과 겹치지 않아 가리지 않습니다.");
+                return null;
+            }
+
+            RecordDebug(maskCanvas, judgeWorld, space, shortNote, upward ? nearWorld : farWorld, upward ? farWorld : nearWorld, hasLower, hasUpper);
+            LogJudgeLine(cam, judgeScreenY, nearWorld, farWorld, shortNote);
+
+            return new Vector4(
+                -Unbounded,
+                hasLower ? lower - maskRect.yMin : -Unbounded,
+                -Unbounded,
+                hasUpper ? maskRect.yMax - upper : -Unbounded);
+        }
+
+        private sealed class LaneDistances
+        {
+            public int Frame;
+            public float Near;
+            public float Far;
+            public float JudgeScreenY;
+        }
+
+        // 레인을 따라 이만큼(로컬 단위) 가도 화면 끝에 안 닿으면 소실점에 수렴하는 것으로 본다.
+        private const float MaxLaneDistance = 100000f;
+        private static readonly Dictionary<int, LaneDistances> LaneCache = new Dictionary<int, LaneDistances>();
+
+        /// <summary>
+        /// 판정선에서 레인을 따라 몇 로컬 단위를 가야 화면에서 히든 경계(near)·서든 경계(far)가 되는지.
+        /// 기어가 원근 카메라 앞 깊숙이(Gear Layer z = 1256) 그려지므로 캔버스 좌표가 아니라 카메라로 투영한
+        /// 실제 화면 픽셀로 비율을 잰다. 판정선 ~ 화면 끝(노트가 오는 쪽)이 100%다.
+        /// 같은 레인의 노트는 판정선을 공유하므로 레인(노트 루트의 부모)마다 프레임당 한 번만 계산한다.
+        /// </summary>
+        private static bool TryGetLaneDistances(RectTransform root, Camera cam, Vector3 judgeWorld, Vector3 upWorld,
+            out float near, out float far, out float judgeScreenY)
+        {
+            near = far = judgeScreenY = 0f;
+            int key = root.parent != null ? root.parent.GetInstanceID() : root.GetInstanceID();
+            if (LaneCache.TryGetValue(key, out var cached) && cached.Frame == Time.frameCount)
+            {
+                near = cached.Near;
+                far = cached.Far;
+                judgeScreenY = cached.JudgeScreenY;
+                return true;
+            }
+
+            Vector2 judge = RectTransformUtility.WorldToScreenPoint(cam, judgeWorld);
+            Vector2 probe = RectTransformUtility.WorldToScreenPoint(cam, judgeWorld + upWorld * 10f) - judge;
+            if (Mathf.Abs(probe.y) <= Mathf.Abs(probe.x) || judge.y < 0f || judge.y > Screen.height)
+            {
+                LogFailureOnce($"판정선을 화면에서 찾지 못해 가리지 않습니다 (판정선 화면 {judge}, 진행 방향 {probe}).");
+                return false;
+            }
+
+            float sign = Mathf.Sign(probe.y);
+            float edge = sign > 0f ? Screen.height : 0f;
+            float farthest = ScreenY(cam, judgeWorld, upWorld, MaxLaneDistance);
+            if ((farthest - edge) * sign < 0f)
+                edge = farthest;
+            float span = edge - judge.y;
+
+            near = FindDistance(cam, judgeWorld, upWorld, judge.y + span * (SaveCustomKeyConfig.HiddenPercent / 100f), sign);
+            far = FindDistance(cam, judgeWorld, upWorld, judge.y + span * (1f - SaveCustomKeyConfig.SuddenPercent / 100f), sign);
+            judgeScreenY = Screen.height - judge.y;
+
+            LaneCache[key] = new LaneDistances { Frame = Time.frameCount, Near = near, Far = far, JudgeScreenY = judgeScreenY };
+            return true;
+        }
+
+        private static float ScreenY(Camera cam, Vector3 origin, Vector3 direction, float distance)
+        {
+            return RectTransformUtility.WorldToScreenPoint(cam, origin + direction * distance).y;
+        }
+
+        // 화면 y가 target이 되는 레인 위 거리. 레인을 따라가면 화면 y가 한 방향으로만 변하므로 이분 탐색한다.
+        private static float FindDistance(Camera cam, Vector3 origin, Vector3 direction, float target, float sign)
+        {
+            float lo = 0f;
+            float hi = 1f;
+            while ((ScreenY(cam, origin, direction, hi) - target) * sign < 0f && hi < MaxLaneDistance)
+                hi *= 2f;
+
+            for (int i = 0; i < 30; i++)
+            {
+                float mid = (lo + hi) * 0.5f;
+                if ((ScreenY(cam, origin, direction, mid) - target) * sign < 0f)
+                    lo = mid;
+                else
+                    hi = mid;
+            }
+            return (lo + hi) * 0.5f;
+        }
+
+        // 노트 루트 사각형의 세로 길이(로컬 단위). 레인 전체보다 충분히 길면 된다.
+        private const float ExpandedHeight = 20000f;
+
+        /// <summary>
+        /// RectMask2D.PerformClipping은 클립 띠가 마스크 오브젝트 자신의 사각형과 겹치지 않으면 자식을 전부 컬링한다.
+        /// 노트 루트의 사각형은 레인 바닥의 작은 점이라 그대로 두면 노트가 통째로 사라진다(2026-10-11 "블라인드").
+        /// 그래서 루트 사각형을 세로로 크게 늘리되, 피벗을 함께 옮겨 자식들의 앵커 기준점(= 높이 × (앵커 - 피벗))이
+        /// 그대로 유지되게 한다. 자식 위치·크기와 루트 자신의 위치는 변하지 않는다.
+        /// </summary>
+        private static bool TryExpandRootRect(RectTransform root, out string reason)
+        {
+            reason = null;
+            if (Mathf.Abs(root.anchorMin.y - root.anchorMax.y) > 0.0001f)
+            {
+                // 세로로 늘어나는 앵커면 피벗을 옮길 때 루트 자체가 움직인다.
+                reason = $"노트 루트 앵커가 세로로 늘어남 ({root.anchorMin.y}~{root.anchorMax.y})";
+                return false;
+            }
+
+            var graphic = root.GetComponent<Graphic>();
+            if (graphic != null && graphic.enabled)
+            {
+                // 루트 자신이 그림을 그리면 사각형을 늘리는 순간 그 그림도 커진다.
+                reason = $"노트 루트에 그림 컴포넌트가 있음 ({graphic.GetType().Name})";
+                return false;
+            }
+
+            float anchorY = float.NaN;
+            foreach (Transform child in root)
+            {
+                if (!(child is RectTransform rt))
+                    continue;
+                if (Mathf.Abs(rt.anchorMin.y - rt.anchorMax.y) > 0.0001f)
+                {
+                    reason = $"{rt.name}의 앵커가 세로로 늘어남";
+                    return false;
+                }
+                if (float.IsNaN(anchorY))
+                    anchorY = rt.anchorMin.y;
+                else if (Mathf.Abs(anchorY - rt.anchorMin.y) > 0.0001f)
+                {
+                    reason = $"자식마다 세로 앵커가 다름 ({anchorY} / {rt.name} {rt.anchorMin.y})";
+                    return false;
+                }
+            }
+
+            if (float.IsNaN(anchorY))
+            {
+                reason = "노트 루트에 자식이 없음";
+                return false;
+            }
+
+            float oldHeight = root.rect.height;
+            if (oldHeight >= ExpandedHeight)
+                return true;
+
+            float newPivotY = anchorY - oldHeight / ExpandedHeight * (anchorY - root.pivot.y);
+            root.pivot = new Vector2(root.pivot.x, newPivotY);
+            root.sizeDelta = new Vector2(root.sizeDelta.x, root.sizeDelta.y + (ExpandedHeight - oldHeight));
+            return true;
+        }
+
+        private static void RecordDebug(Canvas canvas, Vector3 judgeWorld, RectTransform space, RectTransform shortNote, Vector3 lowerWorld, Vector3 upperWorld, bool hasLower, bool hasUpper)
+        {
+            if (!SaveCustomKeyConfig.LaneCoverDebug)
+                return;
+
+            Rect spaceRect = space.rect;
+            float anchorY = spaceRect.yMin + spaceRect.height * Mathf.Lerp(shortNote.anchorMin.y, shortNote.anchorMax.y, shortNote.pivot.y);
+            _debugCanvas = canvas;
+            _debugJudge = judgeWorld;
+            _debugAnchorJudge = space.TransformPoint(new Vector3(0f, anchorY, 0f));
+            _debugLower = lowerWorld;
+            _debugUpper = upperWorld;
+            _debugHasLower = hasLower;
+            _debugHasUpper = hasUpper;
+            _hasDebug = true;
+        }
+
+        /// <summary>
+        /// LaneCoverDebug=1이면 계산한 판정선(빨강)·옛 앵커 기준 판정선(노랑)·보이는 띠 경계(하늘색)를 화면에 가로선으로 그린다.
+        /// 스크린샷 한 장으로 계산이 실제 판정선과 맞는지 확인하기 위한 것.
+        /// </summary>
+        public static void DrawDebug()
+        {
+            if (!SaveCustomKeyConfig.LaneCoverDebug || !_hasDebug || _debugCanvas == null)
+                return;
+
+            if (_whiteTex == null)
+            {
+                _whiteTex = new Texture2D(1, 1);
+                _whiteTex.SetPixel(0, 0, Color.white);
+                _whiteTex.Apply();
+            }
+
+            Canvas root = _debugCanvas.rootCanvas;
+            Camera cam = root.renderMode == RenderMode.ScreenSpaceOverlay ? null : root.worldCamera;
+            DrawLine(cam, _debugJudge, new Color(1f, 0.15f, 0.15f, 0.95f), "판정선(계산)");
+            DrawLine(cam, _debugAnchorJudge, new Color(1f, 0.9f, 0.1f, 0.95f), "판정선(앵커, 옛 계산)");
+            if (_debugHasLower)
+                DrawLine(cam, _debugLower, new Color(0.2f, 0.9f, 1f, 0.95f), "보이는 띠 아래");
+            if (_debugHasUpper)
+                DrawLine(cam, _debugUpper, new Color(0.2f, 0.9f, 1f, 0.95f), "보이는 띠 위");
+        }
+
+        private static void DrawLine(Camera cam, Vector3 world, Color color, string label)
+        {
+            Vector2 screen = RectTransformUtility.WorldToScreenPoint(cam, world);
+            float y = Screen.height - screen.y;
+            GUI.color = color;
+            GUI.DrawTexture(new Rect(0f, y - 1f, Screen.width, 3f), _whiteTex);
+            GUI.Label(new Rect(8f, y - 20f, 400f, 20f), $"{label}  (화면 y {y:0})");
+            GUI.color = Color.white;
+        }
+
+        // 처음 적용할 때와, 판정선이 눈에 띄게 움직였을 때만 남긴다(씬마다 움직임 로그는 4줄까지). 좌표는 화면 위에서부터의 픽셀.
+        private static void LogJudgeLine(Camera cam, float judgeScreenY, Vector3 nearWorld, Vector3 farWorld, RectTransform shortNote)
+        {
+            if (!float.IsNaN(_loggedJudgeY) && (Mathf.Abs(judgeScreenY - _loggedJudgeY) < 20f || _moveLogCount >= 4))
+                return;
+
+            float nearY = Screen.height - RectTransformUtility.WorldToScreenPoint(cam, nearWorld).y;
+            float farY = Screen.height - RectTransformUtility.WorldToScreenPoint(cam, farWorld).y;
+            string band = $"히든 경계 y {nearY:0}, 서든 경계 y {farY:0}";
+            if (float.IsNaN(_loggedJudgeY))
+            {
+                ModLog.Msg($"[LaneCover] 서든 {SaveCustomKeyConfig.SuddenPercent:0.#}% / 히든 {SaveCustomKeyConfig.HiddenPercent:0.#}% 적용 " +
+                    $"(화면 {Screen.width}x{Screen.height}, 판정선 y {judgeScreenY:0}, {band}, " +
+                    $"노트 셰이더 {shortNote.GetComponent<Image>()?.materialForRendering?.shader?.name ?? "(없음)"})");
+            }
+            else
+            {
+                _moveLogCount++;
+                ModLog.Msg($"[LaneCover] 판정선이 움직임: 화면 y {_loggedJudgeY:0} → {judgeScreenY:0} ({band})");
+            }
+            _loggedJudgeY = judgeScreenY;
+        }
+
+        // 첫 노트의 shortNote부터 루트 캔버스까지 배치 정보를 한 번 남긴다(좌표 문제 진단용).
+        private static void DumpHierarchy(RectTransform root, RectTransform shortNote)
+        {
+            try
+            {
+                ModLog.Msg($"[LaneCover] 진단: 화면 {Screen.width}x{Screen.height}, shortNote.anchoredPosition {shortNote.anchoredPosition}, shortNote 그림 중심(로컬) {shortNote.rect.center}");
+                foreach (Transform child in root)
+                {
+                    if (child is RectTransform c)
+                        ModLog.Msg($"[LaneCover]   루트 자식 {c.name}: anchor {c.anchorMin}~{c.anchorMax}, pivot {c.pivot}, rect {c.rect}, active {c.gameObject.activeSelf}");
+                }
+
+                Transform t = shortNote;
+                for (int depth = 0; t != null && depth < 14; depth++, t = t.parent)
+                {
+                    string info = $"{new string(' ', depth * 2)}- {t.name}: localPos {t.localPosition}, scale {t.localScale}";
+                    if (t is RectTransform rt)
+                        info += $", rect {rt.rect}, anchor {rt.anchorMin}~{rt.anchorMax}, pivot {rt.pivot}";
+                    var canvas = t.GetComponent<Canvas>();
+                    if (canvas != null)
+                    {
+                        info += $", [Canvas {canvas.renderMode}, scaleFactor {canvas.scaleFactor}, camera {(canvas.worldCamera != null ? canvas.worldCamera.name : "없음")}" +
+                            $"{(canvas.worldCamera != null && canvas.worldCamera.targetTexture != null ? " → RenderTexture" : "")}]";
+                    }
+                    if (t.GetComponent<RectMask2D>() != null)
+                        info += ", [RectMask2D]";
+                    if (t.GetComponent<Mask>() != null)
+                        info += ", [Mask]";
+                    ModLog.Msg($"[LaneCover]   {info}");
+                    if (canvas != null && canvas.isRootCanvas)
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[LaneCover] 진단 로그 실패: {ex.Message}");
+            }
+        }
+
+        private static void LogFailureOnce(string message)
+        {
+            if (_loggedFailure)
+                return;
+            _loggedFailure = true;
+            MelonLogger.Warning($"[LaneCover] {message}");
+        }
+    }
+
+    /// <summary>
     /// [챌린지] 노트마다 낙하 속도 배율을 다르게 준다.
     /// 원본은 모든 노트가 같은 noteSpeed를 쓰므로 순서가 절대 뒤집히지 않지만, 배율을 노트별로
     /// 흩뿌리면 노트끼리 서로 추월한다. 읽기 난이도를 올리는 것이 목적인 기능이다.

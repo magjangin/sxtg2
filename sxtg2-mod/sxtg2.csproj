@@ -66,6 +66,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Features\CustomMarathonFeature.cs" />
     <Compile Include="Features\JudgmentBarFeature.cs" />
     <Compile Include="Features\KeyViewerFeature.cs" />
     <Compile Include="Features\MusicSelectFeature.cs" />
