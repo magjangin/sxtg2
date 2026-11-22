@@ -5,6 +5,7 @@ artifacts/
 
 # Decompiled game assembly (generated via ilspycmd, not our source)
 /sxtg2/
+/sxtg2-outline/
 
 # Visual Studio and IDE state
 .vs/
