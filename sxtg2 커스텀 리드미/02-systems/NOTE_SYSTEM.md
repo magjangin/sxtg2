@@ -402,6 +402,9 @@ public static void LogNoteDetails(object note)
 파일명 기준(대소문자 무시)으로 캐싱한다. 폴더 규칙은 `01-user-guide/INSTALL_AND_LAYOUT.md`
 5절 참고. `Thumbnail.png`는 노트 매칭에서 빼고 인벤토리 목록 칸 그림으로만 쓴다.
 
+샘플 이미지는 [`note-skins/`](note-skins/)에 있다. `blue.png`/`red.png`는 기본 머리 이미지이고,
+`눈송이`·`왓카`·`컬러풀`은 완성 스킨 예시(레드/블루 한 쌍)이다.
+
 ### 인벤토리 노트 스킨 항목 (`Features/CustomNoteSkinFeature.cs`, 2026-10-12 추가)
 
 게임의 노트 스킨은 `InventoryItem` CSV에서 읽은 `Util.items["NoteSkin"]` 목록이고, 고르면 `userData.noteSkin`에 ID가
