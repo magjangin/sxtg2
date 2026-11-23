@@ -139,6 +139,7 @@ namespace sxtg2.Loaders
             {
                 float bpm = FindBaseBpm(lines);
                 int valueWidth = DetectNoteValueWidth(lines);
+                var timeline = BmsTimeline.Build(lines, bpm);
                 var notes = new List<ParsedNote>();
 
                 foreach (string rawLine in lines)
@@ -155,7 +156,7 @@ namespace sxtg2.Loaders
                         line.Substring(1, colon - 1),
                         line.Substring(colon + 1),
                         valueWidth,
-                        bpm,
+                        timeline,
                         notes);
                 }
 
@@ -234,7 +235,7 @@ namespace sxtg2.Loaders
             string channel,
             string data,
             int valueWidth,
-            float bpm,
+            BmsTimeline timeline,
             List<ParsedNote> notes)
         {
             if (channel.Length < 2 || data.Length < valueWidth)
@@ -272,10 +273,9 @@ namespace sxtg2.Loaders
                     continue;
                 }
 
-                float measurePosition = measure + (float)index / objectCount;
                 notes.Add(new ParsedNote
                 {
-                    Time = measurePosition * 240f / bpm,
+                    Time = timeline.TimeAt(measure, (double)index / objectCount),
                     Lane = lane,
                     NoteType = noteType,
                     OriginalNoteValue = value
@@ -373,6 +373,155 @@ namespace sxtg2.Loaders
                 Time = note.Time,
                 NoteType = note.NoteType.ToString()
             });
+        }
+            /// <summary>
+        /// 마디·마디 안 위치를 초로 바꾼다. 마디 길이(#mmm02), 변속(#mmm03: 16진 정수 BPM, #mmm08: #BPMxx 정의 참조)을 반영한다.
+        /// 변속·변박이 없는 차트는 예전 공식(마디 × 240 / BPM)과 똑같은 값이 나온다. STOP(#mmm09)은 아직 지원하지 않는다.
+        /// 변속·변박 데이터는 노트 값 폭(2/3자리)과 상관없이 표준 BMS처럼 두 글자 단위로 읽는다.
+        /// </summary>
+        internal sealed class BmsTimeline
+        {
+            private readonly Dictionary<int, double> _measureLengths;
+            private readonly List<KeyValuePair<double, double>> _bpmChanges; // (박자 위치, BPM), 위치순
+            private readonly double _baseBpm;
+            private readonly int _maxMeasure;
+            private readonly double[] _measureStartBeats;
+
+            private BmsTimeline(double baseBpm, Dictionary<int, double> measureLengths, List<KeyValuePair<double, double>> bpmChanges, int maxMeasure)
+            {
+                _baseBpm = baseBpm;
+                _measureLengths = measureLengths;
+                _maxMeasure = maxMeasure;
+                _measureStartBeats = new double[maxMeasure + 2];
+                for (int m = 1; m < _measureStartBeats.Length; m++)
+                    _measureStartBeats[m] = _measureStartBeats[m - 1] + 4.0 * LengthOf(m - 1);
+                _bpmChanges = bpmChanges;
+            }
+
+            public static BmsTimeline Build(string[] lines, float baseBpm)
+            {
+                var bpmDefinitions = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                var lengths = new Dictionary<int, double>();
+                var rawChanges = new List<KeyValuePair<KeyValuePair<int, double>, double>>(); // ((마디, 위치), BPM)
+                int maxMeasure = 0;
+
+                foreach (string rawLine in lines)
+                {
+                    string line = rawLine?.Trim();
+                    if (string.IsNullOrEmpty(line) || line[0] != '#')
+                        continue;
+
+                    // #BPMxx 값 (확장 BPM 정의). "#BPM 150"(기본 BPM)은 공백이 있어 여기 걸리지 않는다.
+                    if (line.Length > 6 && line.StartsWith("#BPM", StringComparison.OrdinalIgnoreCase) && line[4] != ' ' && line[4] != '\t')
+                    {
+                        string[] split = line.Substring(4).Split(new[] { ' ', '\t' }, 2, StringSplitOptions.RemoveEmptyEntries);
+                        if (split.Length == 2 &&
+                            double.TryParse(split[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double defined) &&
+                            defined > 0)
+                        {
+                            bpmDefinitions[split[0]] = defined;
+                        }
+                        continue;
+                    }
+
+                    int colon = line.IndexOf(':');
+                    if (colon != 6)
+                        continue;
+
+                    if (!int.TryParse(line.Substring(1, 3), NumberStyles.None, CultureInfo.InvariantCulture, out int measure))
+                        continue;
+                    string channel = line.Substring(4, 2);
+                    string data = line.Substring(colon + 1).Trim();
+                    if (measure > maxMeasure)
+                        maxMeasure = measure;
+
+                    if (channel == "02")
+                    {
+                        if (double.TryParse(data, NumberStyles.Float, CultureInfo.InvariantCulture, out double length) && length > 0)
+                            lengths[measure] = length;
+                    }
+                    else if (channel == "03" || channel == "08")
+                    {
+                        int count = data.Length / 2;
+                        for (int i = 0; i < count; i++)
+                        {
+                            string value = data.Substring(i * 2, 2);
+                            if (value == "00")
+                                continue;
+
+                            double bpm;
+                            if (channel == "03")
+                            {
+                                if (!int.TryParse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int hexBpm) || hexBpm <= 0)
+                                    continue;
+                                bpm = hexBpm;
+                            }
+                            else if (!bpmDefinitions.TryGetValue(value, out bpm))
+                            {
+                                continue;
+                            }
+
+                            rawChanges.Add(new KeyValuePair<KeyValuePair<int, double>, double>(
+                                new KeyValuePair<int, double>(measure, (double)i / count), bpm));
+                        }
+                    }
+                }
+
+                var timeline = new BmsTimeline(baseBpm > 0 ? baseBpm : DefaultBpm, lengths, new List<KeyValuePair<double, double>>(), maxMeasure);
+                foreach (var change in rawChanges)
+                {
+                    double beat = timeline.BeatAt(change.Key.Key, change.Key.Value);
+                    timeline._bpmChanges.Add(new KeyValuePair<double, double>(beat, change.Value));
+                }
+                timeline._bpmChanges.Sort((left, right) => left.Key.CompareTo(right.Key));
+                return timeline;
+            }
+
+            private double LengthOf(int measure)
+            {
+                return _measureLengths.TryGetValue(measure, out double length) ? length : 1.0;
+            }
+
+            private double BeatAt(int measure, double fraction)
+            {
+                if (measure < 0)
+                    measure = 0;
+
+                double start;
+                if (measure < _measureStartBeats.Length)
+                {
+                    start = _measureStartBeats[measure];
+                }
+                else
+                {
+                    // 마디 표보다 뒤(노트만 있는 마디)는 기본 길이로 이어 붙인다.
+                    int last = _measureStartBeats.Length - 1;
+                    start = _measureStartBeats[last] + 4.0 * (measure - last);
+                }
+
+                return start + 4.0 * LengthOf(measure) * fraction;
+            }
+
+            public float TimeAt(int measure, double fraction)
+            {
+                double targetBeat = BeatAt(measure, fraction);
+                double seconds = 0;
+                double beat = 0;
+                double bpm = _baseBpm;
+
+                foreach (var change in _bpmChanges)
+                {
+                    if (change.Key > targetBeat)
+                        break;
+
+                    seconds += (change.Key - beat) * 60.0 / bpm;
+                    beat = change.Key;
+                    bpm = change.Value;
+                }
+
+                seconds += (targetBeat - beat) * 60.0 / bpm;
+                return (float)seconds;
+            }
         }
     }
 }

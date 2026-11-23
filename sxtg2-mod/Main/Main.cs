@@ -10,6 +10,8 @@ using sxtg2.Hooks.Audio;
 [assembly: MelonInfo(typeof(sxtg2.Main), "sxtg2", "1.4.0", "화영왕")]
 [assembly: MelonGame("Lyrebird Studio", "Sixtar Gate STARTRAIL")]
 [assembly: MelonColor(128, 0, 255, 255)]
+// 패치는 SafePatcher가 클래스마다 따로 건다(한 클래스 실패가 나머지를 막지 않도록). 이 줄을 지우면 모든 훅이 두 번 걸린다.
+[assembly: HarmonyDontPatchAll]
 
 namespace sxtg2
 {
@@ -25,24 +27,35 @@ namespace sxtg2
                 Directory.CreateDirectory(Path.Combine(gamePath, "hwa"));
 
                 NoteSpriteHook.Initialize();
-
-                try
-                {
-                    UnityEngine.SceneManagement.SceneManager.activeSceneChanged += OnActiveSceneChanged;
-                    // 방금 Initialize()로 읽었으므로 여기서는 다시 읽지 않는다.
-                    UpdatePlaySceneState(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name, allowConfigReload: false);
-                }
-                catch (Exception ex)
-                {
-                    MelonLogger.Warning($"[Main] 씬 감지 이벤트 등록 실패: {ex.Message}");
-                }
-
-                MelonLogger.Msg("[Main] sxtg2 모드 초기화 완료");
             }
             catch (Exception ex)
             {
                 MelonLogger.Error($"[Main] 초기화 실패: {ex}");
             }
+
+            // 설정을 먼저 읽은 뒤 패치한다(JudgeScoreMaxHook.Prepare가 설정 값을 로그에 남김).
+            // 위 초기화가 실패해도 패치는 건다. 예전에는 MelonLoader가 초기화와 상관없이 자동으로 걸었다.
+            try
+            {
+                SafePatcher.PatchAll(HarmonyInstance);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Error($"[Main] 패치 적용 실패: {ex}");
+            }
+
+            try
+            {
+                UnityEngine.SceneManagement.SceneManager.activeSceneChanged += OnActiveSceneChanged;
+                // 방금 Initialize()로 읽었으므로 여기서는 다시 읽지 않는다.
+                UpdatePlaySceneState(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name, allowConfigReload: false);
+            }
+            catch (Exception ex)
+            {
+                MelonLogger.Warning($"[Main] 씬 감지 이벤트 등록 실패: {ex.Message}");
+            }
+
+            MelonLogger.Msg("[Main] sxtg2 모드 초기화 완료");
         }
 
         private static void OnActiveSceneChanged(UnityEngine.SceneManagement.Scene prev, UnityEngine.SceneManagement.Scene next)
