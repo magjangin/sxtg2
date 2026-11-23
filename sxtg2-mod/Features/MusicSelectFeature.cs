@@ -181,6 +181,9 @@ namespace sxtg2.Features
         [HarmonyPostfix]
         private static void AwakePostfix(ManagerMusicSelect __instance)
         {
+            // 곡 선택 화면으로 돌아왔으면 직전 커스텀 플레이는 끝났다. 다음 공식 곡 결과는 정상 저장돼야 한다.
+            CustomPlayState.IsCustomTrackPlay = false;
+
             try
             {
                 TrackDataAnalyzer.InjectCustomTracks(__instance.trackDatas);

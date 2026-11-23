@@ -24,9 +24,10 @@ namespace sxtg2.Helpers
         private static MelonPreferences_Entry _logLevelEntry;
         private static readonly Stack<string> CorrelationStack = new Stack<string>();
 
-        private static MelonPreferences_Entry _autoPlayEntry;
-        private static MelonPreferences_Entry _allPerfectEntry;
-        private static MelonPreferences_Entry _blockSaveEntry;
+        // 형식이 정해진 항목으로 들고 있어야 매 프레임 읽을 때 BoxedValue 박싱·Convert가 생기지 않는다.
+        private static MelonPreferences_Entry<bool> _autoPlayEntry;
+        private static MelonPreferences_Entry<bool> _allPerfectEntry;
+        private static MelonPreferences_Entry<bool> _blockSaveEntry;
 
         public static void RegisterPreferences()
         {
@@ -63,9 +64,9 @@ namespace sxtg2.Helpers
                 false);
         }
 
-        public static bool EnableAutoPlay => SaveCustomKeyConfig.AutoPlay || (_autoPlayEntry != null && Convert.ToBoolean(_autoPlayEntry.BoxedValue));
-        public static bool EnableAllPerfect => SaveCustomKeyConfig.AllPerfect || (_allPerfectEntry != null && Convert.ToBoolean(_allPerfectEntry.BoxedValue));
-        public static bool BlockSaveBestRanking => SaveCustomKeyConfig.BlockSave || (_blockSaveEntry != null && Convert.ToBoolean(_blockSaveEntry.BoxedValue));
+        public static bool EnableAutoPlay => SaveCustomKeyConfig.AutoPlay || (_autoPlayEntry != null && _autoPlayEntry.Value);
+        public static bool EnableAllPerfect => SaveCustomKeyConfig.AllPerfect || (_allPerfectEntry != null && _allPerfectEntry.Value);
+        public static bool BlockSaveBestRanking => SaveCustomKeyConfig.BlockSave || (_blockSaveEntry != null && _blockSaveEntry.Value);
 
         public static ModLogLevel Level
         {
@@ -638,7 +639,7 @@ namespace sxtg2.Helpers
 
             string updated = pattern.Replace(text, "${1}" + value);
             if (updated != text)
-                File.WriteAllText(filePath, updated, new UTF8Encoding(hasBom));
+                AtomicFile.WriteAllText(filePath, updated, new UTF8Encoding(hasBom));
             return true;
         }
 
@@ -676,7 +677,7 @@ namespace sxtg2.Helpers
 
                 if (!File.Exists(configFilePath))
                 {
-                    File.WriteAllText(configFilePath, BuildConfigText(), Encoding.UTF8);
+                    AtomicFile.WriteAllText(configFilePath, BuildConfigText(), Encoding.UTF8);
                     MelonLogger.Msg($"[SaveCustomKey] 기본 설정 파일 생성 완료: {configFilePath}");
                 }
 
@@ -854,7 +855,7 @@ namespace sxtg2.Helpers
             try
             {
                 File.Copy(filePath, filePath + ".bak", overwrite: true);
-                File.WriteAllText(filePath, BuildConfigText(), Encoding.UTF8);
+                AtomicFile.WriteAllText(filePath, BuildConfigText(), Encoding.UTF8);
                 MelonLogger.Msg(sectioned
                     ? $"[SaveCustomKey] 설정 파일에 없던 항목({string.Join(", ", missing.ToArray())})을 넣어 다시 정리했습니다. 원본은 config.txt.bak"
                     : "[SaveCustomKey] 설정 파일을 카테고리 구역 형식으로 다시 정리했습니다. 값은 그대로이고, 원본은 config.txt.bak");
@@ -1066,18 +1067,7 @@ namespace sxtg2.Helpers
 
         public static bool ParseFlexibleBool(string val, bool defaultValue)
         {
-            if (string.IsNullOrEmpty(val))
-                return defaultValue;
-
-            var s = val.Trim().ToLowerInvariant();
-
-            if (s == "1" || s == "true" || s == "t" || s == "on" || s == "켜짐" || s == "사용" || s == "활성화" || s == "enable" || s == "enabled" || s == "yes" || s == "y" || s == "트루" || s == "참" || s == "켜기")
-                return true;
-
-            if (s == "0" || s == "false" || s == "f" || s == "off" || s == "꺼짐" || s == "미사용" || s == "비활성화" || s == "disable" || s == "disabled" || s == "no" || s == "n" || s == "폴스" || s == "거짓" || s == "끄기")
-                return false;
-
-            return defaultValue;
+            return ConfigValueParser.ParseFlexibleBool(val, defaultValue);
         }
     }
 }

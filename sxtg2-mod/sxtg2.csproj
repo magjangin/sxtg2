@@ -71,6 +71,7 @@
     <Compile Include="Features\JudgmentBarFeature.cs" />
     <Compile Include="Features\KeyViewerFeature.cs" />
     <Compile Include="Features\MusicSelectFeature.cs" />
+    <Compile Include="Helpers\ConfigValueParser.cs" />
     <Compile Include="Helpers\LaneCoverBand.cs" />
     <Compile Include="Helpers\ModHelpers.cs" />
     <Compile Include="Hooks\AudioHooks.cs" />
@@ -79,6 +80,7 @@
     <Compile Include="Loaders\CustomNoteLoaders.cs" />
     <Compile Include="Loaders\TrackInfoParser.cs" />
     <Compile Include="Main\Main.cs" />
+    <Compile Include="Main\SafePatcher.cs" />
     <Compile Include="Models\CustomTrackData.cs" />
     <Compile Include="Processors\CustomChartInjector.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

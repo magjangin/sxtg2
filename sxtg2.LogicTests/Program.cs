@@ -15,6 +15,10 @@ internal static class Program
             ("ParseBmsFromText_PairsOpenAndCloseNotes", ParseBmsFromText_PairsOpenAndCloseNotes),
             ("ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd", ParseBmsFileWithStatistics_DetectsMissingAndOrphanEnd),
             ("ParseBmsFileWithStatistics_UsesCacheForSamePath", ParseBmsFileWithStatistics_UsesCacheForSamePath),
+            ("ParseBmsFromText_AppliesHexBpmChange", ParseBmsFromText_AppliesHexBpmChange),
+            ("ParseBmsFromText_AppliesExtendedBpmChange", ParseBmsFromText_AppliesExtendedBpmChange),
+            ("ParseBmsFromText_AppliesMeasureLength", ParseBmsFromText_AppliesMeasureLength),
+            ("ParseBmsFromText_HoldLengthSpansBpmChange", ParseBmsFromText_HoldLengthSpansBpmChange),
             ("ParseFlexibleBool_SupportsComprehensiveTrueFalseKeywords", ParseFlexibleBool_SupportsComprehensiveTrueFalseKeywords),
             ("LaneCoverBand_OffByDefault", LaneCoverBand_OffByDefault),
             ("LaneCoverBand_SuddenHiddenAreHardEdges", LaneCoverBand_SuddenHiddenAreHardEdges),
@@ -180,6 +184,67 @@ internal static class Program
         }
     }
 
+    private static void ParseBmsFromText_AppliesHexBpmChange()
+    {
+        // 0마디 시작에서 150, 1마디 가운데에서 0xC8 = 200으로 바뀐다.
+        string bms = """
+#BPM 150
+#00103:00C8
+#00211:01
+""";
+        var result = BmsParser.ParseBmsFromText(bms, "inline");
+        Assert.NotNull(result, "결과가 null입니다.");
+        // 0~1.5마디(6박) @150 = 2.4초, 1.5~2마디(2박) @200 = 0.6초 → 3.0초
+        float time = result!.Notes.Single().Time;
+        Assert.True(Math.Abs(time - 3.0f) < 0.0001f, $"예상 3.0초, 실제 {time}");
+    }
+
+    private static void ParseBmsFromText_AppliesExtendedBpmChange()
+    {
+        string bms = """
+#BPM 120
+#BPM01 240
+#00108:01
+#00211:01
+""";
+        var result = BmsParser.ParseBmsFromText(bms, "inline");
+        Assert.NotNull(result, "결과가 null입니다.");
+        // 0~1마디(4박) @120 = 2.0초, 1~2마디(4박) @240 = 1.0초 → 3.0초
+        float time = result!.Notes.Single().Time;
+        Assert.True(Math.Abs(time - 3.0f) < 0.0001f, $"예상 3.0초, 실제 {time}");
+        Assert.True(result.BaseBpm == 120f, $"#BPM01 정의가 기본 BPM으로 읽혔습니다: {result.BaseBpm}");
+    }
+
+    private static void ParseBmsFromText_AppliesMeasureLength()
+    {
+        // 0마디가 3/4박자(0.75) → 1마디 시작은 3박 = 1.2초 @150
+        string bms = """
+#BPM 150
+#00002:0.75
+#00111:01
+""";
+        var result = BmsParser.ParseBmsFromText(bms, "inline");
+        Assert.NotNull(result, "결과가 null입니다.");
+        float time = result!.Notes.Single().Time;
+        Assert.True(Math.Abs(time - 1.2f) < 0.0001f, $"예상 1.2초, 실제 {time}");
+    }
+
+    private static void ParseBmsFromText_HoldLengthSpansBpmChange()
+    {
+        // 홀드 시작 1마디(1.6초 @150), 2마디 시작에서 0xC8 = 200으로 변속, 끝 3마디(3.2 + 1.2 = 4.4초)
+        string bms = """
+#BPM 150
+#00203:C8
+#00111:02
+#00311:03
+""";
+        var result = BmsParser.ParseBmsFromText(bms, "inline");
+        Assert.NotNull(result, "결과가 null입니다.");
+        var hold = result!.Notes.Single();
+        Assert.True(Math.Abs(hold.Time - 1.6f) < 0.0001f, $"예상 시작 1.6초, 실제 {hold.Time}");
+        Assert.True(Math.Abs(hold.Length - 2.8f) < 0.0001f, $"예상 길이 2.8초, 실제 {hold.Length}");
+    }
+
     private static void ParseFlexibleBool_SupportsComprehensiveTrueFalseKeywords()
     {
         var trueCases = new[]
@@ -196,33 +261,17 @@ internal static class Program
 
         foreach (var tc in trueCases)
         {
-            Assert.True(ParseFlexibleBool(tc, false), $"'{tc}'가 true로 해석되지 않았습니다.");
+            Assert.True(ConfigValueParser.ParseFlexibleBool(tc, false), $"'{tc}'가 true로 해석되지 않았습니다.");
         }
 
         foreach (var fc in falseCases)
         {
-            Assert.True(!ParseFlexibleBool(fc, true), $"'{fc}'가 false로 해석되지 않았습니다.");
+            Assert.True(!ConfigValueParser.ParseFlexibleBool(fc, true), $"'{fc}'가 false로 해석되지 않았습니다.");
         }
 
-        Assert.True(ParseFlexibleBool(null, true), "null 입력 시 defaultValue(true)가 반환되어야 합니다.");
-        Assert.True(!ParseFlexibleBool("", false), "빈 입력 시 defaultValue(false)가 반환되어야 합니다.");
-        Assert.True(ParseFlexibleBool("unknown_value", true), "알 수 없는 입력 시 defaultValue(true)가 반환되어야 합니다.");
-    }
-
-    private static bool ParseFlexibleBool(string val, bool defaultValue)
-    {
-        if (string.IsNullOrEmpty(val))
-            return defaultValue;
-
-        var s = val.Trim().ToLowerInvariant();
-
-        if (s == "1" || s == "true" || s == "t" || s == "on" || s == "켜짐" || s == "사용" || s == "활성화" || s == "enable" || s == "enabled" || s == "yes" || s == "y" || s == "트루" || s == "참" || s == "켜기")
-            return true;
-
-        if (s == "0" || s == "false" || s == "f" || s == "off" || s == "꺼짐" || s == "미사용" || s == "비활성화" || s == "disable" || s == "disabled" || s == "no" || s == "n" || s == "폴스" || s == "거짓" || s == "끄기")
-            return false;
-
-        return defaultValue;
+        Assert.True(ConfigValueParser.ParseFlexibleBool(null, true), "null 입력 시 defaultValue(true)가 반환되어야 합니다.");
+        Assert.True(!ConfigValueParser.ParseFlexibleBool("", false), "빈 입력 시 defaultValue(false)가 반환되어야 합니다.");
+        Assert.True(ConfigValueParser.ParseFlexibleBool("unknown_value", true), "알 수 없는 입력 시 defaultValue(true)가 반환되어야 합니다.");
     }
 
     private static void LaneCoverBand_OffByDefault()
@@ -311,66 +360,6 @@ internal static class Program
         catch (Exception ex)
         {
             Console.WriteLine($"[LogicTests] 임시 BMS 삭제 건너뜀: {ex.Message}");
-        }
-    }
-    private static void InspectInputTypes()
-    {
-        string asmPath = @"H:\Sixtar Gate STARTRAIL custom mode\Sixtar Gate STARTRAIL_Data\Managed\Assembly-CSharp.dll";
-        if (!File.Exists(asmPath)) return;
-
-        var asm = System.Reflection.Assembly.LoadFrom(asmPath);
-        Console.WriteLine("\n=== INSPECTING Assembly-CSharp.dll INPUT TYPES ===");
-
-        foreach (var type in asm.GetTypes())
-        {
-            if (type.FullName == null) continue;
-            if (type.FullName.Contains("Input") || type.FullName.Contains("KeyConfig") || type.FullName.Contains("Keyboard") || type.FullName.Contains("Control") || type.FullName.Contains("RG_PS_Judgement"))
-            {
-                Console.WriteLine($"TYPE: {type.FullName}");
-                foreach (var m in type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static))
-                {
-                    if (m.DeclaringType != type) continue;
-                    var paramsInfo = string.Join(", ", m.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}"));
-                    Console.WriteLine($"   - {m.Name}({paramsInfo}) -> {m.ReturnType.Name}");
-                }
-            }
-        }
-    }
-    private static void InspectInputCandidates()
-    {
-        string asmPath = @"H:\Sixtar Gate STARTRAIL custom mode\Sixtar Gate STARTRAIL_Data\Managed\Assembly-CSharp.dll";
-        if (!File.Exists(asmPath)) return;
-
-        var asm = System.Reflection.Assembly.LoadFrom(asmPath);
-        Console.WriteLine("\n=== CANDIDATE INPUT TYPES & METHOD BODY CHECK ===");
-
-        string[] typeNames = {
-            "RhythmGame.Play.RG_Gear",
-            "RhythmGame.Play.RG_Gear_Default",
-            "RhythmGame.Play.RG_Gear_Gothic",
-            "RhythmGame.Play.RG_Gear_Pianist",
-            "RhythmGame.Play.RG_Gear_Sherbet",
-            "RhythmGame.Play.RG_Gear_Stellar",
-            "RhythmGame.Play.RG_Gear_Voyager",
-            "RhythmGame.Play.RG_PS_Judgement"
-        };
-
-        foreach (var typeName in typeNames)
-        {
-            var type = asm.GetType(typeName);
-            if (type == null)
-            {
-                Console.WriteLine($"TYPE NOT FOUND: {typeName}");
-                continue;
-            }
-
-            Console.WriteLine($"\nTYPE: {type.FullName} (IsAbstract={type.IsAbstract})");
-            foreach (var m in type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static))
-            {
-                if (m.DeclaringType != type) continue;
-                var body = m.GetMethodBody();
-                Console.WriteLine($"   - {m.Name} (IsAbstract={m.IsAbstract}, HasBody={body != null})");
-            }
         }
     }
 }

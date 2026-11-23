@@ -33,6 +33,7 @@ namespace sxtg2.Hooks
             VideoPlayer ___bgaPlayer,
             GameObject ___defaultBGAcanvas)
         {
+            CustomPlayState.IsCustomTrackPlay = ___playTrack is CustomTrackData;
             if (!(___playTrack is CustomTrackData customTrack))
                 return;
 
@@ -86,6 +87,7 @@ namespace sxtg2.Hooks
     public static class NoteSpriteHook
     {
         private static bool _isInitialized = false;
+        private static bool _generateErrorLogged = false;
         private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> ShortNote =
             AccessTools.FieldRefAccess<RG_NoteObject, RectTransform>("shortNote");
         private static readonly AccessTools.FieldRef<RG_NoteObject, RectTransform> TailNote =
@@ -119,7 +121,12 @@ namespace sxtg2.Hooks
             }
             catch (Exception ex)
             {
-                MelonLogger.Warning($"[NoteSpriteHook] Generate 후처리 오류: {ex.Message}");
+                // 노트마다 불리는 경로라, 게임 업데이트로 필드가 바뀌면 같은 경고가 노트 수만큼 쌓인다. 한 번만 남긴다.
+                if (!_generateErrorLogged)
+                {
+                    _generateErrorLogged = true;
+                    MelonLogger.Warning($"[NoteSpriteHook] Generate 후처리 오류(이후 같은 오류는 생략): {ex}");
+                }
             }
         }
 
@@ -1089,11 +1096,13 @@ namespace sxtg2.Hooks
         [HarmonyPrefix]
         private static bool Prefix(MethodBase __originalMethod)
         {
-            bool shouldBlock = ModLog.BlockSaveBestRanking || ModLog.EnableAutoPlay || ModLog.EnableAllPerfect;
+            bool customTrack = CustomPlayState.IsCustomTrackPlay;
+            bool shouldBlock = customTrack || ModLog.BlockSaveBestRanking || ModLog.EnableAutoPlay || ModLog.EnableAllPerfect;
 
             if (shouldBlock)
             {
-                ModLog.Msg($"[차단] 하이스코어 및 랭킹 저장 차단: {__originalMethod?.DeclaringType?.Name}.{__originalMethod?.Name}");
+                string reason = customTrack ? "커스텀 곡" : "설정";
+                ModLog.Msg($"[차단] 하이스코어 및 랭킹 저장 차단({reason}): {__originalMethod?.DeclaringType?.Name}.{__originalMethod?.Name}");
                 return false;
             }
 
@@ -1262,19 +1271,24 @@ namespace sxtg2.Hooks
             if (!(track is CustomTrackData customTrack))
                 return true;
 
-            if (customTrack.CustomJacket == null)
+            // 곡 선택 화면은 커서가 움직일 때마다 자켓을 다시 묻는다. 없는 자켓을 매번 디스크에서 찾고
+            // 경고를 찍지 않도록, 한 번 찾아본 결과(없음 포함)를 트랙에 기억한다.
+            if (customTrack.CustomJacket == null && !customTrack.JacketLookupDone)
             {
+                customTrack.JacketLookupDone = true;
                 customTrack.CustomJacket = ThumbnailLoader.LoadThumbnail(
                     customTrack.ID,
                     customTrack.AlbumFolder);
+
+                if (customTrack.CustomJacket == null)
+                {
+                    MelonLogger.Warning(
+                        $"[TrackDataMediaHook] 커스텀 자켓을 찾지 못해 기본 자켓을 사용합니다: {customTrack.DisplayName}");
+                }
             }
 
             if (customTrack.CustomJacket == null)
-            {
-                MelonLogger.Warning(
-                    $"[TrackDataMediaHook] 커스텀 자켓을 찾지 못해 기본 자켓을 사용합니다: {customTrack.DisplayName}");
                 return true;
-            }
 
             result = customTrack.CustomJacket;
             return false;
